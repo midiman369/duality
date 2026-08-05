@@ -118,4 +118,4 @@ Commercial use requires a separate license from the copyright holder.
 
 Copyright © 2026 MIDIMan369. All rights reserved.
 
-See LICENSE for full terms.
+See [LICENSE](LICENSE) for full terms.
