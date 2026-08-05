@@ -6,6 +6,8 @@ Duality routes MIDI notes across two or more sound modules / synthesizers to max
 
 It is designed for musicians and retro-computing enthusiasts who want to combine multiple hardware MIDI modules and treat them as one single higher-polyphony instrument.
 
+<img width="1079" height="260" alt="image" src="https://github.com/user-attachments/assets/96ca2cdb-c13f-4e34-a50d-7133e638b209" />
+
 ---
 
 ## Features
