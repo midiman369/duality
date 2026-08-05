@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.9.3"
+VERSION = "0.9.4"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -214,7 +214,7 @@ class Duality:
         self.format_pulse_time: float = 0.0          # when the format badge stops glowing
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 6
-        self.STATUS_HISTORY_TTL = 5.0                       # seconds before a message ages out 
+        self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
  
         # Per-channel controller state (0-indexed)
         self.vol = [None] * 16          # CC7
@@ -269,30 +269,38 @@ class Duality:
     # ------------------------------------------------------------------
     
     def _set_status(self, message: str, duration: float = 5.0):
-        """Show a temporary message and also keep it in the rolling history."""
+        """
+        Show a temporary message in the bottom row.
+        When a new message arrives, the previous one is moved into history.
+        """
         now = time.monotonic()
+
+        # Push the previous bottom message into history (if it still exists)
+        if self.status_message and self.status_message != message:
+            self.status_history.insert(0, (now, self.status_message))
+            self.status_history = self.status_history[: self.STATUS_HISTORY_MAX]
+
         self.status_message = message
         self.status_message_time = now + duration
-
-        # Add to rolling history (newest first)
-        self.status_history.insert(0, (now, message))
-        # Keep only the most recent N
-        self.status_history = self.status_history[: self.STATUS_HISTORY_MAX]
 
     def _make_status_history(self) -> Text:
         """Build a vertical list of recent status messages with fading."""
         now = time.monotonic()
         lines = []
 
-        # Purge expired messages
+        # Age out old entries
         self.status_history = [
             (ts, msg) for ts, msg in self.status_history
             if now - ts < self.STATUS_HISTORY_TTL
         ]
 
         for ts, msg in self.status_history:
-            age = now - ts
+            # Never show the exact message that is currently in the bottom row
+            if msg == self.status_message and now < self.status_message_time:
+                continue
+            
             # Fade: full brightness → dim as it ages
+            age = now - ts
             if age < 1.2:
                 style = "bold yellow"
             elif age < 2.8:
@@ -301,7 +309,7 @@ class Duality:
                 style = "dim"
 
             # Truncate long messages so they don’t push the layout
-            display = msg if len(msg) <= 28 else msg[:25] + "…"
+            display = msg if len(msg) <= 26 else msg[:23] + "…"
             lines.append(f"[{style}]{display}[/]")
 
         if not lines:
@@ -348,7 +356,7 @@ class Duality:
             self.detected_format = fmt
             self.format_pulse_time = time.monotonic() + 2.8
             # Optional short status message (comment out if you prefer quieter)
-            self._set_status(f"Detected {fmt}", duration=2.0)
+            #self._set_status(f"Detected {fmt}", duration=2.0)
           
     def _describe_sysex(self, msg: mido.Message) -> str:
         """
@@ -387,11 +395,11 @@ class Duality:
             if aa == 0x40 and bb == 0x01 and 0x40 <= cc <= 0x4F:
                 return "GS Delay"
 
-            # EFX / MFX Type (address 40 03 00)
+            # EFX Type (address 40 03 00)
             if aa == 0x40 and bb == 0x03 and cc == 0x00 and len(data) >= 9:
                 msb, lsb = data[7], data[8]
                 name = GS_EFX_TYPES.get((msb, lsb), f"{msb:02X} {lsb:02X}")
-                return f"GS EFX/MFX {name}"
+                return f"GS EFX {name}"
 
             # EFX On/Off for a part (address 40 xx 22)
             if aa == 0x40 and cc == 0x22 and len(data) >= 8:
@@ -606,7 +614,15 @@ class Duality:
         if msg.type == "sysex":
             self._detect_format(msg)
             description = self._describe_sysex(msg)
-            self._set_status(description, duration=3.5)
+
+            # Suppress pure noise
+            if description in ("GS SysEx", "SysEx", "GM/Universal SysEx", "XG SysEx", "MT-32 SysEx"):
+                # Only show the generic message if history is empty
+                if not self.status_history and not self.status_message:
+                    self._set_status(description, duration=2.5)
+            else:
+                self._set_status(description, duration=3.5)
+
             for out in self.outs:
                 out.send(msg)
             return
@@ -710,6 +726,13 @@ class Duality:
             else:
                 # Dim residual so you can still see the last format
                 format_badge = f"  [dim][{self.detected_format}][/]"
+
+        # If the bottom status message has just expired, move it into history
+        now = time.monotonic()
+        if self.status_message and now >= self.status_message_time:
+            self.status_history.insert(0, (now, self.status_message))
+            self.status_history = self.status_history[: self.STATUS_HISTORY_MAX]
+            self.status_message = ""
 
         # --- Port bars ---
         table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
@@ -865,7 +888,6 @@ class Duality:
         channel_table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
         channel_table.add_column("label", style="cyan", width=14, no_wrap=True)
         channel_table.add_column("values", ratio=1)
-
         channel_table.add_row("MIDI Channel", Text.from_markup(sep.join(ch_num_parts)))
         channel_table.add_row("Voice Count",  Text.from_markup(sep.join(voice_parts)))
         channel_table.add_row("Vol",          Text.from_markup(sep.join(vol_parts)))
@@ -875,10 +897,10 @@ class Duality:
 
         # Header
         header = Text.from_markup(
-            f"[bold]Live Status[/]  •  "
-            f"Total: [bold]{total:3d}[/]  •  Peak: [bold]{self.peak_voices:3d}[/]  •  "
-            f"Util: [bold]{util_pct:2d}%[/]  •  "
-            f"Drops: {self.drop_count}  •  Steals: {self.steal_count}  •  Filtered: {self.filtered_count}"
+            f"[bold]Live Status[/] • "
+            f"Total: [bold]{total:3d}[/] • Peak: [bold]{self.peak_voices:3d}[/] • "
+            f"Util: [bold]{util_pct:2d}%[/] • "
+            f"Drops: {self.drop_count} • Steals: {self.steal_count} • Filtered: {self.filtered_count}"
             f"{pulse}{format_badge}"
         )
 
@@ -906,15 +928,51 @@ class Duality:
         history_text = self._make_status_history()
 
         term_width = console.width or 80
-        use_side_history = term_width >= 118 and str(history_text).strip() != ""
+        use_side_history = term_width >= 118
 
         if use_side_history:
+            # Combine channel table + labelled footer + status into one left column
+            left_column = Table(show_header=False, box=None, padding=(0, 0), expand=True)
+            left_column.add_column("content", ratio=1)
+
+            # 1. Channel activity block
+            left_column.add_row(channel_table)
+
+            # 2. Labelled footer (Chord / Activity)
+            footer_row = Text.from_markup(
+                f"[cyan]More Stats:[/]   [dim]{chord_text}   Last Activity: {last_activity}[/]"
+            )
+            left_column.add_row(footer_row)
+
+            # 3. Labelled status message (can wrap)
+            if self.status_message and time.monotonic() < self.status_message_time:
+                # Allow wrapping for longer messages
+                status_row = Text.from_markup(
+                    f"[cyan]Status Message:[/]   [bold yellow]{self.status_message}[/]"
+                )
+            else:
+                status_row = Text.from_markup("[cyan]Status Message:[/]   [dim]—[/]")
+                self.status_message = ""
+            left_column.add_row(status_row)
+
+            # History panel – height 9 now matches the taller left column
+            history_panel = Panel(
+                history_text if str(history_text).strip() else Text(" "),
+                border_style="bright_blue",
+                padding=(0, 0),
+                height=9,
+                title="[dim]Recent Status Messages[/]",
+                title_align="left",
+            )
+
             side_by_side = Table(show_header=False, box=None, padding=(0, 1), expand=True)
-            side_by_side.add_column("channels", ratio=3)
-            side_by_side.add_column("history", width=30, no_wrap=False)
-            side_by_side.add_row(channel_table, history_text)
-            content = Group(header, table, side_by_side, footer, status_line)
+            side_by_side.add_column("left", ratio=3)
+            side_by_side.add_column("history", width=32, no_wrap=False)
+            side_by_side.add_row(left_column, history_panel)
+
+            content = Group(header, table, side_by_side)
         else:
+            # Narrow terminal – original stacked layout
             content = Group(header, table, channel_table, footer, status_line)
 
         return Panel(
