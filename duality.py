@@ -95,6 +95,8 @@ class Duality:
         self.voice_display = [0.0] * 16   # lingering voice count for display
         self.drop_count = 0
         self.filtered_count = 0
+        self.detected_format: str | None = None      # "GM", "GM2", "GS", "XG", "MT-32"
+        self.format_pulse_time: float = 0.0          # when the format badge stops glowing
         
         # Per-channel controller state (0-indexed)
         self.vol = [None] * 16          # CC7
@@ -153,7 +155,48 @@ class Duality:
         """Show a temporary message in the bottom status row."""
         self.status_message = message
         self.status_message_time = time.monotonic() + duration
-    
+
+    def _detect_format(self, msg: mido.Message) -> None:
+        """
+        Detect GM / GM2 / GS / XG / MT-32 from SysEx and light the format badge.
+        """
+        if msg.type != "sysex":
+            return
+
+        data = list(msg.data)
+        if len(data) < 4:
+            return
+
+        fmt = None
+
+        # Universal Non-Realtime → GM / GM2
+        # F0 7E 7F 09 01 F7  = GM System On
+        # F0 7E 7F 09 03 F7  = GM2 System On
+        if data[0] == 0x7E and len(data) >= 4 and data[2] == 0x09:
+            if data[3] == 0x01:
+                fmt = "GM"
+            elif data[3] == 0x03:
+                fmt = "GM2"
+
+        # Roland
+        elif data[0] == 0x41 and len(data) >= 5:
+            model = data[2]
+            if model == 0x42:                     # GS (SC-55 / SC-88 / SC-8850 family)
+                fmt = "GS"
+            elif model == 0x16:                   # MT-32 / CM-32 / CM-64 family
+                fmt = "MT-32"
+
+        # Yamaha XG
+        # Most common form: F0 43 1n 4C ...
+        elif data[0] == 0x43 and len(data) >= 4 and data[2] == 0x4C:
+            fmt = "XG"
+
+        if fmt:
+            self.detected_format = fmt
+            self.format_pulse_time = time.monotonic() + 2.8
+            # Optional short status message (comment out if you prefer quieter)
+            self._set_status(f"Detected {fmt}", duration=2.0)
+  
     def _count(self, port: int) -> int:
         return sum(1 for info in self.active.values() if info["port"] == port)
         
@@ -343,8 +386,9 @@ class Duality:
             self.panic(reason=f"received {msg}")
             return
 
-        # SysEx → show in status row and forward to all devices
+        # SysEx → detect format, show in status row, and forward to all devices
         if msg.type == "sysex":
+            self._detect_format(msg)
             self._set_status("SysEx sent to all devices", duration=3.0)
             for out in self.outs:
                 out.send(msg)
@@ -430,6 +474,24 @@ class Duality:
         pulse = ""
         if time.monotonic() - self.last_activity_time < 0.15:
             pulse = "  [bold bright_green]♪[/]"
+
+        # Format badge / pulse
+        format_badge = ""
+        if self.detected_format:
+            colours = {
+                "GM": "bright_cyan",
+                "GM2": "bright_cyan",
+                "GS": "bright_magenta",
+                "XG": "bright_yellow",
+                "MT-32": "bright_red",
+            }
+            col = colours.get(self.detected_format, "white")
+            if time.monotonic() < self.format_pulse_time:
+                # Bright while the pulse is active
+                format_badge = f"  [bold {col}][{self.detected_format}][/]"
+            else:
+                # Dim residual so you can still see the last format
+                format_badge = f"  [dim][{self.detected_format}][/]"
 
         # --- Port bars ---
         table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
@@ -599,7 +661,7 @@ class Duality:
             f"Total: [bold]{total:3d}[/]  •  Peak: [bold]{self.peak_voices:3d}[/]  •  "
             f"Util: [bold]{util_pct:2d}%[/]  •  "
             f"Drops: {self.drop_count}  •  Steals: {self.steal_count}  •  Filtered: {self.filtered_count}"
-            f"{pulse}"
+            f"{pulse}{format_badge}"
         )
 
         # Footer
