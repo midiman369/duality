@@ -34,11 +34,13 @@ It is designed for musicians and retro-computing enthusiasts who want to combine
 - [mido](https://mido.readthedocs.io/) + python-rtmidi
 - [rich](https://rich.readthedocs.io/)
 
-Install dependencies:
+#### Install dependencies:
 
 ```bash
 pip install mido[ports] python-rtmidi rich
 ```
+
+- See [requirements.txt](requirements.txt)
 
 ---
 
