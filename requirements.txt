@@ -1,0 +1,3 @@
+mido[ports]
+python-rtmidi
+rich
