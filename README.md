@@ -101,6 +101,8 @@ While running, Duality shows a live panel with:
 - Per-channel voice counts, Volume, Pan, Mod Wheel, and Pitch Bend
 - Last chord size and activity information
 
+<img width="1079" height="260" alt="image" src="https://github.com/user-attachments/assets/96ca2cdb-c13f-4e34-a50d-7133e638b209" />
+
 ---
 
 ## Tips
