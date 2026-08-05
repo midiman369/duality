@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.9.3"
+VERSION = "0.9.4"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -61,6 +61,121 @@ mido.set_backend("mido.backends.rtmidi")
 
 POLY_DEFAULT = 24
 CHORD_MS_DEFAULT = 30.0
+
+# ----------------------------------------------------------------------
+# GS recognition tables
+# ----------------------------------------------------------------------
+
+GS_REVERB_MACRO = {
+    0: "Room 1",
+    1: "Room 2",
+    2: "Room 3",
+    3: "Hall 1",
+    4: "Hall 2",
+    5: "Plate",
+    6: "Delay",
+    7: "Panning Delay",
+}
+
+GS_CHORUS_MACRO = {
+    0: "Chorus 1",
+    1: "Chorus 2",
+    2: "Chorus 3",
+    3: "Chorus 4",
+    4: "Feedback Chorus",
+    5: "Flanger",
+    6: "Short Delay",
+    7: "Short Delay (FB)",
+}
+
+# Key = (MSB, LSB) from address 40 03 00
+GS_EFX_TYPES = {
+    (0x00, 0x00): "Thru",
+
+    # Filter
+    (0x01, 0x00): "Stereo-EQ",
+    (0x01, 0x01): "Spectrum",
+    (0x01, 0x02): "Enhancer",
+    (0x01, 0x03): "Humanizer",
+
+    # Distortion
+    (0x01, 0x10): "Overdrive",
+    (0x01, 0x11): "Distortion",
+
+    # Modulation
+    (0x01, 0x20): "Phaser",
+    (0x01, 0x21): "Auto Wah",
+    (0x01, 0x22): "Rotary",
+    (0x01, 0x23): "Stereo Flanger",
+    (0x01, 0x24): "Step Flanger",
+    (0x01, 0x25): "Tremolo",
+    (0x01, 0x26): "Auto Pan",
+
+    # Compressor
+    (0x01, 0x30): "Compressor",
+    (0x01, 0x31): "Limiter",
+
+    # Chorus
+    (0x01, 0x40): "Hexa Chorus",
+    (0x01, 0x41): "Tremolo Chorus",
+    (0x01, 0x42): "Stereo Chorus",
+    (0x01, 0x43): "Space-D",
+    (0x01, 0x44): "3D Chorus",
+
+    # Delay / Reverb
+    (0x01, 0x50): "Stereo Delay",
+    (0x01, 0x51): "Mod Delay",
+    (0x01, 0x52): "3 Tap Delay",
+    (0x01, 0x53): "4 Tap Delay",
+    (0x01, 0x54): "Time Ctrl Delay",
+    (0x01, 0x55): "Reverb",
+    (0x01, 0x56): "Gate Reverb",
+    (0x01, 0x57): "3D Delay",
+
+    # Pitch
+    (0x01, 0x60): "Pitch Shifter",
+    (0x01, 0x61): "2 Voice Pitch Shifter",
+
+    # Others / Lo-Fi
+    (0x01, 0x70): "Feedback Pitch Shifter",
+    (0x01, 0x71): "3D Auto",
+    (0x01, 0x72): "3D Manual",
+    (0x01, 0x73): "Lo-Fi 1",
+    (0x01, 0x74): "Lo-Fi 2",
+
+    # Series multi-effects
+    (0x02, 0x00): "OD → Chorus",
+    (0x02, 0x01): "OD → Flanger",
+    (0x02, 0x02): "OD → Delay",
+    (0x02, 0x03): "OD → Phaser",
+    (0x02, 0x04): "Dist → Chorus",
+    (0x02, 0x05): "Dist → Flanger",
+    (0x02, 0x06): "Dist → Delay",
+    (0x02, 0x07): "Dist → Phaser",
+    (0x02, 0x08): "Enh → Chorus",
+    (0x02, 0x09): "Enh → Flanger",
+    (0x02, 0x0A): "Enh → Delay",
+    (0x02, 0x0B): "Enh → Phaser",
+
+    # Higher multi / parallel
+    (0x04, 0x00): "Rotary Multi",
+    (0x04, 0x01): "Guitar Multi 1",
+    (0x04, 0x02): "Guitar Multi 2",
+    (0x04, 0x03): "Guitar Multi 3",
+    (0x04, 0x04): "Clean Gt Multi 1",
+    (0x04, 0x05): "Bass Multi",
+    (0x04, 0x06): "Rhodes Multi",
+
+    (0x11, 0x00): "Cho/Delay",
+    (0x11, 0x01): "FL/Delay",
+    (0x11, 0x02): "Cho/Flanger",
+    (0x11, 0x03): "OD1/OD2",
+    (0x11, 0x04): "OD/Rotary",
+    (0x11, 0x05): "OD/Phaser",
+    (0x11, 0x06): "OD/Auto Wah",
+    (0x11, 0x07): "PH/Rotary",
+    (0x11, 0x08): "PH/Auto Wah",
+}
 
 console = Console()
 
@@ -196,6 +311,69 @@ class Duality:
             self.format_pulse_time = time.monotonic() + 2.8
             # Optional short status message (comment out if you prefer quieter)
             self._set_status(f"Detected {fmt}", duration=2.0)
+          
+    def _describe_sysex(self, msg: mido.Message) -> str:
+        """
+        Return a human-readable description of a SysEx message.
+        Currently focused on GS; falls back gracefully.
+        """
+        data = list(msg.data)
+        if len(data) < 4:
+            return "SysEx"
+
+        # ----- GS (Roland Model ID 42) -----
+        if data[0] == 0x41 and len(data) >= 6 and data[2] == 0x42 and data[3] == 0x12:
+            # Address is the next 3 bytes
+            if len(data) < 7:
+                return "GS SysEx"
+
+            aa, bb, cc = data[4], data[5], data[6]
+
+            # GS Reset
+            if aa == 0x40 and bb == 0x00 and cc == 0x7F:
+                return "GS Reset"
+
+            # Reverb Macro
+            if aa == 0x40 and bb == 0x01 and cc == 0x30 and len(data) >= 8:
+                val = data[7]
+                name = GS_REVERB_MACRO.get(val, f"Type {val}")
+                return f"GS Reverb: {name}"
+
+            # Chorus Macro
+            if aa == 0x40 and bb == 0x01 and cc == 0x38 and len(data) >= 8:
+                val = data[7]
+                name = GS_CHORUS_MACRO.get(val, f"Type {val}")
+                return f"GS Chorus: {name}"
+
+            # Delay (generic for now)
+            if aa == 0x40 and bb == 0x01 and 0x40 <= cc <= 0x4F:
+                return "GS Delay"
+
+            # EFX / MFX Type (address 40 03 00)
+            if aa == 0x40 and bb == 0x03 and cc == 0x00 and len(data) >= 9:
+                msb, lsb = data[7], data[8]
+                name = GS_EFX_TYPES.get((msb, lsb), f"{msb:02X} {lsb:02X}")
+                return f"GS EFX/MFX {name}"
+
+            # EFX On/Off for a part (address 40 xx 22)
+            if aa == 0x40 and cc == 0x22 and len(data) >= 8:
+                # bb is the block/part indicator
+                # Common mapping for parts 1-16 is roughly 0x11-0x1F / 0x41-...
+                part = (bb & 0x0F) + 1
+                state = "On" if data[7] == 0x01 else "Off"
+                return f"GS EFX {state} → Part {part}"
+
+            return "GS SysEx"
+
+        # Fallbacks
+        if data[0] == 0x7E:
+            return "GM/Universal SysEx"
+        if data[0] == 0x43:
+            return "XG SysEx"
+        if data[0] == 0x41 and len(data) >= 3 and data[2] == 0x16:
+            return "MT-32 SysEx"
+
+        return "SysEx"
   
     def _count(self, port: int) -> int:
         return sum(1 for info in self.active.values() if info["port"] == port)
@@ -386,10 +564,11 @@ class Duality:
             self.panic(reason=f"received {msg}")
             return
 
-        # SysEx → detect format, show in status row, and forward to all devices
+        # SysEx → detect format, describe it, show in status, and forward
         if msg.type == "sysex":
             self._detect_format(msg)
-            self._set_status("SysEx sent to all devices", duration=3.0)
+            description = self._describe_sysex(msg)
+            self._set_status(description, duration=3.5)
             for out in self.outs:
                 out.send(msg)
             return
