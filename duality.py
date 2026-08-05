@@ -470,10 +470,11 @@ class Duality:
                 mins = int(ago // 60)
                 last_activity = f"{mins}m ago"
 
-        # Activity pulse
-        pulse = ""
+        # Activity pulse – always present so layout stays stable
         if time.monotonic() - self.last_activity_time < 0.15:
             pulse = "  [bold bright_green]♪[/]"
+        else:
+            pulse = "  [dim]♪[/]"          # grayed-out residual
 
         # Format badge / pulse
         format_badge = ""
