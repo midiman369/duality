@@ -85,6 +85,7 @@ If you omit --outs, Duality will interactively ask you to choose two output port
 | --no-status | Disable the live status panel |
 | --list | List available MIDI ports and exit |
 | --version | Show version |
+| -h, --help | Show help message |
 
 ---
 
