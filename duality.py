@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.9.4"
+VERSION = "0.9.3"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -212,19 +212,21 @@ class Duality:
         self.filtered_count = 0
         self.detected_format: str | None = None      # "GM", "GM2", "GS", "XG", "MT-32"
         self.format_pulse_time: float = 0.0          # when the format badge stops glowing
-        
+        self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
+        self.STATUS_HISTORY_MAX = 6
+        self.STATUS_HISTORY_TTL = 5.0                       # seconds before a message ages out 
+ 
         # Per-channel controller state (0-indexed)
         self.vol = [None] * 16          # CC7
-        self.pan = [None] * 16           # CC10 (64 = center)
-        self.mod = [None] * 16            # CC1
-        self.pitch = [None] * 16          # Pitch bend (display value)
+        self.pan = [None] * 16          # CC10 (64 = center)
+        self.mod = [None] * 16          # CC1
+        self.pitch = [None] * 16        # Pitch bend (display value)
         
         # Last time each controller changed (for highlight)
         self.vol_time   = [0.0] * 16
         self.pan_time   = [0.0] * 16
         self.mod_time   = [0.0] * 16
         self.pitch_time = [0.0] * 16
-        
         
         # Last value sent to each port for deduplication
         # Key: (port_index, channel, type_key) → last value
@@ -267,9 +269,45 @@ class Duality:
     # ------------------------------------------------------------------
     
     def _set_status(self, message: str, duration: float = 5.0):
-        """Show a temporary message in the bottom status row."""
+        """Show a temporary message and also keep it in the rolling history."""
+        now = time.monotonic()
         self.status_message = message
-        self.status_message_time = time.monotonic() + duration
+        self.status_message_time = now + duration
+
+        # Add to rolling history (newest first)
+        self.status_history.insert(0, (now, message))
+        # Keep only the most recent N
+        self.status_history = self.status_history[: self.STATUS_HISTORY_MAX]
+
+    def _make_status_history(self) -> Text:
+        """Build a vertical list of recent status messages with fading."""
+        now = time.monotonic()
+        lines = []
+
+        # Purge expired messages
+        self.status_history = [
+            (ts, msg) for ts, msg in self.status_history
+            if now - ts < self.STATUS_HISTORY_TTL
+        ]
+
+        for ts, msg in self.status_history:
+            age = now - ts
+            # Fade: full brightness → dim as it ages
+            if age < 1.2:
+                style = "bold yellow"
+            elif age < 2.8:
+                style = "yellow"
+            else:
+                style = "dim"
+
+            # Truncate long messages so they don’t push the layout
+            display = msg if len(msg) <= 28 else msg[:25] + "…"
+            lines.append(f"[{style}]{display}[/]")
+
+        if not lines:
+            return Text("")
+
+        return Text.from_markup("\n".join(lines))
 
     def _detect_format(self, msg: mido.Message) -> None:
         """
@@ -864,8 +902,23 @@ class Duality:
         else:
             self.status_message = ""
 
+        # --- Rolling status history (right side) ---
+        history_text = self._make_status_history()
+
+        term_width = console.width or 80
+        use_side_history = term_width >= 118 and str(history_text).strip() != ""
+
+        if use_side_history:
+            side_by_side = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+            side_by_side.add_column("channels", ratio=3)
+            side_by_side.add_column("history", width=30, no_wrap=False)
+            side_by_side.add_row(channel_table, history_text)
+            content = Group(header, table, side_by_side, footer, status_line)
+        else:
+            content = Group(header, table, channel_table, footer, status_line)
+
         return Panel(
-            Group(header, table, channel_table, footer, status_line),
+            content,
             title=f"[bold magenta]Duality v{VERSION}[/]",
             border_style="bright_blue",
             padding=(0, 1),
