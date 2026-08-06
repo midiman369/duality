@@ -61,6 +61,7 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, TextColumn
 from rich.table import Table
 from rich.text import Text
+from rich.markup import escape
 
 mido.set_backend("mido.backends.rtmidi")
 
@@ -91,6 +92,19 @@ GS_CHORUS_MACRO = {
     5: "Flanger",
     6: "Short Delay",
     7: "Short Delay (FB)",
+}
+
+GS_DELAY_MACRO = {
+    0: "Delay 1",
+    1: "Delay 2",
+    2: "Delay 3",
+    3: "Delay 4",
+    4: "Pan Delay 1",
+    5: "Pan Delay 2",
+    6: "Pan Delay 3",
+    7: "Pan Delay 4",
+    8: "Delay → Reverb",
+    9: "Pan Repeat",
 }
 
 # Key = (MSB, LSB) from address 40 03 00
@@ -488,7 +502,7 @@ class Duality:
 
             # Truncate long messages so they don’t push the layout
             display = msg if len(msg) <= 32 else msg[:29] + "…"
-            lines.append(f"[{style}]{display}[/]")
+            lines.append(f"[{style}]{escape(display)}[/]")
 
         if not lines:
             return Text("")
@@ -569,9 +583,11 @@ class Duality:
                 name = GS_CHORUS_MACRO.get(val, f"Type {val}")
                 return f"GS Chorus: {name}"
 
-            # Delay (generic for now)
-            if aa == 0x40 and bb == 0x01 and 0x40 <= cc <= 0x4F:
-                return "GS Delay"
+            # Delay Macro
+            if aa == 0x40 and bb == 0x01 and cc == 0x50 and len(data) >= 8:
+                val = data[7]
+                name = GS_DELAY_MACRO.get(val, f"Type {val}")
+                return f"GS Delay: {name}"
 
             # EFX Type (address 40 03 00)
             if aa == 0x40 and bb == 0x03 and cc == 0x00 and len(data) >= 9:
@@ -589,7 +605,8 @@ class Duality:
 
             # Display string (common SC / GS address 10 00 00)
             if aa == 0x10 and bb == 0x00 and cc == 0x00 and len(data) >= 8:
-                text = self._extract_display_text(data[7:], max_len=32)
+                payload = data[7:-1] if len(data) > 8 else data[7:]
+                text = self._extract_display_text(payload, max_len=32)
                 if text:
                     return f"GS Display: {text}"
                 return "GS Display"
@@ -666,7 +683,9 @@ class Duality:
 
             # Display message (20 00 00) – 20 characters
             if aa == 0x20 and bb == 0x00 and cc == 0x00 and len(data) >= 8:
-                text = self._extract_display_text(data[7:], max_len=20)
+                # data[7:] is chars + trailing Roland checksum – exclude checksum
+                payload = data[7:-1] if len(data) > 8 else data[7:]
+                text = self._extract_display_text(payload, max_len=20)
                 if text:
                     return f"MT-32 Display: {text}"
                 return "MT-32 Display"
@@ -1229,7 +1248,7 @@ class Duality:
         # Status message row (auto-clears)
         status_line = Text("")
         if self.status_message and time.monotonic() < self.status_message_time:
-            status_line = Text.from_markup(f"[bold yellow]{self.status_message}[/]")
+            status_line = Text.from_markup(f"[bold yellow]{escape(self.status_message)}[/]")
         else:
             self.status_message = ""
 
@@ -1257,7 +1276,7 @@ class Duality:
             if self.status_message and time.monotonic() < self.status_message_time:
                 # Allow wrapping for longer messages
                 status_row = Text.from_markup(
-                    f"[cyan]Status Message:[/]   [bold yellow]{self.status_message}[/]"
+                    f"[cyan]Status Message:[/]   [bold yellow]{escape(self.status_message)}[/]"
                 )
             else:
                 status_row = Text.from_markup("[cyan]Status Message:[/]   [dim]—[/]")
