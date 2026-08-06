@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.9.4"
+VERSION = "0.9.3"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -165,7 +165,7 @@ GS_EFX_TYPES = {
     (0x04, 0x04): "Clean Gt Multi 1",
     (0x04, 0x05): "Bass Multi",
     (0x04, 0x06): "Rhodes Multi",
-
+    (0x05, 0x00): "Keyboard Multi",
     (0x11, 0x00): "Cho/Delay",
     (0x11, 0x01): "FL/Delay",
     (0x11, 0x02): "Cho/Flanger",
