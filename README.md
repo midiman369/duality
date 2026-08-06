@@ -6,6 +6,12 @@ Duality routes MIDI notes across two or more sound modules / synthesizers to max
 
 It is designed for musicians and retro-computing enthusiasts who want to combine multiple hardware MIDI modules and treat them as one higher-polyphony instrument.
 
+<img width="1080" height="260" alt="20260806-0555-53 2798323" src="https://github.com/user-attachments/assets/38f339ec-0894-41b3-b933-a882c6dec397" />
+
+<img width="1080" height="260" alt="20260806-0550-42 8483259" src="https://github.com/user-attachments/assets/55dbf0c4-9be0-4747-8fae-65511ae5bcd0" />
+
+<img width="1080" height="260" alt="20260806-0603-15 4788434" src="https://github.com/user-attachments/assets/56312654-1d04-429c-b382-35203fe7053d" />
+
 ---
 
 ## Features
@@ -110,6 +116,8 @@ While running, Duality shows a live panel with:
 - Last chord size and activity information
 - Format badge when GM / GS / XG / MT-32 SysEx is detected
 - Human-readable SysEx status (effects, resets, display text, etc.) plus a short rolling history
+
+<img width="1086" height="269" alt="image" src="https://github.com/user-attachments/assets/767d3c82-0850-48d3-b060-7df83c8da3c7" />
 
 ---
 
