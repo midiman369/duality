@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.9.3"
+VERSION = "0.9.5"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -19,6 +19,11 @@ Features
 • Full panic / All Notes Off handling
 • Live status panel with per-port meters, channel activity,
   Volume / Pan / Mod Wheel / Pitch Bend, and activity counters
+• Rolling status history + format badge (GM / GM2 / GS / XG / MT-32)
+• SysEx recognition & human-readable status for:
+    – GS: Reset, Reverb/Chorus macros, EFX/MFX types, part EFX on/off, display text
+    – XG: System On, Reverb/Chorus/Variation/Insertion types, display text
+    – MT-32: Display text, reverb mode/time/level, master volume/tune
 • Redundant controller filtering (keeps devices in sync while reducing traffic)
 • Arbitrary number of output ports (default 2)
 
@@ -62,6 +67,294 @@ mido.set_backend("mido.backends.rtmidi")
 POLY_DEFAULT = 24
 CHORD_MS_DEFAULT = 30.0
 
+# ----------------------------------------------------------------------
+# GS recognition tables (Based on SC-8850 / GS Standard)
+# ----------------------------------------------------------------------
+
+GS_REVERB_MACRO = {
+    0: "Room 1",
+    1: "Room 2",
+    2: "Room 3",
+    3: "Hall 1",
+    4: "Hall 2",
+    5: "Plate",
+    6: "Delay",
+    7: "Panning Delay",
+}
+
+GS_CHORUS_MACRO = {
+    0: "Chorus 1",
+    1: "Chorus 2",
+    2: "Chorus 3",
+    3: "Chorus 4",
+    4: "Feedback Chorus",
+    5: "Flanger",
+    6: "Short Delay",
+    7: "Short Delay (FB)",
+}
+
+# Key = (MSB, LSB) from address 40 03 00
+GS_EFX_TYPES = {
+    (0x00, 0x00): "Thru",
+
+    # Filter
+    (0x01, 0x00): "Stereo-EQ",
+    (0x01, 0x01): "Spectrum",
+    (0x01, 0x02): "Enhancer",
+    (0x01, 0x03): "Humanizer",
+
+    # Distortion
+    (0x01, 0x10): "Overdrive",
+    (0x01, 0x11): "Distortion",
+
+    # Modulation
+    (0x01, 0x20): "Phaser",
+    (0x01, 0x21): "Auto Wah",
+    (0x01, 0x22): "Rotary",
+    (0x01, 0x23): "Stereo Flanger",
+    (0x01, 0x24): "Step Flanger",
+    (0x01, 0x25): "Tremolo",
+    (0x01, 0x26): "Auto Pan",
+
+    # Compressor
+    (0x01, 0x30): "Compressor",
+    (0x01, 0x31): "Limiter",
+
+    # Chorus
+    (0x01, 0x40): "Hexa Chorus",
+    (0x01, 0x41): "Tremolo Chorus",
+    (0x01, 0x42): "Stereo Chorus",
+    (0x01, 0x43): "Space-D",
+    (0x01, 0x44): "3D Chorus",
+
+    # Delay / Reverb
+    (0x01, 0x50): "Stereo Delay",
+    (0x01, 0x51): "Mod Delay",
+    (0x01, 0x52): "3 Tap Delay",
+    (0x01, 0x53): "4 Tap Delay",
+    (0x01, 0x54): "Time Ctrl Delay",
+    (0x01, 0x55): "Reverb",
+    (0x01, 0x56): "Gate Reverb",
+    (0x01, 0x57): "3D Delay",
+
+    # Pitch
+    (0x01, 0x60): "Pitch Shifter",
+    (0x01, 0x61): "2 Voice Pitch Shifter",
+
+    # Others / Lo-Fi
+    (0x01, 0x70): "Feedback Pitch Shifter",
+    (0x01, 0x71): "3D Auto",
+    (0x01, 0x72): "3D Manual",
+    (0x01, 0x73): "Lo-Fi 1",
+    (0x01, 0x74): "Lo-Fi 2",
+
+    # Series multi-effects
+    (0x02, 0x00): "OD → Chorus",
+    (0x02, 0x01): "OD → Flanger",
+    (0x02, 0x02): "OD → Delay",
+    (0x02, 0x03): "OD → Phaser",
+    (0x02, 0x04): "Dist → Chorus",
+    (0x02, 0x05): "Dist → Flanger",
+    (0x02, 0x06): "Dist → Delay",
+    (0x02, 0x07): "Dist → Phaser",
+    (0x02, 0x08): "Enh → Chorus",
+    (0x02, 0x09): "Enh → Flanger",
+    (0x02, 0x0A): "Enh → Delay",
+    (0x02, 0x0B): "Enh → Phaser",
+
+    # Higher multi / parallel
+    (0x04, 0x00): "Rotary Multi",
+    (0x04, 0x01): "Guitar Multi 1",
+    (0x04, 0x02): "Guitar Multi 2",
+    (0x04, 0x03): "Guitar Multi 3",
+    (0x04, 0x04): "Clean Gt Multi 1",
+    (0x04, 0x05): "Bass Multi",
+    (0x04, 0x06): "Rhodes Multi",
+    (0x05, 0x00): "Keyboard Multi",
+    (0x11, 0x00): "Cho/Delay",
+    (0x11, 0x01): "FL/Delay",
+    (0x11, 0x02): "Cho/Flanger",
+    (0x11, 0x03): "OD1/OD2",
+    (0x11, 0x04): "OD/Rotary",
+    (0x11, 0x05): "OD/Phaser",
+    (0x11, 0x06): "OD/Auto Wah",
+    (0x11, 0x07): "PH/Rotary",
+    (0x11, 0x08): "PH/Auto Wah",
+}
+
+# ----------------------------------------------------------------------
+# MT-32 recognition tables (Based on Roland MT-32 and compatibles)
+# ----------------------------------------------------------------------
+MT32_REVERB_MODES = {
+    0: "Room",
+    1: "Hall",
+    2: "Plate",
+    3: "Tap Delay",
+}
+
+# ----------------------------------------------------------------------
+# XG recognition tables (Based on Yamaha MU128 / XG standard)
+# Key = (MSB, LSB)
+# ----------------------------------------------------------------------
+
+XG_REVERB_TYPES = {
+    (0x00, 0x00): "No Effect",
+    (0x01, 0x00): "Hall 1",
+    (0x01, 0x01): "Hall 2",
+    (0x02, 0x00): "Room 1",
+    (0x02, 0x01): "Room 2",
+    (0x02, 0x02): "Room 3",
+    (0x03, 0x00): "Stage 1",
+    (0x03, 0x01): "Stage 2",
+    (0x04, 0x00): "Plate",
+    (0x10, 0x00): "White Room",
+    (0x11, 0x00): "Tunnel",
+    (0x12, 0x00): "Canyon",
+    (0x13, 0x00): "Basement",
+}
+
+XG_CHORUS_TYPES = {
+    (0x00, 0x00): "No Effect",
+    (0x41, 0x00): "Chorus 1",
+    (0x41, 0x01): "Chorus 2",
+    (0x41, 0x02): "Chorus 3",
+    (0x41, 0x08): "Chorus 4",
+    (0x42, 0x00): "Celeste 1",
+    (0x42, 0x01): "Celeste 2",
+    (0x42, 0x02): "Celeste 3",
+    (0x42, 0x08): "Celeste 4",
+    (0x43, 0x00): "Flanger 1",
+    (0x43, 0x01): "Flanger 2",
+    (0x43, 0x08): "Flanger 3",
+    (0x44, 0x00): "Symphonic",
+    (0x57, 0x00): "Ensemble Detune",
+    (0x48, 0x00): "Phaser 1",
+}
+
+# Variation is the big flexible effect block (system or insertion mode)
+XG_VARIATION_TYPES = {
+    (0x00, 0x00): "No Effect",
+    (0x01, 0x00): "Hall 1",
+    (0x01, 0x01): "Hall 2",
+    (0x02, 0x00): "Room 1",
+    (0x02, 0x01): "Room 2",
+    (0x02, 0x02): "Room 3",
+    (0x03, 0x00): "Stage 1",
+    (0x03, 0x01): "Stage 2",
+    (0x04, 0x00): "Plate",
+    (0x05, 0x00): "Delay L,C,R",
+    (0x06, 0x00): "Delay L,R",
+    (0x07, 0x00): "Echo",
+    (0x08, 0x00): "Cross Delay",
+    (0x09, 0x00): "ER 1",
+    (0x09, 0x01): "ER 2",
+    (0x0A, 0x00): "Gate Reverb",
+    (0x0B, 0x00): "Reverse Gate",
+    (0x10, 0x00): "White Room",
+    (0x11, 0x00): "Tunnel",
+    (0x12, 0x00): "Canyon",
+    (0x13, 0x00): "Basement",
+    (0x14, 0x00): "Karaoke 1",
+    (0x14, 0x01): "Karaoke 2",
+    (0x14, 0x02): "Karaoke 3",
+    (0x41, 0x00): "Chorus 1",
+    (0x41, 0x01): "Chorus 2",
+    (0x41, 0x02): "Chorus 3",
+    (0x41, 0x08): "Chorus 4",
+    (0x42, 0x00): "Celeste 1",
+    (0x42, 0x01): "Celeste 2",
+    (0x42, 0x02): "Celeste 3",
+    (0x42, 0x08): "Celeste 4",
+    (0x43, 0x00): "Flanger 1",
+    (0x43, 0x01): "Flanger 2",
+    (0x43, 0x08): "Flanger 3",
+    (0x44, 0x00): "Symphonic",
+    (0x45, 0x00): "Rotary Speaker",
+    (0x46, 0x00): "Tremolo",
+    (0x47, 0x00): "Auto Pan",
+    (0x48, 0x00): "Phaser 1",
+    (0x48, 0x08): "Phaser 2",
+    (0x49, 0x00): "Distortion",
+    (0x49, 0x01): "Comp+Distortion",
+    (0x4A, 0x00): "Overdrive",
+    (0x4B, 0x00): "Amp Simulator",
+    (0x4C, 0x00): "3-Band EQ",
+    (0x4D, 0x00): "2-Band EQ",
+    (0x4E, 0x00): "Auto Wah",
+    (0x4E, 0x01): "Auto Wah+Dist",
+    (0x4E, 0x02): "Auto Wah+Overdrive",
+    (0x50, 0x00): "Pitch Change 1",
+    (0x50, 0x01): "Pitch Change 2",
+    (0x51, 0x00): "Harmonic Enhancer",
+    (0x52, 0x00): "Touch Wah 1",
+    (0x52, 0x01): "Touch Wah+Dist",
+    (0x52, 0x02): "Touch Wah+Overdrive",
+    (0x52, 0x08): "Touch Wah 2",
+    (0x53, 0x00): "Compressor",
+    (0x54, 0x00): "Noise Gate",
+    (0x55, 0x00): "Voice Cancel",
+    (0x56, 0x00): "2-Way Rotary Speaker",
+    (0x57, 0x00): "Ensemble Detune",
+    (0x58, 0x00): "Ambience",
+    (0x5D, 0x00): "Talking Modulator",
+    (0x5E, 0x00): "Lo-Fi",
+    (0x5F, 0x00): "Dist+Delay",
+    (0x5F, 0x01): "Overdrive+Delay",
+    (0x60, 0x00): "Comp+Dist+Delay",
+    (0x60, 0x01): "Comp+Overdrive+Delay",
+    (0x61, 0x00): "Wah+Dist+Delay",
+    (0x61, 0x01): "Wah+Overdrive+Delay",
+    (0x40, 0x00): "Thru",
+}
+
+# Insertion 1 / 2 use a subset of the same type codes
+XG_INSERTION_TYPES = {
+    (0x40, 0x00): "Thru",
+    (0x01, 0x00): "Hall 1",
+    (0x01, 0x01): "Hall 2",
+    (0x02, 0x00): "Room 1",
+    (0x02, 0x01): "Room 2",
+    (0x02, 0x02): "Room 3",
+    (0x03, 0x00): "Stage 1",
+    (0x03, 0x01): "Stage 2",
+    (0x04, 0x00): "Plate",
+    (0x05, 0x00): "Delay L,C,R",
+    (0x06, 0x00): "Delay L,R",
+    (0x07, 0x00): "Echo",
+    (0x08, 0x00): "Cross Delay",
+    (0x14, 0x00): "Karaoke 1",
+    (0x14, 0x01): "Karaoke 2",
+    (0x14, 0x02): "Karaoke 3",
+    (0x41, 0x00): "Chorus 1",
+    (0x41, 0x01): "Chorus 2",
+    (0x41, 0x02): "Chorus 3",
+    (0x41, 0x08): "Chorus 4",
+    (0x42, 0x00): "Celeste 1",
+    (0x42, 0x01): "Celeste 2",
+    (0x42, 0x02): "Celeste 3",
+    (0x42, 0x08): "Celeste 4",
+    (0x43, 0x00): "Flanger 1",
+    (0x43, 0x01): "Flanger 2",
+    (0x43, 0x08): "Flanger 3",
+    (0x44, 0x00): "Symphonic",
+    (0x45, 0x00): "Rotary Speaker",
+    (0x46, 0x00): "Tremolo",
+    (0x47, 0x00): "Auto Pan",
+    (0x48, 0x00): "Phaser 1",
+    (0x49, 0x00): "Distortion",
+    (0x4A, 0x00): "Overdrive",
+    (0x4B, 0x00): "Amp Simulator",
+    (0x4C, 0x00): "3-Band EQ",
+    (0x4D, 0x00): "2-Band EQ",
+    (0x4E, 0x00): "Auto Wah",
+    (0x51, 0x00): "Harmonic Enhancer",
+    (0x52, 0x00): "Touch Wah 1",
+    (0x52, 0x08): "Touch Wah 2",
+    (0x53, 0x00): "Compressor",
+    (0x54, 0x00): "Noise Gate",
+    (0x57, 0x00): "Ensemble Detune",
+}
+
 console = Console()
 
 class Duality:
@@ -95,19 +388,23 @@ class Duality:
         self.voice_display = [0.0] * 16   # lingering voice count for display
         self.drop_count = 0
         self.filtered_count = 0
-        
+        self.detected_format: str | None = None      # "GM", "GM2", "GS", "XG", "MT-32"
+        self.format_pulse_time: float = 0.0          # when the format badge stops glowing
+        self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
+        self.STATUS_HISTORY_MAX = 7
+        self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
+ 
         # Per-channel controller state (0-indexed)
         self.vol = [None] * 16          # CC7
-        self.pan = [None] * 16           # CC10 (64 = center)
-        self.mod = [None] * 16            # CC1
-        self.pitch = [None] * 16          # Pitch bend (display value)
+        self.pan = [None] * 16          # CC10 (64 = center)
+        self.mod = [None] * 16          # CC1
+        self.pitch = [None] * 16        # Pitch bend (display value)
         
         # Last time each controller changed (for highlight)
         self.vol_time   = [0.0] * 16
         self.pan_time   = [0.0] * 16
         self.mod_time   = [0.0] * 16
         self.pitch_time = [0.0] * 16
-        
         
         # Last value sent to each port for deduplication
         # Key: (port_index, channel, type_key) → last value
@@ -150,10 +447,289 @@ class Duality:
     # ------------------------------------------------------------------
     
     def _set_status(self, message: str, duration: float = 5.0):
-        """Show a temporary message in the bottom status row."""
+        """
+        Show a temporary message in the bottom row.
+        When a new message arrives, the previous one is moved into history.
+        """
+        now = time.monotonic()
+
+        # Push the previous bottom message into history (if it still exists)
+        if self.status_message and self.status_message != message:
+            self.status_history.insert(0, (now, self.status_message))
+            self.status_history = self.status_history[: self.STATUS_HISTORY_MAX]
+
         self.status_message = message
-        self.status_message_time = time.monotonic() + duration
-    
+        self.status_message_time = now + duration
+
+    def _make_status_history(self) -> Text:
+        """Build a vertical list of recent status messages with fading."""
+        now = time.monotonic()
+        lines = []
+
+        # Age out old entries
+        self.status_history = [
+            (ts, msg) for ts, msg in self.status_history
+            if now - ts < self.STATUS_HISTORY_TTL
+        ]
+
+        for ts, msg in self.status_history:
+            # Never show the exact message that is currently in the bottom row
+            if msg == self.status_message and now < self.status_message_time:
+                continue
+            
+            # Fade: full brightness → dim as it ages
+            age = now - ts
+            if age < 1.2:
+                style = "bold yellow"
+            elif age < 2.8:
+                style = "yellow"
+            else:
+                style = "dim"
+
+            # Truncate long messages so they don’t push the layout
+            display = msg if len(msg) <= 32 else msg[:29] + "…"
+            lines.append(f"[{style}]{display}[/]")
+
+        if not lines:
+            return Text("")
+
+        return Text.from_markup("\n".join(lines))
+
+    def _detect_format(self, msg: mido.Message) -> None:
+        """
+        Detect GM / GM2 / GS / XG / MT-32 from SysEx and light the format badge.
+        """
+        if msg.type != "sysex":
+            return
+
+        data = list(msg.data)
+        if len(data) < 4:
+            return
+
+        fmt = None
+
+        # Universal Non-Realtime → GM / GM2
+        # F0 7E 7F 09 01 F7  = GM System On
+        # F0 7E 7F 09 03 F7  = GM2 System On
+        if data[0] == 0x7E and len(data) >= 4 and data[2] == 0x09:
+            if data[3] == 0x01:
+                fmt = "GM"
+            elif data[3] == 0x03:
+                fmt = "GM2"
+
+        # Roland
+        elif data[0] == 0x41 and len(data) >= 5:
+            model = data[2]
+            if model == 0x42:                     # GS (SC-55 / SC-88 / SC-8850 family)
+                fmt = "GS"
+            elif model == 0x16:                   # MT-32 / CM-32 / CM-64 family
+                fmt = "MT-32"
+
+        # Yamaha XG
+        # Most common form: F0 43 1n 4C ...
+        elif data[0] == 0x43 and len(data) >= 4 and data[2] == 0x4C:
+            fmt = "XG"
+
+        if fmt:
+            self.detected_format = fmt
+            self.format_pulse_time = time.monotonic() + 2.8
+            # Optional short status message (comment out if you prefer quieter)
+            #self._set_status(f"Detected {fmt}", duration=2.0)
+          
+    def _describe_sysex(self, msg: mido.Message) -> str:
+        """
+        Return a human-readable description of a SysEx message.
+        Currently focused on GS; falls back gracefully.
+        """
+        data = list(msg.data)
+        if len(data) < 4:
+            return "SysEx"
+
+        # ----- GS (Roland Model ID 42) -----
+        if data[0] == 0x41 and len(data) >= 6 and data[2] == 0x42 and data[3] == 0x12:
+            # Address is the next 3 bytes
+            if len(data) < 7:
+                return "GS SysEx"
+
+            aa, bb, cc = data[4], data[5], data[6]
+
+            # GS Reset
+            if aa == 0x40 and bb == 0x00 and cc == 0x7F:
+                return "GS Reset"
+
+            # Reverb Macro
+            if aa == 0x40 and bb == 0x01 and cc == 0x30 and len(data) >= 8:
+                val = data[7]
+                name = GS_REVERB_MACRO.get(val, f"Type {val}")
+                return f"GS Reverb: {name}"
+
+            # Chorus Macro
+            if aa == 0x40 and bb == 0x01 and cc == 0x38 and len(data) >= 8:
+                val = data[7]
+                name = GS_CHORUS_MACRO.get(val, f"Type {val}")
+                return f"GS Chorus: {name}"
+
+            # Delay (generic for now)
+            if aa == 0x40 and bb == 0x01 and 0x40 <= cc <= 0x4F:
+                return "GS Delay"
+
+            # EFX Type (address 40 03 00)
+            if aa == 0x40 and bb == 0x03 and cc == 0x00 and len(data) >= 9:
+                msb, lsb = data[7], data[8]
+                name = GS_EFX_TYPES.get((msb, lsb), f"{msb:02X} {lsb:02X}")
+                return f"GS EFX {name}"
+
+            # EFX On/Off for a part (address 40 xx 22)
+            if aa == 0x40 and cc == 0x22 and len(data) >= 8:
+                # bb is the block/part indicator
+                # Common mapping for parts 1-16 is roughly 0x11-0x1F / 0x41-...
+                part = (bb & 0x0F) + 1
+                state = "On" if data[7] == 0x01 else "Off"
+                return f"GS EFX {state} → Part {part}"
+
+            # Display string (common SC / GS address 10 00 00)
+            if aa == 0x10 and bb == 0x00 and cc == 0x00 and len(data) >= 8:
+                text = self._extract_display_text(data[7:], max_len=32)
+                if text:
+                    return f"GS Display: {text}"
+                return "GS Display"
+
+            return "GS SysEx"
+
+        # ----- XG (Yamaha Model ID 4C) -----
+        if data[0] == 0x43 and len(data) >= 6 and data[2] == 0x4C:
+            # XG has no command byte – address starts immediately
+            if len(data) < 6:
+                return "XG SysEx"
+
+            aa, bb, cc = data[3], data[4], data[5]   # ← was data[4], data[5], data[6]
+
+            # XG System On
+            if aa == 0x00 and bb == 0x00 and cc == 0x7E:
+                return "XG System On"
+
+            # Reverb Type (02 01 00)
+            if aa == 0x02 and bb == 0x01 and cc == 0x00 and len(data) >= 8:
+                msb, lsb = data[6], data[7]
+                name = (XG_REVERB_TYPES.get((msb, lsb))
+                        or XG_REVERB_TYPES.get((msb, 0x00))
+                        or f"{msb:02X} {lsb:02X}")
+                return f"XG Reverb: {name}"
+
+            # Chorus Type (02 01 20)
+            if aa == 0x02 and bb == 0x01 and cc == 0x20 and len(data) >= 8:
+                msb, lsb = data[6], data[7]
+                name = (XG_CHORUS_TYPES.get((msb, lsb))
+                        or XG_CHORUS_TYPES.get((msb, 0x00))
+                        or f"{msb:02X} {lsb:02X}")
+                return f"XG Chorus: {name}"
+
+            # Variation Type (02 01 40)
+            if aa == 0x02 and bb == 0x01 and cc == 0x40 and len(data) >= 8:
+                msb, lsb = data[6], data[7]
+                name = (XG_VARIATION_TYPES.get((msb, lsb))
+                        or XG_VARIATION_TYPES.get((msb, 0x00))
+                        or f"{msb:02X} {lsb:02X}")
+                return f"XG Variation: {name}"
+
+            # Insertion Effect 1 Type (03 00 00)
+            if aa == 0x03 and bb == 0x00 and cc == 0x00 and len(data) >= 8:
+                msb, lsb = data[6], data[7]
+                name = (XG_INSERTION_TYPES.get((msb, lsb))
+                        or XG_INSERTION_TYPES.get((msb, 0x00))
+                        or f"{msb:02X} {lsb:02X}")
+                return f"XG Ins1: {name}"
+
+            # Insertion Effect 2 Type (03 01 00)
+            if aa == 0x03 and bb == 0x01 and cc == 0x00 and len(data) >= 8:
+                msb, lsb = data[6], data[7]
+                name = (XG_INSERTION_TYPES.get((msb, lsb))
+                        or XG_INSERTION_TYPES.get((msb, 0x00))
+                        or f"{msb:02X} {lsb:02X}")
+                return f"XG Ins2: {name}"
+
+            # Display Letter (06 00 00) – up to 32 ASCII characters
+            if aa == 0x06 and bb == 0x00 and cc == 0x00 and len(data) >= 7:
+                text = self._extract_display_text(data[6:], max_len=32)
+                if text:
+                    return f"XG Display: {text}"
+                return "XG Display"
+
+            return "XG SysEx"
+
+        # ----- MT-32 / CM-32 / CM-64 (Roland Model ID 16) -----
+        if data[0] == 0x41 and len(data) >= 6 and data[2] == 0x16 and data[3] == 0x12:
+            if len(data) < 7:
+                return "MT-32 SysEx"
+
+            aa, bb, cc = data[4], data[5], data[6]
+
+            # Display message (20 00 00) – 20 characters
+            if aa == 0x20 and bb == 0x00 and cc == 0x00 and len(data) >= 8:
+                text = self._extract_display_text(data[7:], max_len=20)
+                if text:
+                    return f"MT-32 Display: {text}"
+                return "MT-32 Display"
+
+            # System area – Reverb Mode (10 00 01)
+            if aa == 0x10 and bb == 0x00 and cc == 0x01 and len(data) >= 8:
+                mode = data[7]
+                name = MT32_REVERB_MODES.get(mode, f"Mode {mode}")
+                return f"MT-32 Reverb: {name}"
+
+            # Reverb Time (10 00 02)
+            if aa == 0x10 and bb == 0x00 and cc == 0x02 and len(data) >= 8:
+                return f"MT-32 Reverb Time: {data[7]}"
+
+            # Reverb Level (10 00 03)
+            if aa == 0x10 and bb == 0x00 and cc == 0x03 and len(data) >= 8:
+                return f"MT-32 Reverb Level: {data[7]}"
+
+            # Master Volume (10 00 16) – present on MT-32 / CM-32L
+            if aa == 0x10 and bb == 0x00 and cc == 0x16 and len(data) >= 8:
+                return f"MT-32 Master Volume: {data[7]}"
+
+            # Master Tune (10 00 00) – only when this is a single-parameter write
+            if aa == 0x10 and bb == 0x00 and cc == 0x00 and len(data) == 9:
+                # data[7] = value, data[8] = checksum typically
+                return f"MT-32 Master Tune: {data[7]}"
+
+            # Patch Temporary area (03 xx …)
+            if aa == 0x03:
+                part = bb + 1  # rough; parts are block-indexed
+                return f"MT-32 Patch Temp (block {bb:02X})"
+
+            # Timbre Temporary area (04 xx …)
+            if aa == 0x04:
+                return f"MT-32 Timbre Temp (block {bb:02X})"
+
+            return "MT-32 SysEx"
+
+        # Fallbacks
+        if data[0] == 0x7E:
+            return "GM/Universal SysEx"
+        if data[0] == 0x43:
+            return "XG SysEx"
+        if data[0] == 0x41 and len(data) >= 3 and data[2] == 0x16:
+            return "MT-32 SysEx"
+
+        return "SysEx"
+  
+    def _extract_display_text(self, raw: list[int], max_len: int = 32) -> str:
+        """Pull printable ASCII from SysEx payload; stop at first NUL/non-printable."""
+        chars = []
+        for b in raw[:max_len]:
+            if b == 0x00:
+                break
+            if 32 <= b <= 126:
+                chars.append(chr(b))
+            else:
+                # skip or replace non-printable
+                if chars:
+                    break
+        text = "".join(chars).strip()
+        return text if text else ""
+
     def _count(self, port: int) -> int:
         return sum(1 for info in self.active.values() if info["port"] == port)
         
@@ -343,9 +919,19 @@ class Duality:
             self.panic(reason=f"received {msg}")
             return
 
-        # SysEx → show in status row and forward to all devices
+        # SysEx → detect format, describe it, show in status, and forward
         if msg.type == "sysex":
-            self._set_status("SysEx sent to all devices", duration=3.0)
+            self._detect_format(msg)
+            description = self._describe_sysex(msg)
+
+            # Suppress pure noise
+            if description in ("GS SysEx", "SysEx", "GM/Universal SysEx", "XG SysEx", "MT-32 SysEx"):
+                # Only show the generic message if history is empty
+                if not self.status_history and not self.status_message:
+                    self._set_status(description, duration=2.5)
+            else:
+                self._set_status(description, duration=3.5)
+
             for out in self.outs:
                 out.send(msg)
             return
@@ -426,10 +1012,36 @@ class Duality:
                 mins = int(ago // 60)
                 last_activity = f"{mins}m ago"
 
-        # Activity pulse
-        pulse = ""
+        # Activity pulse – always present so layout stays stable
         if time.monotonic() - self.last_activity_time < 0.15:
             pulse = "  [bold bright_green]♪[/]"
+        else:
+            pulse = "  [dim]♪[/]"          # grayed-out residual
+
+        # Format badge / pulse
+        format_badge = ""
+        if self.detected_format:
+            colours = {
+                "GM": "bright_cyan",
+                "GM2": "bright_cyan",
+                "GS": "bright_magenta",
+                "XG": "bright_yellow",
+                "MT-32": "bright_red",
+            }
+            col = colours.get(self.detected_format, "white")
+            if time.monotonic() < self.format_pulse_time:
+                # Bright while the pulse is active
+                format_badge = f"  [bold {col}][{self.detected_format}][/]"
+            else:
+                # Dim residual so you can still see the last format
+                format_badge = f"  [dim][{self.detected_format}][/]"
+
+        # If the bottom status message has just expired, move it into history
+        now = time.monotonic()
+        if self.status_message and now >= self.status_message_time:
+            self.status_history.insert(0, (now, self.status_message))
+            self.status_history = self.status_history[: self.STATUS_HISTORY_MAX]
+            self.status_message = ""
 
         # --- Port bars ---
         table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
@@ -582,10 +1194,9 @@ class Duality:
         # Join with a single space between columns
         sep = " "
 
-        channel_table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+        channel_table = Table(show_header=False, box=None, padding=(0, 0), expand=True)
         channel_table.add_column("label", style="cyan", width=14, no_wrap=True)
         channel_table.add_column("values", ratio=1)
-
         channel_table.add_row("MIDI Channel", Text.from_markup(sep.join(ch_num_parts)))
         channel_table.add_row("Voice Count",  Text.from_markup(sep.join(voice_parts)))
         channel_table.add_row("Vol",          Text.from_markup(sep.join(vol_parts)))
@@ -595,11 +1206,11 @@ class Duality:
 
         # Header
         header = Text.from_markup(
-            f"[bold]Live Status[/]  •  "
-            f"Total: [bold]{total:3d}[/]  •  Peak: [bold]{self.peak_voices:3d}[/]  •  "
-            f"Util: [bold]{util_pct:2d}%[/]  •  "
-            f"Drops: {self.drop_count}  •  Steals: {self.steal_count}  •  Filtered: {self.filtered_count}"
-            f"{pulse}"
+            f"[bold]Live Status[/] • "
+            f"Total: [bold]{total:3d}[/] • Peak: [bold]{self.peak_voices:3d}[/] • "
+            f"Util: [bold]{util_pct:2d}%[/] • "
+            f"Drops: {self.drop_count} • Steals: {self.steal_count} • Filtered: {self.filtered_count}"
+            f"{pulse}{format_badge}"
         )
 
         # Footer
@@ -622,8 +1233,59 @@ class Duality:
         else:
             self.status_message = ""
 
+        # --- Rolling status history (right side) ---
+        history_text = self._make_status_history()
+
+        term_width = console.width or 80
+        use_side_history = term_width >= 118
+
+        if use_side_history:
+            # Combine channel table + labelled footer + status into one left column
+            left_column = Table(show_header=False, box=None, padding=(0, 0), expand=True)
+            left_column.add_column("content", ratio=1)
+
+            # 1. Channel activity block
+            left_column.add_row(channel_table)
+
+            # 2. Labelled footer (Chord / Activity)
+            footer_row = Text.from_markup(
+                f"[cyan]More Stats:[/]   [dim]{chord_text}   Last Activity: {last_activity}[/]"
+            )
+            left_column.add_row(footer_row)
+
+            # 3. Labelled status message (can wrap)
+            if self.status_message and time.monotonic() < self.status_message_time:
+                # Allow wrapping for longer messages
+                status_row = Text.from_markup(
+                    f"[cyan]Status Message:[/]   [bold yellow]{self.status_message}[/]"
+                )
+            else:
+                status_row = Text.from_markup("[cyan]Status Message:[/]   [dim]—[/]")
+                self.status_message = ""
+            left_column.add_row(status_row)
+
+            # History panel – height 9 now matches the taller left column
+            history_panel = Panel(
+                history_text if str(history_text).strip() else Text(" "),
+                border_style="bright_blue",
+                padding=(0, 0),
+                height=9,
+                title="[dim]Recent Status Messages[/]",
+                title_align="left",
+            )
+
+            side_by_side = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+            side_by_side.add_column("left", ratio=3)
+            side_by_side.add_column("history", width=32, no_wrap=False)
+            side_by_side.add_row(left_column, history_panel)
+
+            content = Group(header, table, side_by_side)
+        else:
+            # Narrow terminal – original stacked layout
+            content = Group(header, table, channel_table, footer, status_line)
+
         return Panel(
-            Group(header, table, channel_table, footer, status_line),
+            content,
             title=f"[bold magenta]Duality v{VERSION}[/]",
             border_style="bright_blue",
             padding=(0, 1),
