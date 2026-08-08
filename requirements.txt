@@ -1,3 +1,4 @@
+# Duality runtime dependencies (no extras required for Crucible / sync-delay)
 mido[ports]
 python-rtmidi
 rich
