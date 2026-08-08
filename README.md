@@ -55,6 +55,7 @@ It is designed for musicians and retro-computing enthusiasts who want to combine
 - Redundant controller filtering (sync without excess traffic)
 - Arbitrary number of output ports (default 2; 1 allowed with `--alchemy`)
 - **Alchemy**: gate for future transcoding (not converting yet)
+- Graceful handling of dropped/lost **output** ports with automatic reconnect by name
 - Cross-platform (Windows, macOS, Linux)
 
 ---
@@ -212,6 +213,7 @@ Wide terminals (≥ ~118 columns) get the side history panel automatically.
 - Prefer **one** `mt32` destination when comparing MT-32 maps; balancing across SC + MUNT splits notes across different latencies.
 - Use `--sync-delay` to align a fast softsynth with slower USB hardware; leave at 0 when unused.
 - Tag multi-standard modules explicitly (`gs+gm2`) so GM2 set/lock does not “match nothing” and drop notes.
+- If a softsynth or hardware port disappears (app quit, player stop), Duality stays up and **retries reconnect** to the same port name. It does **not** re-send banks, programs, or mode resets — re-establish tone maps with your file/player as usual after a device restart.
 
 ---
 
