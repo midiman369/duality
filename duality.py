@@ -480,6 +480,7 @@ class Duality:
             self.detected_format = FORMAT_DISPLAY.get(input_format, input_format.upper())
             self.format_pulse_time = time.monotonic() + 2.8
         self.last_midi_time = time.monotonic()       # any MIDI activity (for 60s idle clear)
+        self.scpop_mode = False                       # SCPOP: broadcast notes to format-matched ports
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 7
         self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
@@ -602,11 +603,12 @@ class Duality:
 
     def _clear_format(self, reason: str = "manual") -> None:
         """Clear sticky session format (idle timeout, hotkey, or explicit)."""
-        if self.detected_format is None:
+        if self.detected_format is None and not self.scpop_mode:
             return
-        prev = self.detected_format
+        prev = self.detected_format or "none"
         self.detected_format = None
         self.format_pulse_time = 0.0
+        self.scpop_mode = False
         self._set_status(f"Format cleared ({prev} → none, {reason})", duration=3.0)
 
     def _check_format_idle(self) -> None:
@@ -680,6 +682,25 @@ class Duality:
         # Most common form: F0 43 1n 4C ...
         elif data[0] == 0x43 and len(data) >= 4 and data[2] == 0x4C:
             fmt = "XG"
+
+        # SCPOP (Sound Canvas Pipe Organ Project) – Roland model 0x45 + "SCPOP" banner
+        # Multi-IN SC modules often leave only one port audible after init; we cannot
+        # know which Duality out is Part A, so broadcast notes to format-matched ports.
+        if data[0] == 0x41 and len(data) >= 8 and data[2] == 0x45:
+            try:
+                ascii_payload = bytes(
+                    b for b in data[4:] if 32 <= b <= 126
+                ).decode("ascii", errors="ignore")
+            except Exception:
+                ascii_payload = ""
+            if "SCPOP" in ascii_payload.upper() and not self.scpop_mode:
+                self.scpop_mode = True
+                if fmt is None:
+                    fmt = "GS"
+                self._set_status(
+                    "SCPOP detected – broadcasting notes to format-matched ports",
+                    duration=5.0,
+                )
 
         if fmt:
             prev = self.detected_format
@@ -812,6 +833,20 @@ class Duality:
 
             return "XG SysEx"
 
+        # ----- SCPOP / SC extended (Roland Model ID 45) -----
+        if data[0] == 0x41 and len(data) >= 6 and data[2] == 0x45:
+            try:
+                text_payload = bytes(
+                    b for b in data[7:] if 32 <= b <= 126
+                ).decode("ascii", errors="ignore").strip()
+            except Exception:
+                text_payload = ""
+            if text_payload:
+                if len(text_payload) > 40:
+                    text_payload = text_payload[:37] + "…"
+                return f"SCPOP: {text_payload}"
+            return "SCPOP SysEx"
+
         # ----- MT-32 / CM-32 / CM-64 (Roland Model ID 16) -----
         if data[0] == 0x41 and len(data) >= 6 and data[2] == 0x16 and data[3] == 0x12:
             if len(data) < 7:
@@ -908,7 +943,8 @@ class Duality:
         """
         candidates = []
         for key, info in self.active.items():
-            if info["port"] == port:
+            ports = info.get("ports", [info["port"]])
+            if port in ports:
                 candidates.append((info.get("velocity", 64), info["time"], key))
 
         if not candidates:
@@ -922,9 +958,11 @@ class Duality:
         ch, note = key
 
         off = mido.Message("note_off", channel=ch, note=note, velocity=0)
-        self.outs[port].send(off)
+        ports = self.active[key].get("ports", [port])
+        for p in ports:
+            self.outs[p].send(off)
+            self.voice_counts[p] = max(0, self.voice_counts[p] - 1)
         del self.active[key]
-        self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
         self.steal_count += 1
 
     def _choose_port(self, is_chord: bool) -> int:
@@ -1041,30 +1079,51 @@ class Duality:
                 if self.current_chord_size > self.peak_chord_size:
                     self.peak_chord_size = self.current_chord_size
 
-                port = self._choose_port(is_chord)
-                self.last_chord_port = port
+                eligible = self._eligible_note_ports()
+                if not eligible:
+                    eligible = list(range(self.n_ports))
 
-                # Real count for this port (more reliable than the running counter)
-                real_count = sum(1 for info in self.active.values() if info["port"] == port)
+                # SCPOP: broadcast the same note to every format-matched port.
+                # After init only one SC input may produce sound, but we cannot
+                # know which Duality out is Part A — broadcasting is safe.
+                if self.scpop_mode:
+                    targets = eligible
+                else:
+                    port = self._choose_port(is_chord)
+                    self.last_chord_port = port
+                    targets = [port]
 
-                if real_count >= self.poly_limits[port]:
-                    self._steal_least_important(port)
+                def _notes_on_port(p: int) -> int:
+                    return sum(
+                        1 for info in self.active.values()
+                        if p in info.get("ports", [info["port"]])
+                    )
 
-                # Re-check after possible steal
-                real_count = sum(1 for info in self.active.values() if info["port"] == port)
-                if real_count >= self.poly_limits[port]:
+                sent_ports = []
+                for port in targets:
+                    real_count = _notes_on_port(port)
+                    if real_count >= self.poly_limits[port]:
+                        self._steal_least_important(port)
+                    real_count = _notes_on_port(port)
+                    if real_count >= self.poly_limits[port]:
+                        continue  # this port full – try others when broadcasting
+                    self.outs[port].send(msg)
+                    self.voice_counts[port] += 1
+                    sent_ports.append(port)
+
+                if not sent_ports:
                     self.drop_count += 1
-                    return          # still full → drop the new note
+                    return
 
+                primary = sent_ports[0]
+                self.last_chord_port = primary
                 self.active[key] = {
-                    "port": port,
+                    "port": primary,
+                    "ports": sent_ports,
                     "time": now,
-                    "velocity": msg.velocity
+                    "velocity": msg.velocity,
                 }
-                self.voice_counts[port] += 1
-                self.outs[port].send(msg)
 
-                # Update peak
                 total_now = sum(self.voice_counts)
                 if total_now > self.peak_voices:
                     self.peak_voices = total_now
@@ -1072,9 +1131,10 @@ class Duality:
                 # Note Off
                 info = self.active.pop(key, None)
                 if info is not None:
-                    port = info["port"]
-                    self.outs[port].send(msg)
-                    self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+                    ports = info.get("ports") or [info["port"]]
+                    for port in ports:
+                        self.outs[port].send(msg)
+                        self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
                 else:
                     for out in self.outs:
                         out.send(msg)
@@ -1167,7 +1227,7 @@ class Duality:
         # Dynamic bar width – make bars longer so they align better with Channel Activity
         term_width = console.width or 80
         # Label (~16) + nums (~8) + padding/borders; tags need extra room
-        bar_width = max(20, term_width - 44)
+        bar_width = max(20, term_width - 34)
 
         # Overall utilisation
         total_limit = sum(self.poly_limits) or 1
@@ -1389,6 +1449,8 @@ class Duality:
             mode_badges += "  [bold bright_cyan][Crucible][/]"
         if self.alchemy:
             mode_badges += "  [bold bright_yellow][Alchemy][/]"
+        if self.scpop_mode:
+            mode_badges += "  [bold bright_green][SCPOP][/]"
 
         header = Text.from_markup(
             f"[bold]Live Status[/] • "
