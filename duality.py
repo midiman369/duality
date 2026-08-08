@@ -30,6 +30,7 @@ Features
 • Crucible: format-aware routing (SysEx + note affinity)
 • Alchemy: gate for future transcoding (allows single output)
 • Format state: strong SysEx lock, opposite switch, 60s idle clear, F hotkey
+• GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
 
 Usage examples
 --------------
@@ -104,6 +105,14 @@ DETECT_TO_TAG = {
     "GS": "gs",
     "XG": "xg",
     "MT-32": "mt32",
+}
+# Base Crucible compatibility: stream tag → allowed port tags
+FORMAT_COMPAT = {
+    "gm": {"gm", "gm2"},   # GM always reaches GM2 ports
+    "gm2": {"gm2"},
+    "gs": {"gs"},
+    "xg": {"xg"},
+    "mt32": {"mt32"},
 }
 
 # ----------------------------------------------------------------------
@@ -422,6 +431,7 @@ class Duality:
         alchemy: bool = False,
         crucible: bool = False,
         crucible_notes: str = "affinity",
+        crucible_gm_wide: bool = False,
         input_format: str | None = None,
     ):
         # Alchemy may run with a single output (transcode-only path).
@@ -440,6 +450,7 @@ class Duality:
         self.alchemy = alchemy
         self.crucible = crucible
         self.crucible_notes = crucible_notes if crucible_notes in ("affinity", "all") else "affinity"
+        self.crucible_gm_wide = bool(crucible_gm_wide)
 
         # Per-port format tags ("any" = untagged / receive everything)
         if out_formats is None:
@@ -527,7 +538,8 @@ class Duality:
         console.print(f"[green]Output ports[/]  : {self.n_ports}")
         console.print(f"[green]Chord window[/]  : {chord_window_ms:.0f} ms")
         if self.crucible:
-            console.print(f"[green]Crucible[/]      : on (notes={self.crucible_notes})")
+            wide = ", gm-wide" if self.crucible_gm_wide else ""
+            console.print(f"[green]Crucible[/]      : on (notes={self.crucible_notes}{wide})")
         if self.alchemy:
             console.print("[green]Alchemy[/]       : on (conversion not yet implemented)")
         if self.detected_format:
@@ -608,6 +620,7 @@ class Duality:
         """
         True if this port should receive traffic for the given session format.
         Untagged ports are "any" and always match.
+        GM always matches gm + gm2; with crucible_gm_wide, GM/GM2 also match gs + xg.
         """
         tag = self.out_formats[port_idx]
         if tag == "any":
@@ -618,7 +631,10 @@ class Duality:
         stream_tag = DETECT_TO_TAG.get(fmt_display)
         if stream_tag is None:
             return True
-        return tag == stream_tag
+        allowed = set(FORMAT_COMPAT.get(stream_tag, {stream_tag}))
+        if self.crucible_gm_wide and stream_tag in ("gm", "gm2"):
+            allowed |= {"gs", "xg"}
+        return tag in allowed
 
     def _eligible_note_ports(self) -> list[int]:
         """Ports allowed to receive notes under current Crucible policy."""
@@ -1150,7 +1166,8 @@ class Duality:
 
         # Dynamic bar width – make bars longer so they align better with Channel Activity
         term_width = console.width or 80
-        bar_width = max(24, term_width - 26)   #was 36 # was -42, now more aggressive
+        # Label (~16) + nums (~8) + padding/borders; tags need extra room
+        bar_width = max(20, term_width - 44)
 
         # Overall utilisation
         total_limit = sum(self.poly_limits) or 1
@@ -1202,7 +1219,7 @@ class Duality:
 
         # --- Port bars ---
         table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
-        table.add_column("label", style="cyan", width=14, no_wrap=True)  # room for format tags
+        table.add_column("label", style="cyan", width=16, no_wrap=True)  # room for format tags
         table.add_column("bar", ratio=1, no_wrap=True)
         table.add_column("nums", justify="right", width=8, no_wrap=True)
 
@@ -1639,6 +1656,11 @@ def main():
         help="With --crucible: note destinations (affinity=format-matched, all=every port)",
     )
     parser.add_argument(
+        "--crucible-gm-wide",
+        action="store_true",
+        help="With --crucible: also send GM/GM2 streams to gs and xg ports",
+    )
+    parser.add_argument(
         "--input-format",
         choices=["gm", "gm2", "gs", "xg", "mt32"],
         default=None,
@@ -1728,6 +1750,7 @@ def main():
             alchemy=args.alchemy,
             crucible=args.crucible,
             crucible_notes=args.crucible_notes,
+            crucible_gm_wide=args.crucible_gm_wide,
             input_format=args.input_format,
         )
         router.run()
