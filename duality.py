@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.10.0-dev"
+VERSION = "0.10.5-dev"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -31,6 +31,7 @@ Features
 • Alchemy: gate for future transcoding (allows single output)
 • Format state: strong SysEx lock, opposite switch, 60s idle clear, F hotkey
 • GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
+• SCPOP / SC-ext detection (model 45 or banner) + optional --scpop force
 
 Usage examples
 --------------
@@ -433,6 +434,7 @@ class Duality:
         crucible_notes: str = "affinity",
         crucible_gm_wide: bool = False,
         input_format: str | None = None,
+        scpop: bool = False,
     ):
         # Alchemy may run with a single output (transcode-only path).
         # Classic router still requires at least two ports.
@@ -480,7 +482,9 @@ class Duality:
             self.detected_format = FORMAT_DISPLAY.get(input_format, input_format.upper())
             self.format_pulse_time = time.monotonic() + 2.8
         self.last_midi_time = time.monotonic()       # any MIDI activity (for 60s idle clear)
-        self.scpop_mode = False                       # SCPOP: broadcast notes to format-matched ports
+        # SCPOP: broadcast notes to format-matched ports (force via --scpop or auto-detect)
+        self.scpop_mode = bool(scpop)
+        self.scpop_forced = bool(scpop)
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 7
         self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
@@ -545,6 +549,8 @@ class Duality:
             console.print("[green]Alchemy[/]       : on (conversion not yet implemented)")
         if self.detected_format:
             console.print(f"[green]Input format[/]  : {self.detected_format} (assumed/seeded)")
+        if self.scpop_forced:
+            console.print("[green]SCPOP[/]         : forced on (--scpop) – broadcasting notes to format-matched ports")
         console.print(
             "[green]Ready.[/] Notes will be distributed. "
             "Ctrl+C to stop + panic. Press [bold]F[/] to clear format state.\n"
@@ -610,8 +616,16 @@ class Duality:
         prev = self.detected_format or "none"
         self.detected_format = None
         self.format_pulse_time = 0.0
-        self.scpop_mode = False
-        self._set_status(f"Format cleared ({prev} → none, {reason})", duration=3.0)
+        # --scpop stays armed; auto-detected SCPOP is cleared with format
+        if not self.scpop_forced:
+            self.scpop_mode = False
+            self._set_status(f"Format cleared ({prev} → none, {reason})", duration=3.0)
+        else:
+            self.scpop_mode = True
+            self._set_status(
+                f"Format cleared ({prev} → none, {reason}); SCPOP still forced",
+                duration=3.0,
+            )
 
     def _check_format_idle(self) -> None:
         """Clear format after FORMAT_IDLE_SEC with no MIDI of any kind."""
@@ -685,22 +699,31 @@ class Duality:
         elif data[0] == 0x43 and len(data) >= 4 and data[2] == 0x4C:
             fmt = "XG"
 
-        # SCPOP (Sound Canvas Pipe Organ Project) – Roland model 0x45 + "SCPOP" banner
-        # Multi-IN SC modules often leave only one port audible after init; we cannot
-        # know which Duality out is Part A, so broadcast notes to format-matched ports.
-        if data[0] == 0x41 and len(data) >= 8 and data[2] == 0x45:
+        # SCPOP / SC-extended detection (broadcast notes to format-matched ports)
+        # 1) Roland model 0x45 (SC-ext / SCPOP setup dumps) – text optional
+        # 2) Any Roland SysEx whose printable payload contains "SCPOP"
+        if data[0] == 0x41 and len(data) >= 6 and not self.scpop_mode:
             try:
                 ascii_payload = bytes(
                     b for b in data[4:] if 32 <= b <= 126
                 ).decode("ascii", errors="ignore")
             except Exception:
                 ascii_payload = ""
-            if "SCPOP" in ascii_payload.upper() and not self.scpop_mode:
+            model = data[2]
+            triggered = False
+            reason = ""
+            if model == 0x45:
+                triggered = True
+                reason = "SCPOP/SC-ext (model 45)"
+            elif "SCPOP" in ascii_payload.upper():
+                triggered = True
+                reason = "SCPOP banner in SysEx"
+            if triggered:
                 self.scpop_mode = True
                 if fmt is None:
                     fmt = "GS"
                 self._set_status(
-                    "SCPOP detected – broadcasting notes to format-matched ports",
+                    f"{reason} – broadcasting notes to format-matched ports",
                     duration=5.0,
                 )
 
@@ -708,6 +731,10 @@ class Duality:
             prev = self.detected_format
             self.detected_format = fmt
             self.format_pulse_time = time.monotonic() + 2.8
+            # SCPOP is GS/SC-specific – clear when we leave that world
+            # (keep if user forced via --scpop)
+            if self.scpop_mode and not self.scpop_forced and fmt != "GS":
+                self.scpop_mode = False
             if prev and prev != fmt:
                 self._set_status(f"Format switch: {prev} → {fmt}", duration=2.5)
           
@@ -1767,6 +1794,14 @@ def main():
         help="Assume this stream format until SysEx proves otherwise",
     )
     parser.add_argument(
+        "--scpop",
+        action="store_true",
+        help=(
+            "Force SCPOP mode: broadcast notes to format-matched ports "
+            "(for pipe-organ SC files that only identify via meta, not SysEx)"
+        ),
+    )
+    parser.add_argument(
         "--mode",
         choices=["balance", "rr"],
         default="balance",
@@ -1852,6 +1887,7 @@ def main():
             crucible_notes=args.crucible_notes,
             crucible_gm_wide=args.crucible_gm_wide,
             input_format=args.input_format,
+            scpop=args.scpop,
         )
         router.run()
     except ValueError as e:
