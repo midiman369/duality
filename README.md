@@ -173,9 +173,9 @@ They do **not** change `--outs` tags — those still describe each **output** de
 | **F** | Clear input format (and unlock) |
 | **L** | Lock / unlock current **input** format (blocks SysEx override & idle clear) |
 | **G** | Set input format GM; press again for GM2 |
-| **R** | Set input format GS |
-| **Y** | Set input format XG |
-| **M** | Set input format MT-32 |
+| **R** | Set input format Roland GS |
+| **Y** | Set input format Yamaha XG |
+| **M** | Set input format Roland MT-32 and compatibles |
 | **B** | Toggle balance ↔ round-robin |
 | **Q** | Panic and quit |
 | **Ctrl+C** | Panic and quit |
