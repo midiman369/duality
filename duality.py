@@ -604,6 +604,8 @@ class Duality:
     def _clear_format(self, reason: str = "manual") -> None:
         """Clear sticky session format (idle timeout, hotkey, or explicit)."""
         if self.detected_format is None and not self.scpop_mode:
+            # Still acknowledge hotkey / explicit clear so the UI doesn't feel dead
+            self._set_status(f"Format already clear ({reason})", duration=1.5)
             return
         prev = self.detected_format or "none"
         self.detected_format = None
@@ -1246,29 +1248,51 @@ class Duality:
                 mins = int(ago // 60)
                 last_activity = f"{mins}m ago"
 
-        # Activity pulse – always present so layout stays stable
-        if time.monotonic() - self.last_activity_time < 0.15:
-            pulse = "  [bold bright_green]♪[/]"
-        else:
-            pulse = "  [dim]♪[/]"          # grayed-out residual
+        # Activity pulse – fixed 3-character footprint (♪ / ♫ ladder)
+        #   idle ♪ → light ♪ → medium ♫ → busy ♫♪ → busy+ ♫♪♪
+        #   → warm ♫♫ → hot ♫♫♪ → peak ♫♫♫
+        ago_act = time.monotonic() - self.last_activity_time
+        util_now = total / total_limit if total_limit else 0.0
+        chord = self.current_chord_size
 
-        # Format badge / pulse
-        format_badge = ""
+        if ago_act >= 0.40:
+            pulse = "[dim]♪  [/]"                          # idle
+        elif ago_act >= 0.22:
+            pulse = "[green]♪  [/]"                        # light
+        elif chord >= 10 or util_now >= 0.90:
+            pulse = "[bold bright_green]♫♫♫[/]"            # peak
+        elif chord >= 7 or util_now >= 0.75:
+            pulse = "[bold bright_green]♫♫♪[/]"            # hot
+        elif chord >= 5 or util_now >= 0.55:
+            pulse = "[bold bright_green]♫♫ [/]"            # warm
+        elif chord >= 4 or util_now >= 0.40:
+            pulse = "[bold green]♫♪♪[/]"                   # busy+
+        elif chord >= 2 or ago_act < 0.10:
+            pulse = "[bold green]♫♪ [/]"                   # busy
+        elif ago_act < 0.18 or util_now >= 0.15:
+            pulse = "[green]♫  [/]"                        # medium
+        else:
+            pulse = "[green]♪  [/]"                        # light
+
+        # Format badge – fixed width so counters don't shift ([MT-32] is longest)
+        colours = {
+            "GM": "bright_cyan",
+            "GM2": "bright_cyan",
+            "GS": "bright_magenta",
+            "XG": "bright_yellow",
+            "MT-32": "bright_red",
+        }
         if self.detected_format:
-            colours = {
-                "GM": "bright_cyan",
-                "GM2": "bright_cyan",
-                "GS": "bright_magenta",
-                "XG": "bright_yellow",
-                "MT-32": "bright_red",
-            }
             col = colours.get(self.detected_format, "white")
+            label = f"[{self.detected_format}]"
+            # Pad plain label to 7 chars ([MT-32]=7) then style
+            pad = " " * max(0, 7 - len(label))
             if time.monotonic() < self.format_pulse_time:
-                # Bright while the pulse is active
-                format_badge = f"  [bold {col}][{self.detected_format}][/]"
+                format_badge = f" [bold {col}]{label}[/]{pad}"
             else:
-                # Dim residual so you can still see the last format
-                format_badge = f"  [dim][{self.detected_format}][/]"
+                format_badge = f" [dim]{label}[/]{pad}"
+        else:
+            format_badge = " " * 8  # " " + 7-char field
 
         # If the bottom status message has just expired, move it into history
         now = time.monotonic()
@@ -1443,24 +1467,29 @@ class Duality:
         channel_table.add_row("Mod",          Text.from_markup(sep.join(mod_parts)))
         channel_table.add_row("Pitch",        Text.from_markup(sep.join(pitch_parts)))
 
-        # Header
-        mode_badges = ""
+        # Mode badges – fixed-width slots so the header never shifts when one appears
         if self.crucible:
-            mode_badges += "  [bold bright_cyan][Crucible][/]"
+            badge_crucible = " [bold bright_cyan][Crucible][/]"
+        else:
+            badge_crucible = " " * 11  # len(" [Crucible]")
         if self.alchemy:
-            mode_badges += "  [bold bright_yellow][Alchemy][/]"
+            badge_alchemy = " [bold bright_yellow][Alchemy][/]"
+        else:
+            badge_alchemy = " " * 10  # len(" [Alchemy]")
         if self.scpop_mode:
-            mode_badges += "  [bold bright_green][SCPOP][/]"
+            badge_scpop = " [bold bright_green][SCPOP][/]"
+        else:
+            badge_scpop = " " * 8  # len(" [SCPOP]")
+        mode_badges = f"{badge_crucible}{badge_alchemy}{badge_scpop}"
 
+        # Header: pulse + fixed badges + core counters only (no Drops/Steals/Filtered)
         header = Text.from_markup(
-            f"[bold]Live Status[/] • "
+            f"{pulse}{mode_badges}{format_badge} • "
             f"Total: [bold]{total:3d}[/] • Peak: [bold]{self.peak_voices:3d}[/] • "
-            f"Util: [bold]{util_pct:2d}%[/] • "
-            f"Drops: {self.drop_count} • Steals: {self.steal_count} • Filtered: {self.filtered_count}"
-            f"{pulse}{format_badge}{mode_badges}"
+            f"Util: [bold]{util_pct:2d}%"
         )
 
-        # Footer
+        # Chord / activity line (used under More Stats)
         if self.last_chord_port is not None:
             chord_text = (
                 f"Last Chord Size: {self.current_chord_size} "
@@ -1469,8 +1498,11 @@ class Duality:
         else:
             chord_text = f"Last Chord Size: {self.current_chord_size} (Peak {self.peak_chord_size})"
 
+        # Narrow-terminal footer still stacks chord + activity
         footer = Text.from_markup(
-            f"[dim]{chord_text}     Last Activity: {last_activity}[/]"
+            f"[dim]Drops: {self.drop_count} • Steals: {self.steal_count} • "
+            f"Filtered: {self.filtered_count}\n"
+            f"{chord_text}   Last Activity: {last_activity}[/]"
         )
 
         # Status message row (auto-clears)
@@ -1494,15 +1526,21 @@ class Duality:
             # 1. Channel activity block
             left_column.add_row(channel_table)
 
-            # 2. Labelled footer (Chord / Activity)
+            # 2. More Stats – Drops / Steals / Filtered (moved off the header)
             footer_row = Text.from_markup(
-                f"[cyan]More Stats:[/]   [dim]{chord_text}   Last Activity: {last_activity}[/]"
+                f"[cyan]More Stats:[/]   [dim]Drops: {self.drop_count} • "
+                f"Steals: {self.steal_count} • Filtered: {self.filtered_count}[/]"
             )
             left_column.add_row(footer_row)
 
-            # 3. Labelled status message (can wrap)
+            # 3. Chord / activity – no label, aligned under the More Stats values
+            detail_row = Text.from_markup(
+                f"               [dim]{chord_text}   Last Activity: {last_activity}[/]"
+            )
+            left_column.add_row(detail_row)
+
+            # 4. Labelled status message (can wrap)
             if self.status_message and time.monotonic() < self.status_message_time:
-                # Allow wrapping for longer messages
                 status_row = Text.from_markup(
                     f"[cyan]Status Message:[/]   [bold yellow]{escape(self.status_message)}[/]"
                 )
@@ -1511,12 +1549,12 @@ class Duality:
                 self.status_message = ""
             left_column.add_row(status_row)
 
-            # History panel – height 9 now matches the taller left column
+            # History panel – height 10 matches the taller left column (+1 for detail row)
             history_panel = Panel(
                 history_text if str(history_text).strip() else Text(" "),
                 border_style="bright_blue",
                 padding=(0, 0),
-                height=9,
+                height=10,
                 title="[dim]Recent Status Messages[/]",
                 title_align="left",
             )
