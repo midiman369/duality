@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.10.8"
+VERSION = "0.10.9"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -35,6 +35,7 @@ Features
 • GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
 • SCPOP / SC-ext detection (model 45 or banner) + optional --scpop
 • Per-port --sync-delay (ms); relative negatives normalized; 0 = fast path
+• Graceful handling and attempted reconnect of dropped or lost output ports.
 
 Hotkeys
 -------
@@ -578,6 +579,11 @@ class Duality:
                 f"(limit {self.poly_limits[i]}, format {tag_disp})"
             )
             self.outs.append(mido.open_output(name))
+
+        # Output health / reconnect (Windows often invalidates ports when apps quit)
+        self._out_offline = [False] * self.n_ports
+        self._out_last_reconnect_attempt = [0.0] * self.n_ports
+        self._reconnect_cooldown = 2.0  # seconds between reconnect attempts per port
 
         self.active: dict[tuple[int, int], dict] = {}
         self.rr_next = 0
@@ -1200,14 +1206,66 @@ class Duality:
         return True
 
     # ------------------------------------------------------------------
+    def _try_reconnect_out(self, port: int, force: bool = False) -> bool:
+        """
+        Re-open output by original port name. Rate-limited unless force=True.
+        Returns True if the port is usable afterward.
+        """
+        now = time.monotonic()
+        if not force and (now - self._out_last_reconnect_attempt[port]) < self._reconnect_cooldown:
+            return not self._out_offline[port]
+        self._out_last_reconnect_attempt[port] = now
+
+        name = self.port_names[port]
+        # Close stale handle
+        try:
+            self.outs[port].close()
+        except Exception:
+            pass
+
+        try:
+            self.outs[port] = mido.open_output(name)
+            self._out_offline[port] = False
+            self._set_status(f"Reconnected out {port + 1}: {name}", duration=3.0)
+            return True
+        except Exception:
+            self._out_offline[port] = True
+            self._set_status(
+                f"Out {port + 1} offline ({name}) – will retry",
+                duration=3.0,
+            )
+            return False
+
+    def _safe_out_send(self, port: int, msg: mido.Message) -> bool:
+        """
+        Send on an output port. On failure, attempt one reconnect + resend.
+        Never raises — dead devices must not take down the router.
+        """
+        if self._out_offline[port]:
+            if not self._try_reconnect_out(port):
+                return False
+
+        try:
+            self.outs[port].send(msg)
+            return True
+        except Exception:
+            if self._try_reconnect_out(port, force=True):
+                try:
+                    self.outs[port].send(msg)
+                    return True
+                except Exception:
+                    self._out_offline[port] = True
+                    return False
+            return False
+
     def _send(self, port: int, msg: mido.Message) -> None:
         """Single outbound gate: optional per-port delay, else direct send."""
         if not self.sync_enabled:
-            self.outs[port].send(msg)
+            self._safe_out_send(port, msg)
             return
         delay = self.sync_delays[port]
         if delay <= 0.0:
-            self.outs[port].send(msg)
+            self._safe_out_send(port, msg)
             return
         # Queue a copy-ish: mido messages are small; copy() if available
         try:
@@ -1221,7 +1279,6 @@ class Duality:
         if not self.sync_enabled or not self._send_queue:
             return
         now = time.monotonic()
-        # Small queues: partition in place
         due = []
         pending = []
         for item in self._send_queue:
@@ -1230,10 +1287,18 @@ class Duality:
             else:
                 pending.append(item)
         self._send_queue = pending
-        # Preserve scheduled order among due items
         due.sort(key=lambda x: x[0])
         for _, port, msg in due:
-            self.outs[port].send(msg)
+            self._safe_out_send(port, msg)
+
+    def _retry_offline_ports(self) -> None:
+        """Periodic background reconnect for outs marked offline."""
+        if not any(self._out_offline):
+            return
+        now = time.monotonic()
+        for i, offline in enumerate(self._out_offline):
+            if offline and (now - self._out_last_reconnect_attempt[i]) >= self._reconnect_cooldown:
+                self._try_reconnect_out(i)
 
     def process(self, msg: mido.Message):
         # Any MIDI activity refreshes format-idle timer
@@ -1391,16 +1456,36 @@ class Duality:
         return False
 
     def panic(self, reason: str = "manual"):
-        for out in self.outs:
-            out.panic()
+        """Silence all outs. Never raises — dead/closed ports are skipped."""
+        for i, out in enumerate(self.outs):
+            try:
+                out.panic()
+            except Exception:
+                # Try reconnect once so panic can still reach a revived device
+                if self._try_reconnect_out(i, force=True):
+                    try:
+                        self.outs[i].panic()
+                    except Exception:
+                        pass
             for ch in range(16):
-                out.send(mido.Message("control_change", channel=ch, control=123, value=0))
-                out.send(mido.Message("control_change", channel=ch, control=121, value=0))
+                try:
+                    self.outs[i].send(
+                        mido.Message("control_change", channel=ch, control=123, value=0)
+                    )
+                    self.outs[i].send(
+                        mido.Message("control_change", channel=ch, control=121, value=0)
+                    )
+                except Exception:
+                    break  # port is gone; skip remaining channels
         self.active.clear()
-        self.voice_counts = [0] * self.n_ports          # ← add this
+        self.voice_counts = [0] * self.n_ports
         self.last_chord_port = None
         self.last_sent.clear()
-        self._set_status(f"PANIC ({reason}) – all devices silenced", duration=6.0)
+        self._send_queue.clear()
+        try:
+            self._set_status(f"PANIC ({reason}) – all devices silenced", duration=6.0)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Status panel
@@ -1837,10 +1922,13 @@ class Duality:
                         # Drain delayed outbound MIDI (no-op if sync disabled)
                         self._flush_send_queue()
 
+                        # Background reconnect for offline outputs
+                        self._retry_offline_ports()
+
                         # Format idle clear (60s with no MIDI)
                         self._check_format_idle()
 
-                        # Hotkey: F clears sticky format state
+                        # Hotkeys (format, mode, quit, …)
                         self._poll_hotkeys()
 
                         # --- UI update only ~8–10 times per second ---
@@ -1855,7 +1943,10 @@ class Duality:
 
                 except Exception as e:
                     console.print(f"[red]Error: {e}[/]")
-                    self.panic(reason="exception")
+                    try:
+                        self.panic(reason="exception")
+                    except Exception as e2:
+                        console.print(f"[red]Panic also failed: {e2}[/]")
                 finally:
                     self.close()
         else:
@@ -1864,9 +1955,13 @@ class Duality:
                 for msg in self.inport:
                     self.process(msg)
                     self._flush_send_queue()
+                    self._retry_offline_ports()
             except Exception as e:
                 console.print(f"[red]Error: {e}[/]")
-                self.panic(reason="exception")
+                try:
+                    self.panic(reason="exception")
+                except Exception as e2:
+                    console.print(f"[red]Panic also failed: {e2}[/]")
             finally:
                 self.close()
 
