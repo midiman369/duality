@@ -1256,23 +1256,23 @@ class Duality:
         chord = self.current_chord_size
 
         if ago_act >= 0.40:
-            pulse = "[dim]♪  [/]"                          # idle
+            pulse = " [dim]♪  [/]"                          # idle
         elif ago_act >= 0.22:
-            pulse = "[green]♪  [/]"                        # light
+            pulse = " [green]♪  [/]"                        # light
         elif chord >= 10 or util_now >= 0.90:
-            pulse = "[bold bright_green]♫♫♫[/]"            # peak
+            pulse = " [bold bright_green]♫♫♫[/]"            # peak
         elif chord >= 7 or util_now >= 0.75:
-            pulse = "[bold bright_green]♫♫♪[/]"            # hot
+            pulse = " [bold bright_green]♫♫♪[/]"            # hot
         elif chord >= 5 or util_now >= 0.55:
-            pulse = "[bold bright_green]♫♫ [/]"            # warm
+            pulse = " [bold bright_green]♫♫ [/]"            # warm
         elif chord >= 4 or util_now >= 0.40:
-            pulse = "[bold green]♫♪♪[/]"                   # busy+
+            pulse = " [bold green]♫♪♪[/]"                   # busy+
         elif chord >= 2 or ago_act < 0.10:
-            pulse = "[bold green]♫♪ [/]"                   # busy
+            pulse = " [bold green]♫♪ [/]"                   # busy
         elif ago_act < 0.18 or util_now >= 0.15:
-            pulse = "[green]♫  [/]"                        # medium
+            pulse = " [green]♫  [/]"                        # medium
         else:
-            pulse = "[green]♪  [/]"                        # light
+            pulse = " [green]♪  [/]"                        # light
 
         # Format badge – fixed width so counters don't shift ([MT-32] is longest)
         colours = {
@@ -1528,14 +1528,14 @@ class Duality:
 
             # 2. More Stats – Drops / Steals / Filtered (moved off the header)
             footer_row = Text.from_markup(
-                f"[cyan]More Stats:[/]   [dim]Drops: {self.drop_count} • "
+                f"[cyan]More Stats:[/]    [dim]Drops: {self.drop_count} • "
                 f"Steals: {self.steal_count} • Filtered: {self.filtered_count}[/]"
             )
             left_column.add_row(footer_row)
 
             # 3. Chord / activity – no label, aligned under the More Stats values
             detail_row = Text.from_markup(
-                f"               [dim]{chord_text}   Last Activity: {last_activity}[/]"
+                f"               [dim]{chord_text}  Last Activity: {last_activity}[/]"
             )
             left_column.add_row(detail_row)
 
