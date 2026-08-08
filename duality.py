@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.10.5-dev"
+VERSION = "0.10.8-dev"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -12,26 +12,34 @@ synchronized across all devices.
 
 Features
 --------
-• Load-balancing or pure round-robin note assignment
+• Load-balancing by utilization (fair with mixed poly limits) or pure round-robin
 • Chord preference (notes arriving close together stay on the same device)
 • Smart voice stealing (lowest velocity first, then oldest)
 • Independent polyphony limit per device
 • Full panic / All Notes Off handling
 • Live status panel with per-port meters, channel activity,
   Volume / Pan / Mod Wheel / Pitch Bend, and activity counters
-• Rolling status history + format badge (GM / GM2 / GS / XG / MT-32)
+• Rolling status history + format badge (GM / GM2 / GS / XG / MT-32; * = locked)
 • SysEx recognition & human-readable status for:
-    – GS: Reset, Reverb/Chorus macros, EFX/MFX types, part EFX on/off, display text
+    – GS: Reset, Reverb/Chorus/Delay macros, EFX/MFX types, part EFX on/off, display text
     – XG: System On, Reverb/Chorus/Variation/Insertion types, display text
     – MT-32: Display text, reverb mode/time/level, master volume/tune
 • Redundant controller filtering (keeps devices in sync while reducing traffic)
-• Arbitrary number of output ports (default 2)
-• Optional output format tags (--outs "Dev:gs" "Dev:xg")
+• Arbitrary number of output ports (default 2; 1 allowed with --alchemy)
+• Output format tags, including multi-capability (e.g. --outs "SC:gs+gm2")
 • Crucible: format-aware routing (SysEx + note affinity)
-• Alchemy: gate for future transcoding (allows single output)
-• Format state: strong SysEx lock, opposite switch, 60s idle clear, F hotkey
+• Unknown format → GM-family ports only (pure MT-32 excluded until MT-32)
+• No spill-to-all when no port matches the current format
+• Alchemy: gate for future transcoding (allows single output; conversion later)
+• Format set (hotkeys) vs format lock (L); idle clear; F clears
 • GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
-• SCPOP / SC-ext detection (model 45 or banner) + optional --scpop force
+• SCPOP / SC-ext detection (model 45 or banner) + optional --scpop
+• Per-port --sync-delay (ms); relative negatives normalized; 0 = fast path
+
+Hotkeys
+-------
+F clear format   L lock/unlock format   G GM↔GM2   R GS   Y XG   M MT-32
+B balance↔rr     Q quit (panic)
 
 Usage examples
 --------------
@@ -42,19 +50,20 @@ python duality.py --list
 python duality.py --input "loopMIDI Port" --outs "MS40 A" "MS40 B"
 
 # Three devices with different polyphony limits
-python duality.py \\
-  --input "loopMIDI Port" \\
-  --outs "Module A" "Module B" "Module C" \\
+python duality.py \
+  --input "loopMIDI Port" \
+  --outs "Module A" "Module B" "Module C" \
   --poly 28 32 24
+
+# Crucible + multi-capability tags
+python duality.py --input "loopMIDI Port" --crucible --crucible-gm-wide \
+  --outs "SC A:gs+gm2" "SC B:gs+gm2" "MU:xg+gm2" "MUNT:mt32"
+
+# Sync delay (softsynth leads hardware by ~80 ms)
+python duality.py --input "..." --outs "SC:gs+mt32" "MUNT:mt32" --sync-delay 0 -80
 
 # Custom chord window + silent mode
 python duality.py --input "..." --outs "A" "B" --chord-ms 25 --no-status
-
-# Tagged outs + Crucible (format-route)
-python duality.py --input "loopMIDI Port" --outs "SC:gs" "MU:xg" --crucible
-
-# Alchemy single-out (transcode path; conversion comes later)
-python duality.py --alchemy --outs "MU128:xg" --input-format gs
 
 # Show version
 python duality.py --version
@@ -80,6 +89,7 @@ mido.set_backend("mido.backends.rtmidi")
 POLY_DEFAULT = 24
 CHORD_MS_DEFAULT = 30.0
 FORMAT_IDLE_SEC = 60.0
+SYNC_DELAY_MAX_MS = 500.0  # clamp |offset| for --sync-delay
 
 # Port / stream format tags (CLI values → canonical)
 FORMAT_ALIASES = {
@@ -99,6 +109,20 @@ FORMAT_DISPLAY = {
     "mt32": "MT-32",
     "any": "ANY",
 }
+
+# GM-family tags used when stream format is unknown (exclude pure MT-32)
+GM_FAMILY_TAGS = frozenset({"gm", "gm2", "gs", "xg"})
+
+def format_tags_label(tags) -> str:
+    """Human label for a port capability set, e.g. GS+GM2."""
+    if not tags or "any" in tags:
+        return "ANY"
+    order = ["gs", "xg", "gm", "gm2", "mt32"]
+    parts = [FORMAT_DISPLAY[t] for t in order if t in tags]
+    for t in sorted(tags):
+        if t not in order:
+            parts.append(FORMAT_DISPLAY.get(t, t.upper()))
+    return "+".join(parts) if parts else "ANY"
 # detected_format (badge) → canonical tag for Crucible matching
 DETECT_TO_TAG = {
     "GM": "gm",
@@ -435,6 +459,7 @@ class Duality:
         crucible_gm_wide: bool = False,
         input_format: str | None = None,
         scpop: bool = False,
+        sync_delays_ms: list[float] | None = None,
     ):
         # Alchemy may run with a single output (transcode-only path).
         # Classic router still requires at least two ports.
@@ -456,7 +481,7 @@ class Duality:
 
         # Per-port format tags ("any" = untagged / receive everything)
         if out_formats is None:
-            self.out_formats = ["any"] * self.n_ports
+            self.out_formats = [frozenset({"any"})] * self.n_ports
         else:
             if len(out_formats) != self.n_ports:
                 raise ValueError("out_formats length must match number of output ports")
@@ -485,6 +510,7 @@ class Duality:
         # SCPOP: broadcast notes to format-matched ports (force via --scpop or auto-detect)
         self.scpop_mode = bool(scpop)
         self.scpop_forced = bool(scpop)
+        self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 7
         self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
@@ -518,14 +544,35 @@ class Duality:
                     f"--poly must have 1 value or exactly {self.n_ports} values (one per port)"
                 )
 
+        # Per-port sync delay (ms). Negatives are relative offsets; we normalize
+        # so the most-negative port becomes 0 and others shift later.
+        raw = list(sync_delays_ms) if sync_delays_ms is not None else [0.0]
+        if len(raw) == 1:
+            raw = raw * self.n_ports
+        elif len(raw) != self.n_ports:
+            raise ValueError(
+                f"--sync-delay must have 1 value or exactly {self.n_ports} values (one per port)"
+            )
+        clamped = []
+        for v in raw:
+            v = float(v)
+            if v > SYNC_DELAY_MAX_MS:
+                v = SYNC_DELAY_MAX_MS
+            elif v < -SYNC_DELAY_MAX_MS:
+                v = -SYNC_DELAY_MAX_MS
+            clamped.append(v)
+        base = min(clamped)  # most negative (or 0) → reference "now"
+        self.sync_delays = [(v - base) / 1000.0 for v in clamped]  # seconds, ≥ 0
+        self.sync_enabled = any(d > 0.0 for d in self.sync_delays)
+        self._send_queue: list[tuple[float, int, object]] = []  # (send_at, port, msg)
+
         console.print(f"[bold cyan]Opening input[/] : {in_name}")
         self.inport = mido.open_input(in_name)
 
         self.outs = []
         self.port_names = out_names
         for i, name in enumerate(out_names):
-            tag = self.out_formats[i]
-            tag_disp = FORMAT_DISPLAY.get(tag, tag)
+            tag_disp = format_tags_label(self.out_formats[i])
             console.print(
                 f"[bold cyan]Opening out {i+1}[/] : {name} "
                 f"(limit {self.poly_limits[i]}, format {tag_disp})"
@@ -542,6 +589,9 @@ class Duality:
         console.print(f"[green]Mode[/]          : {self.mode}")
         console.print(f"[green]Output ports[/]  : {self.n_ports}")
         console.print(f"[green]Chord window[/]  : {chord_window_ms:.0f} ms")
+        if self.sync_enabled:
+            ms = [f"{d*1000:.0f}" for d in self.sync_delays]
+            console.print(f"[green]Sync delay[/]    : {', '.join(ms)} ms (per port, normalized)")
         if self.crucible:
             wide = ", gm-wide" if self.crucible_gm_wide else ""
             console.print(f"[green]Crucible[/]      : on (notes={self.crucible_notes}{wide})")
@@ -553,8 +603,8 @@ class Duality:
             console.print("[green]SCPOP[/]         : forced on (--scpop) – broadcasting notes to format-matched ports")
         console.print(
             "[green]Ready.[/] Notes will be distributed. Ctrl+C to stop + panic.\n"
-            "  Hotkeys: [bold]F[/]=clear  [bold]G[/]=GM/GM2  [bold]R[/]=GS  "
-            "[bold]Y[/]=XG  [bold]M[/]=MT-32  [bold]B[/]=balance/round-robin  [bold]Q[/]=quit"
+            "  Hotkeys: [bold]F[/]=clear  [bold]L[/]=lock format  [bold]G[/]=GM/GM2  [bold]R[/]=GS  "
+            "[bold]Y[/]=XG  [bold]M[/]=MT-32  [bold]B[/]=balance/rr  [bold]Q[/]=quit"
         )
 
     # ------------------------------------------------------------------
@@ -609,20 +659,40 @@ class Duality:
         return Text.from_markup("\n".join(lines))
 
     def _force_format(self, fmt_display: str, reason: str = "hotkey") -> None:
-        """Sticky-lock session format from a hotkey (G/R/Y/M, etc.)."""
+        """Set session format from a hotkey (G/R/Y/M, etc.). Does not lock — SysEx can still override unless L is used."""
         prev = self.detected_format
         self.detected_format = fmt_display
         self.format_pulse_time = time.monotonic() + 2.8
         self.last_midi_time = time.monotonic()  # refresh idle timer
+        self._warned_no_match = False
+        # Changing format manually clears a previous lock (user is choosing a new set point)
+        self.format_locked = False
         # Auto SCPOP only makes sense in the GS world
         if fmt_display != "GS" and self.scpop_mode and not self.scpop_forced:
             self.scpop_mode = False
         if prev == fmt_display:
-            self._set_status(f"Format locked {fmt_display} ({reason})", duration=2.0)
+            self._set_status(f"Format set {fmt_display} ({reason})", duration=2.0)
         elif prev:
-            self._set_status(f"Format switch: {prev} → {fmt_display} ({reason})", duration=2.5)
+            self._set_status(f"Format set: {prev} → {fmt_display} ({reason})", duration=2.5)
         else:
-            self._set_status(f"Format locked {fmt_display} ({reason})", duration=2.5)
+            self._set_status(f"Format set {fmt_display} ({reason})", duration=2.5)
+
+    def _toggle_format_lock(self) -> None:
+        """L hotkey: lock/unlock current format against SysEx detection overrides."""
+        if self.detected_format is None:
+            self._set_status("No format to lock – set one first (G/R/Y/M or SysEx)", duration=2.5)
+            return
+        self.format_locked = not self.format_locked
+        if self.format_locked:
+            self._set_status(
+                f"Format LOCKED {self.detected_format} – SysEx will not override",
+                duration=3.0,
+            )
+        else:
+            self._set_status(
+                f"Format unlocked ({self.detected_format}) – detection active again",
+                duration=2.5,
+            )
 
     def _clear_format(self, reason: str = "manual") -> None:
         """Clear sticky session format (idle timeout, hotkey, or explicit)."""
@@ -631,16 +701,19 @@ class Duality:
             self._set_status(f"Format already clear ({reason})", duration=1.5)
             return
         prev = self.detected_format or "none"
+        was_locked = self.format_locked
         self.detected_format = None
         self.format_pulse_time = 0.0
+        self.format_locked = False
         # --scpop stays armed; auto-detected SCPOP is cleared with format
+        lock_note = ", was locked" if was_locked else ""
         if not self.scpop_forced:
             self.scpop_mode = False
-            self._set_status(f"Format cleared ({prev} → none, {reason})", duration=3.0)
+            self._set_status(f"Format cleared ({prev} → none, {reason}{lock_note})", duration=3.0)
         else:
             self.scpop_mode = True
             self._set_status(
-                f"Format cleared ({prev} → none, {reason}); SCPOP still forced",
+                f"Format cleared ({prev} → none, {reason}{lock_note}); SCPOP still forced",
                 duration=3.0,
             )
 
@@ -648,28 +721,35 @@ class Duality:
         """Clear format after FORMAT_IDLE_SEC with no MIDI of any kind."""
         if self.detected_format is None:
             return
+        if self.format_locked:
+            return  # L lock holds through idle gaps
         if time.monotonic() - self.last_midi_time >= FORMAT_IDLE_SEC:
             self._clear_format("idle")
 
     def _port_matches_format(self, port_idx: int, fmt_display: str | None) -> bool:
         """
         True if this port should receive traffic for the given session format.
-        Untagged ports are "any" and always match.
-        GM always matches gm + gm2; with crucible_gm_wide, GM/GM2 also match gs + xg.
+
+        Port tags are a capability set (e.g. {gs, gm2}). Untagged/"any" matches all.
+        Unknown stream format (None): GM-family ports only — pure MT-32 is excluded.
+        GM stream reaches gm+gm2 capabilities; --crucible-gm-wide also adds gs+xg.
         """
-        tag = self.out_formats[port_idx]
-        if tag == "any":
+        tags = self.out_formats[port_idx]
+        if not tags or "any" in tags:
             return True
+
         if fmt_display is None:
-            # Unknown stream format → deliver everywhere
-            return True
+            # No detect/set/lock: do not send to pure MT-32 ports
+            return bool(tags & GM_FAMILY_TAGS)
+
         stream_tag = DETECT_TO_TAG.get(fmt_display)
         if stream_tag is None:
-            return True
+            return bool(tags & GM_FAMILY_TAGS)
+
         allowed = set(FORMAT_COMPAT.get(stream_tag, {stream_tag}))
         if self.crucible_gm_wide and stream_tag in ("gm", "gm2"):
             allowed |= {"gs", "xg"}
-        return tag in allowed
+        return bool(tags & allowed)
 
     def _eligible_note_ports(self) -> list[int]:
         """Ports allowed to receive notes under current Crucible policy."""
@@ -745,9 +825,18 @@ class Duality:
                 )
 
         if fmt:
+            if self.format_locked:
+                # Locked: ignore opposing SysEx for session format (still OK to describe in status elsewhere)
+                if fmt != self.detected_format:
+                    # Soft notice at most once-ish via short status; keep quiet to avoid spam
+                    pass
+                else:
+                    self.format_pulse_time = time.monotonic() + 2.8
+                return
             prev = self.detected_format
             self.detected_format = fmt
             self.format_pulse_time = time.monotonic() + 2.8
+            self._warned_no_match = False
             # SCPOP is GS/SC-specific – clear when we leave that world
             # (keep if user forced via --scpop)
             if self.scpop_mode and not self.scpop_forced and fmt != "GS":
@@ -980,7 +1069,7 @@ class Duality:
                 actual[port] += 1
         self.voice_counts = actual
         # Optional: uncomment the next line if you want to see when it heals
-        # self._set_status("Voice counts re-synchronized", duration=2.0)
+        self._set_status("Voice counts re-synchronized", duration=2.0)
 
     def _steal_least_important(self, port: int):
         """
@@ -1006,17 +1095,17 @@ class Duality:
         off = mido.Message("note_off", channel=ch, note=note, velocity=0)
         ports = self.active[key].get("ports", [port])
         for p in ports:
-            self.outs[p].send(off)
+            self._send(p, off)
             self.voice_counts[p] = max(0, self.voice_counts[p] - 1)
         del self.active[key]
         self.steal_count += 1
 
-    def _choose_port(self, is_chord: bool) -> int:
+    def _choose_port(self, is_chord: bool) -> int | None:
         counts = self.voice_counts   # fast path – no scanning
         eligible = self._eligible_note_ports()
         if not eligible:
-            # No format-matched ports → fall back to all (avoid total silence)
-            eligible = list(range(self.n_ports))
+            # No format-matched ports → refuse (do not spill onto wrong modules)
+            return None
 
         if self.mode == "rr":
             # Round-robin among eligible ports only
@@ -1111,6 +1200,41 @@ class Duality:
         return True
 
     # ------------------------------------------------------------------
+    def _send(self, port: int, msg: mido.Message) -> None:
+        """Single outbound gate: optional per-port delay, else direct send."""
+        if not self.sync_enabled:
+            self.outs[port].send(msg)
+            return
+        delay = self.sync_delays[port]
+        if delay <= 0.0:
+            self.outs[port].send(msg)
+            return
+        # Queue a copy-ish: mido messages are small; copy() if available
+        try:
+            queued = msg.copy()
+        except Exception:
+            queued = msg
+        self._send_queue.append((time.monotonic() + delay, port, queued))
+
+    def _flush_send_queue(self) -> None:
+        """Send any delayed messages that are due. No-op when sync disabled."""
+        if not self.sync_enabled or not self._send_queue:
+            return
+        now = time.monotonic()
+        # Small queues: partition in place
+        due = []
+        pending = []
+        for item in self._send_queue:
+            if item[0] <= now:
+                due.append(item)
+            else:
+                pending.append(item)
+        self._send_queue = pending
+        # Preserve scheduled order among due items
+        due.sort(key=lambda x: x[0])
+        for _, port, msg in due:
+            self.outs[port].send(msg)
+
     def process(self, msg: mido.Message):
         # Any MIDI activity refreshes format-idle timer
         self.last_midi_time = time.monotonic()
@@ -1136,7 +1260,15 @@ class Duality:
 
                 eligible = self._eligible_note_ports()
                 if not eligible:
-                    eligible = list(range(self.n_ports))
+                    self.drop_count += 1
+                    if not getattr(self, "_warned_no_match", False):
+                        self._warned_no_match = True
+                        fmt = self.detected_format or "unknown"
+                        self._set_status(
+                            f"No ports match format {fmt} – check --outs tags",
+                            duration=4.0,
+                        )
+                    return
 
                 # SCPOP: broadcast the same note to every format-matched port.
                 # After init only one SC input may produce sound, but we cannot
@@ -1145,6 +1277,9 @@ class Duality:
                     targets = eligible
                 else:
                     port = self._choose_port(is_chord)
+                    if port is None:
+                        self.drop_count += 1
+                        return
                     self.last_chord_port = port
                     targets = [port]
 
@@ -1162,7 +1297,7 @@ class Duality:
                     real_count = _notes_on_port(port)
                     if real_count >= self.poly_limits[port]:
                         continue  # this port full – try others when broadcasting
-                    self.outs[port].send(msg)
+                    self._send(port, msg)
                     self.voice_counts[port] += 1
                     sent_ports.append(port)
 
@@ -1188,11 +1323,11 @@ class Duality:
                 if info is not None:
                     ports = info.get("ports") or [info["port"]]
                     for port in ports:
-                        self.outs[port].send(msg)
+                        self._send(port, msg)
                         self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
                 else:
-                    for out in self.outs:
-                        out.send(msg)
+                    for i in range(self.n_ports):
+                        self._send(i, msg)
 
                 # Only resync if the drift is significant
                 if abs(sum(self.voice_counts) - len(self.active)) > 1:
@@ -1218,10 +1353,10 @@ class Duality:
                 self._set_status(description, duration=3.5)
 
             # Crucible: format-specific SysEx only to matching (or any) ports
-            for i, out in enumerate(self.outs):
+            for i in range(self.n_ports):
                 if self.crucible and not self._port_matches_format(i, self.detected_format):
                     continue
-                out.send(msg)
+                self._send(i, msg)
             return
 
         # Track common controllers per channel + timestamp
@@ -1244,9 +1379,9 @@ class Duality:
             self.pitch_time[ch] = now
 
         # Everything else → all devices, with optional deduplication
-        for i, out in enumerate(self.outs):
+        for i in range(self.n_ports):
             if self._should_send(i, msg):
-                out.send(msg)
+                self._send(i, msg)
 
     def _is_panic(self, msg: mido.Message) -> bool:
         if msg.type == "control_change" and msg.control in (120, 123):
@@ -1337,15 +1472,17 @@ class Duality:
         }
         if self.detected_format:
             col = colours.get(self.detected_format, "white")
-            label = f"[{self.detected_format}]"
-            # Pad plain label to 7 chars ([MT-32]=7) then style
-            pad = " " * max(0, 7 - len(label))
-            if time.monotonic() < self.format_pulse_time:
+            # [GS] or [GS*] when locked (* = format lock via L)
+            core = self.detected_format
+            label = f"[{core}*]" if self.format_locked else f"[{core}]"
+            # Pad to 8 visible chars so [MT-32*] still fits without shifting header
+            pad = " " * max(0, 8 - len(label))
+            if time.monotonic() < self.format_pulse_time or self.format_locked:
                 format_badge = f" [bold {col}]{label}[/]{pad}"
             else:
                 format_badge = f" [dim]{label}[/]{pad}"
         else:
-            format_badge = " " * 8  # " " + 7-char field
+            format_badge = " " * 9
 
         # If the bottom status message has just expired, move it into history
         now = time.monotonic()
@@ -1400,9 +1537,9 @@ class Duality:
             else:
                 bar = Text("".join(bar_chars), style=colour)
 
-            tag = self.out_formats[i]
-            if tag and tag != "any":
-                label = f"Port {i+1} [{FORMAT_DISPLAY.get(tag, tag)}]"
+            tags = self.out_formats[i]
+            if tags and "any" not in tags:
+                label = f"Port {i+1} [{format_tags_label(tags)}]"
             else:
                 label = f"Port {i+1}"
             table.add_row(
@@ -1651,6 +1788,8 @@ class Duality:
             # Toggle note assignment strategy
             self.mode = "rr" if self.mode == "balance" else "balance"
             self._set_status(f"Mode → {self.mode}", duration=2.5)
+        elif c == "l":
+            self._toggle_format_lock()
         elif c == "q":
             self._set_status("Quit requested – panicking and exiting…", duration=2.0)
             self.panic(reason="hotkey Q")
@@ -1695,6 +1834,9 @@ class Duality:
                             self.process(msg)
                             processed = True
 
+                        # Drain delayed outbound MIDI (no-op if sync disabled)
+                        self._flush_send_queue()
+
                         # Format idle clear (60s with no MIDI)
                         self._check_format_idle()
 
@@ -1721,6 +1863,7 @@ class Duality:
             try:
                 for msg in self.inport:
                     self.process(msg)
+                    self._flush_send_queue()
             except Exception as e:
                 console.print(f"[red]Error: {e}[/]")
                 self.panic(reason="exception")
@@ -1782,23 +1925,36 @@ def resolve_port(name: str | None, available: list[str], label: str) -> str:
         sys.exit(1)
     return pick_port(available, f"Select {label}:")
 
-def parse_out_spec(spec: str) -> tuple[str, str]:
+def parse_out_spec(spec: str) -> tuple[str, frozenset]:
     """
-    Parse --outs entry: "Port Name" or "Port Name:gs".
-    Returns (port_name, format_tag) with tag defaulting to "any".
+    Parse --outs entry: "Port Name", "Port Name:gs", or "Port Name:gs+gm2".
+    Returns (port_name, frozenset of format tags). Default tag set is {"any"}.
     """
     if ":" not in spec:
-        return spec, "any"
+        return spec, frozenset({"any"})
     # Split on last colon so names with colons are less likely to break
     name, _, tag = spec.rpartition(":")
     name = name.strip()
     tag = tag.strip().lower()
     if not name:
         raise ValueError(f"Invalid --outs entry (empty name): {spec!r}")
-    if tag not in FORMAT_ALIASES:
-        valid = ", ".join(sorted(set(FORMAT_ALIASES.values())))
-        raise ValueError(f"Unknown format tag {tag!r} in {spec!r}. Valid: {valid}")
-    return name, FORMAT_ALIASES[tag]
+    if not tag or tag == "any":
+        return name, frozenset({"any"})
+    parts = [p.strip() for p in tag.split("+") if p.strip()]
+    if not parts:
+        return name, frozenset({"any"})
+    tags = set()
+    for p in parts:
+        if p not in FORMAT_ALIASES:
+            valid = ", ".join(sorted(set(FORMAT_ALIASES.values())))
+            raise ValueError(
+                f"Unknown format tag {p!r} in {spec!r}. "
+                f"Valid: {valid} (combine with +, e.g. gs+gm2)"
+            )
+        tags.add(FORMAT_ALIASES[p])
+    if "any" in tags:
+        return name, frozenset({"any"})
+    return name, frozenset(tags)
 
 
 # ----------------------------------------------------------------------
@@ -1867,6 +2023,18 @@ def main():
         help=f"Polyphony limit(s). One value applies to all ports, or one value per port (default {POLY_DEFAULT})",
     )
     parser.add_argument(
+        "--sync-delay",
+        nargs="+",
+        type=float,
+        default=[0.0],
+        metavar="MS",
+        help=(
+            "Per-port sync delay in ms (one value or one per port). "
+            "Negatives are relative offsets (normalized so the earliest port is 0). "
+            f"Clamped to ±{int(SYNC_DELAY_MAX_MS)} ms. Default 0 (fast path, no queue)."
+        ),
+    )
+    parser.add_argument(
         "--chord-ms",
         type=float,
         default=CHORD_MS_DEFAULT,
@@ -1919,7 +2087,7 @@ def main():
                 console.print("[yellow]That port is already selected.[/]")
                 name = pick_port(outputs, f"Select output device {i+1} of {n_pick}:")
             out_names.append(name)
-            out_formats.append("any")
+            out_formats.append(frozenset({"any"}))
 
     if len(set(out_names)) != len(out_names):
         console.print("[red]Error: all output ports must be unique.[/]")
@@ -1940,6 +2108,7 @@ def main():
             crucible_gm_wide=args.crucible_gm_wide,
             input_format=args.input_format,
             scpop=args.scpop,
+            sync_delays_ms=args.sync_delay,
         )
         router.run()
     except ValueError as e:
