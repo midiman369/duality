@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.10.8-dev"
+VERSION = "0.10.8"
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -1069,7 +1069,7 @@ class Duality:
                 actual[port] += 1
         self.voice_counts = actual
         # Optional: uncomment the next line if you want to see when it heals
-        self._set_status("Voice counts re-synchronized", duration=2.0)
+        # self._set_status("Voice counts re-synchronized", duration=2.0)
 
     def _steal_least_important(self, port: int):
         """
