@@ -19,27 +19,28 @@ Features
 • Full panic / All Notes Off handling
 • Live status panel with per-port meters, channel activity,
   Volume / Pan / Mod Wheel / Pitch Bend, and activity counters
-• Rolling status history + format badge (GM / GM2 / GS / XG / MT-32; * = locked)
+• Rolling status history + input-format badge (GM / GM2 / GS / XG / MT-32; * = locked)
 • SysEx recognition & human-readable status for:
     – GS: Reset, Reverb/Chorus/Delay macros, EFX/MFX types, part EFX on/off, display text
     – XG: System On, Reverb/Chorus/Variation/Insertion types, display text
     – MT-32: Display text, reverb mode/time/level, master volume/tune
 • Redundant controller filtering (keeps devices in sync while reducing traffic)
 • Arbitrary number of output ports (default 2; 1 allowed with --alchemy)
-• Output format tags, including multi-capability (e.g. --outs "SC:gs+gm2")
-• Crucible: format-aware routing (SysEx + note affinity)
-• Unknown format → GM-family ports only (pure MT-32 excluded until MT-32)
-• No spill-to-all when no port matches the current format
+• Output format tags = device capabilities (e.g. --outs "SC:gs+gm2") — not the input stream
+• Crucible: route by input/stream format (SysEx detect, --input-format, or hotkeys)
+• Unknown input format → GM-family ports only (pure MT-32 excluded until input is MT-32)
+• No spill-to-all when no port matches the current input format
 • Alchemy: gate for future transcoding (allows single output; conversion later)
-• Format set (hotkeys) vs format lock (L); idle clear; F clears
+• Set input format (G/R/Y/M) vs lock input format (L); idle clear; F clears
 • GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
 • SCPOP / SC-ext detection (model 45 or banner) + optional --scpop
 • Per-port --sync-delay (ms); relative negatives normalized; 0 = fast path
 • Graceful handling and attempted reconnect of dropped or lost output ports.
 
-Hotkeys
+Hotkeys (input/stream format — not output tags)
 -------
-F clear format   L lock/unlock format   G GM↔GM2   R GS   Y XG   M MT-32
+F clear input format   L lock/unlock input format
+G GM↔GM2   R GS   Y XG   M MT-32
 B balance↔rr     Q quit (panic)
 
 Usage examples
