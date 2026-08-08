@@ -552,8 +552,9 @@ class Duality:
         if self.scpop_forced:
             console.print("[green]SCPOP[/]         : forced on (--scpop) – broadcasting notes to format-matched ports")
         console.print(
-            "[green]Ready.[/] Notes will be distributed. "
-            "Ctrl+C to stop + panic. Press [bold]F[/] to clear format state.\n"
+            "[green]Ready.[/] Notes will be distributed. Ctrl+C to stop + panic.\n"
+            "  Hotkeys: [bold]F[/]=clear  [bold]G[/]=GM/GM2  [bold]R[/]=GS  "
+            "[bold]Y[/]=XG  [bold]M[/]=MT-32  [bold]B[/]=balance/round-robin  [bold]Q[/]=quit"
         )
 
     # ------------------------------------------------------------------
@@ -606,6 +607,22 @@ class Duality:
             return Text("")
 
         return Text.from_markup("\n".join(lines))
+
+    def _force_format(self, fmt_display: str, reason: str = "hotkey") -> None:
+        """Sticky-lock session format from a hotkey (G/R/Y/M, etc.)."""
+        prev = self.detected_format
+        self.detected_format = fmt_display
+        self.format_pulse_time = time.monotonic() + 2.8
+        self.last_midi_time = time.monotonic()  # refresh idle timer
+        # Auto SCPOP only makes sense in the GS world
+        if fmt_display != "GS" and self.scpop_mode and not self.scpop_forced:
+            self.scpop_mode = False
+        if prev == fmt_display:
+            self._set_status(f"Format locked {fmt_display} ({reason})", duration=2.0)
+        elif prev:
+            self._set_status(f"Format switch: {prev} → {fmt_display} ({reason})", duration=2.5)
+        else:
+            self._set_status(f"Format locked {fmt_display} ({reason})", duration=2.5)
 
     def _clear_format(self, reason: str = "manual") -> None:
         """Clear sticky session format (idle timeout, hotkey, or explicit)."""
@@ -1016,18 +1033,27 @@ class Duality:
             limit = self.poly_limits[preferred]
             if counts[preferred] < limit:
                 return preferred
-            # Preferred is full → look for a meaningfully freer eligible port
-            free = {i: self.poly_limits[i] - counts[i] for i in eligible}
-            best_free = max(free.values())
-            if free[preferred] < best_free - 1:
-                for i, f in free.items():
-                    if f == best_free:
-                        return i
+            # Preferred is full → spill to the least-utilized eligible port
+            def _util(i: int) -> float:
+                lim = self.poly_limits[i] or 1
+                return counts[i] / lim
 
-        # Classic load balance using remaining capacity among eligible
-        remaining = {i: self.poly_limits[i] - counts[i] for i in eligible}
-        max_remaining = max(remaining.values())
-        candidates = [i for i, r in remaining.items() if r == max_remaining]
+            best = min(eligible, key=lambda i: (_util(i), counts[i], i))
+            return best
+
+        # Classic load balance: lowest utilization (active/limit), then lowest
+        # absolute count. This keeps mixed poly limits (e.g. 32 vs 96) fair —
+        # absolute "remaining capacity" would otherwise dump everything on the
+        # highest-limit port until it was nearly full.
+        def _util(i: int) -> float:
+            lim = self.poly_limits[i] or 1
+            return counts[i] / lim
+
+        min_util = min(_util(i) for i in eligible)
+        candidates = [i for i in eligible if abs(_util(i) - min_util) < 1e-9]
+        if len(candidates) > 1:
+            min_count = min(counts[i] for i in candidates)
+            candidates = [i for i in candidates if counts[i] == min_count]
 
         if len(candidates) == 1:
             return candidates[0]
@@ -1603,22 +1629,48 @@ class Duality:
             padding=(0, 1),
         )
 
+    def _handle_hotkey(self, ch: str) -> None:
+        """Dispatch a single hotkey character."""
+        c = ch.lower()
+        if c == "f":
+            self._clear_format("hotkey")
+        elif c == "g":
+            # Cycle GM ↔ GM2 on repeated G
+            if self.detected_format == "GM":
+                self._force_format("GM2", "hotkey G")
+            else:
+                self._force_format("GM", "hotkey G")
+        elif c == "r":
+            # GS today; future multi-press can cycle GS → SC
+            self._force_format("GS", "hotkey R")
+        elif c == "y":
+            self._force_format("XG", "hotkey Y")
+        elif c == "m":
+            self._force_format("MT-32", "hotkey M")
+        elif c == "b":
+            # Toggle note assignment strategy
+            self.mode = "rr" if self.mode == "balance" else "balance"
+            self._set_status(f"Mode → {self.mode}", duration=2.5)
+        elif c == "q":
+            self._set_status("Quit requested – panicking and exiting…", duration=2.0)
+            self.panic(reason="hotkey Q")
+            self.close()
+            sys.exit(0)
+
     def _poll_hotkeys(self) -> None:
-        """Non-blocking keyboard poll. F = clear format state."""
+        """Non-blocking keyboard poll for format / control hotkeys."""
         try:
             import msvcrt  # Windows
             while msvcrt.kbhit():
                 ch = msvcrt.getwch()
-                if ch.lower() == "f":
-                    self._clear_format("hotkey")
+                self._handle_hotkey(ch)
         except ImportError:
             # Unix: best-effort non-blocking stdin (may not work under all terminals)
             try:
                 import select
                 if select.select([sys.stdin], [], [], 0)[0]:
                     ch = sys.stdin.read(1)
-                    if ch.lower() == "f":
-                        self._clear_format("hotkey")
+                    self._handle_hotkey(ch)
             except Exception:
                 pass
 
