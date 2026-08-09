@@ -155,6 +155,7 @@ If you omit `--outs`, Duality asks you to choose ports (2 by default; 1 with `--
 | `--crucible-gm-wide` | GM/GM2 streams also match `gs` and `xg` ports |
 | `--input-format` | Assume `gm` / `gm2` / `gs` / `xg` / `mt32` until SysEx says otherwise |
 | `--scpop` | Force SCPOP note broadcast to format-matched ports |
+| `--strict-format-detection` | Only actual SYSTEM ON or RESET SysEx messages set/switch input format. (default: any family SysEx) |
 | `--alchemy` | Alchemy path (allows single output; conversion later) |
 | `--no-status` | Disable the live status panel |
 | `--list` | List MIDI ports and exit |
@@ -173,9 +174,9 @@ They do **not** change `--outs` tags — those still describe each **output** de
 | **F** | Clear input format (and unlock) |
 | **L** | Lock / unlock current **input** format (blocks SysEx override & idle clear) |
 | **G** | Set input format GM; press again for GM2 |
-| **R** | Set input format Roland GS |
-| **Y** | Set input format Yamaha XG |
-| **M** | Set input format Roland MT-32 and compatibles |
+| **R** | Set input format GS |
+| **Y** | Set input format XG |
+| **M** | Set input format MT-32 |
 | **B** | Toggle balance ↔ round-robin |
 | **Q** | Panic and quit |
 | **Ctrl+C** | Panic and quit |
