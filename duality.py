@@ -32,6 +32,7 @@ Features
 • No spill-to-all when no port matches the current input format
 • Alchemy: gate for future transcoding (allows single output; conversion later)
 • Set input format (G/R/Y/M) vs lock input format (L); idle clear; F clears
+• Optional --strict-format-detection: Only actual SYSTEM ON or RESET SysEx messages set/switch input format.
 • GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
 • SCPOP / SC-ext detection (model 45 or banner) + optional --scpop
 • Per-port --sync-delay (ms); relative negatives normalized; 0 = fast path
@@ -66,6 +67,9 @@ python duality.py --input "..." --outs "SC:gs+mt32" "MUNT:mt32" --sync-delay 0 -
 
 # Custom chord window + silent mode
 python duality.py --input "..." --outs "A" "B" --chord-ms 25 --no-status
+
+# Strict format detection (ignore stray XG/GS parameter SysEx)
+python duality.py --input "..." --outs "A:gs" "B:xg" --crucible --strict-format-detection
 
 # Show version
 python duality.py --version
@@ -462,6 +466,7 @@ class Duality:
         input_format: str | None = None,
         scpop: bool = False,
         sync_delays_ms: list[float] | None = None,
+        strict_format_detection: bool = False,
     ):
         # Alchemy may run with a single output (transcode-only path).
         # Classic router still requires at least two ports.
@@ -513,6 +518,9 @@ class Duality:
         self.scpop_mode = bool(scpop)
         self.scpop_forced = bool(scpop)
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
+        # When True, only strong identity/reset SysEx switches input format
+        # (GM/GM2 On, GS Reset, XG System On, MT-32 reset). Default False = any family SysEx.
+        self.strict_format_detection = bool(strict_format_detection)
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 7
         self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
@@ -606,6 +614,8 @@ class Duality:
             console.print("[green]Alchemy[/]       : on (conversion not yet implemented)")
         if self.detected_format:
             console.print(f"[green]Input format[/]  : {self.detected_format} (assumed/seeded)")
+        if self.strict_format_detection:
+            console.print("[green]Format detect[/] : strict (resets / System On only)")
         if self.scpop_forced:
             console.print("[green]SCPOP[/]         : forced on (--scpop) – broadcasting notes to format-matched ports")
         console.print(
@@ -767,10 +777,51 @@ class Duality:
             if self._port_matches_format(i, self.detected_format)
         ]
 
+    def _is_strong_format_signal(self, data: list, fmt: str) -> bool:
+        """
+        True if this SysEx is a strong identity/reset for the given format.
+        Used when --strict-format-detection is on.
+        """
+        if fmt in ("GM", "GM2"):
+            # Already only matched from Universal GM/GM2 System On
+            return True
+        if fmt == "XG":
+            # XG System On: F0 43 1n 4C 00 00 7E 00 F7
+            return (
+                len(data) >= 7
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x00
+                and data[4] == 0x00
+                and data[5] == 0x7E
+            )
+        if fmt == "GS":
+            # GS Reset: F0 41 1n 42 12 40 00 7F 00 [ck] F7
+            return (
+                len(data) >= 7
+                and data[0] == 0x41
+                and data[2] == 0x42
+                and data[3] == 0x12
+                and data[4] == 0x40
+                and data[5] == 0x00
+                and data[6] == 0x7F
+            )
+        if fmt == "MT-32":
+            # MT-32 reset-all (common): DT1 addr 7F 00 00 ...
+            return (
+                len(data) >= 6
+                and data[0] == 0x41
+                and data[2] == 0x16
+                and data[3] == 0x12
+                and data[4] == 0x7F
+            )
+        return False
+
     def _detect_format(self, msg: mido.Message) -> None:
         """
         Detect GM / GM2 / GS / XG / MT-32 from SysEx and update sticky format.
-        Strong signals set or switch the session format (opposing signal switches).
+        Default: any family SysEx can set/switch format.
+        With --strict-format-detection: only strong resets / System On messages switch.
         """
         if msg.type != "sysex":
             return
@@ -802,6 +853,10 @@ class Duality:
         # Most common form: F0 43 1n 4C ...
         elif data[0] == 0x43 and len(data) >= 4 and data[2] == 0x4C:
             fmt = "XG"
+
+        # Strict mode: incidental parameter SysEx must not flip input format
+        if fmt and self.strict_format_detection and not self._is_strong_format_signal(data, fmt):
+            fmt = None
 
         # SCPOP / SC-extended detection (broadcast notes to format-matched ports)
         # 1) Roland model 0x45 (SC-ext / SCPOP setup dumps) – text optional
@@ -2106,6 +2161,14 @@ def main():
         ),
     )
     parser.add_argument(
+        "--strict-format-detection",
+        action="store_true",
+        help=(
+            "Only GM/GM2 System On, GS Reset, XG System On, and MT-32 reset SysEx "
+            "may set/switch input format. Default: any family SysEx can (current behavior)."
+        ),
+    )
+    parser.add_argument(
         "--mode",
         choices=["balance", "rr"],
         default="balance",
@@ -2205,6 +2268,7 @@ def main():
             input_format=args.input_format,
             scpop=args.scpop,
             sync_delays_ms=args.sync_delay,
+            strict_format_detection=args.strict_format_detection,
         )
         router.run()
     except ValueError as e:
