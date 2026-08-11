@@ -2,6 +2,8 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
+Current development line: **v0.10.11** (see `python duality.py --version`).
+
 Duality routes MIDI notes across two or more sound modules / synthesizers to maximize effective polyphony, while keeping non-note messages synchronized across all devices.
 
 It is designed for musicians and retro-computing enthusiasts who want to combine multiple hardware (and soft) MIDI modules and treat them as one higher-polyphony, format-aware instrument.
@@ -54,8 +56,9 @@ It is designed for musicians and retro-computing enthusiasts who want to combine
 ### Other
 - Redundant controller filtering (sync without excess traffic)
 - Arbitrary number of output ports (default 2; 1 allowed with `--alchemy`)
-- **Alchemy**: gate for future transcoding (not converting yet)
+- **Alchemy** (**BROKEN/EXPERIMENTAL**): attempted GS↔XG SysEx/PC rewrite; allows a single output. Do not rely on conversion quality yet.
 - Graceful handling of dropped/lost **output** ports with automatic reconnect by name
+- Optional **`--log` / `--log-verbose`**: status, Alchemy, bank/PC, and **port health** (open/close/send fail/reconnect)
 - Cross-platform (Windows, macOS, Linux)
 
 ---
@@ -156,7 +159,10 @@ If you omit `--outs`, Duality asks you to choose ports (2 by default; 1 with `--
 | `--input-format` | Assume `gm` / `gm2` / `gs` / `xg` / `mt32` until SysEx says otherwise |
 | `--scpop` | Force SCPOP note broadcast to format-matched ports |
 | `--strict-format-detection` | Only actual SYSTEM ON or RESET SysEx messages set/switch input format. (default: any family SysEx) |
-| `--alchemy` | Alchemy path (allows single output; conversion later) |
+| `--alchemy` | Alchemy (**BROKEN/EXPERIMENTAL**): attempt GS↔XG rewrite; allows single output |
+| `--alchemy-all` | Alchemy fan-out to all GS/XG-capable outs (implies `--alchemy`) |
+| `--log [PATH]` | Append status / Alchemy / bank-PC / port health to a log (default: `duality.log`) |
+| `--log-verbose [PATH]` | Verbose log (all CCs, pitch, etc.). Optional path; implies logging. Wins over `--log` if both given |
 | `--no-status` | Disable the live status panel |
 | `--list` | List MIDI ports and exit |
 | `--version` | Show version |
@@ -178,6 +184,7 @@ They do **not** change `--outs` tags — those still describe each **output** de
 | **Y** | Set input format XG |
 | **M** | Set input format MT-32 |
 | **B** | Toggle balance ↔ round-robin |
+| **C** | Clear log file (when `--log` / `--log-verbose` is active) |
 | **Q** | Panic and quit |
 | **Ctrl+C** | Panic and quit |
 
@@ -198,7 +205,7 @@ While running, Duality can show:
 - Drops, Steals, Filtered  
 - Per-channel voices, Volume, Pan, Mod, Pitch  
 - Chord / last activity, status message + rolling history  
-- Format badge (`[GS]`, locked `[GS*]`), Crucible / Alchemy / SCPOP badges  
+- Format badge (`[GS]`, locked `[GS*]`) , Crucible / Alchemy / SCPOP badges  
 - Activity pulse and human-readable SysEx lines  
 
 **Older panel capture** (prior UI generation):
@@ -219,11 +226,28 @@ Wide terminals (≥ ~118 columns) get the side history panel automatically.
 - Tag multi-standard modules explicitly (`gs+gm2`) so GM2 set/lock does not “match nothing” and drop notes.
 - If a softsynth or hardware port disappears (app quit, player stop), Duality stays up and **retries reconnect** to the same port name. It does **not** re-send banks, programs, or mode resets — re-establish tone maps with your file/player as usual after a device restart.
 
+### Duality looks active but my synth is not responding / I don’t hear anything
+
+WinMM + loopMIDI port ownership is fragile. Try this order:
+
+1. Quit Duality cleanly (**Q** or Ctrl+C).
+2. Quit the player (e.g. Windows Media Player) if it was open.
+3. Restart the softsynths (or power-cycle hardware) so they re-open their **input** ends of the loopMIDI cables.
+4. Start Duality again, then the player.
+
+Preferred cold-start order: **loopMIDI → softsynths → Duality → player**.
+
+With `--log`, check lines prefixed `PORT` (open/close, send failures, reconnects). At session end, each out logs **last successful send** age — useful when the UI is busy but a device stays silent.
+
 ---
 
-## Alchemy (preview)
+## Alchemy (BROKEN / EXPERIMENTAL)
 
-`--alchemy` allows a **single** output and marks the Alchemy path. **Format conversion is not implemented yet**; messages still pass through. Crucible routing and the rest of Duality work independently.
+`--alchemy` enables the Alchemy path (including a **single** output). Duality may attempt best-effort **GS ↔ XG** SysEx and program/bank rewrites toward tagged outs.
+
+This path is **broken / experimental**: mapping is incomplete, effect translation is unreliable, and results vary by file and device. Same-dialect traffic (e.g. XG → `:xg`) should pass through unchanged. Crucible routing and the rest of Duality work independently of conversion quality.
+
+`--alchemy-all` fans out to all GS/XG-capable outs (implies `--alchemy`).
 
 ---
 
