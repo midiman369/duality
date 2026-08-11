@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.10.10"
+VERSION = "0.10.11"
 
 
 """
@@ -39,6 +39,7 @@ Features
 • SCPOP / SC-ext detection (model 45 or banner) + optional --scpop
 • Per-port --sync-delay (ms); relative negatives normalized; 0 = fast path
 • Graceful handling and attempted reconnect of dropped or lost output ports.
+• Port health logging (open/close/send fail/reconnect) when --log is enabled.
 
 Hotkeys (input/stream format — not output tags)
 -------
@@ -742,8 +743,23 @@ class Duality:
         self.sync_enabled = any(d > 0.0 for d in self.sync_delays)
         self._send_queue: list[tuple[float, int, object]] = []  # (send_at, port, msg)
 
+        # Snapshot available ports before we claim any (helps diagnose loopMIDI / WinMM issues)
+        try:
+            avail_in = list(mido.get_input_names())
+            avail_out = list(mido.get_output_names())
+            self._log_line("PORT  Available inputs : " + (", ".join(avail_in) if avail_in else "(none)"))
+            self._log_line("PORT  Available outputs: " + (", ".join(avail_out) if avail_out else "(none)"))
+        except Exception as e:
+            self._log_line(f"PORT  Could not list ports: {e}")
+
+        self.in_name = in_name
         console.print(f"[bold cyan]Opening input[/] : {in_name}")
-        self.inport = mido.open_input(in_name)
+        try:
+            self.inport = mido.open_input(in_name)
+            self._log_line(f"PORT  Opened input: {in_name}")
+        except Exception as e:
+            self._log_line(f"PORT  FAILED input: {in_name} – {e}")
+            raise
 
         self.outs = []
         self.port_names = out_names
@@ -753,11 +769,18 @@ class Duality:
                 f"[bold cyan]Opening out {i+1}[/] : {name} "
                 f"(limit {self.poly_limits[i]}, format {tag_disp})"
             )
-            self.outs.append(mido.open_output(name))
+            try:
+                self.outs.append(mido.open_output(name))
+                self._log_line(f"PORT  Opened out {i + 1}: {name}")
+            except Exception as e:
+                self._log_line(f"PORT  FAILED out {i + 1}: {name} – {e}")
+                raise
 
         # Output health / reconnect (Windows often invalidates ports when apps quit)
         self._out_offline = [False] * self.n_ports
         self._out_last_reconnect_attempt = [0.0] * self.n_ports
+        self._out_last_ok = [0.0] * self.n_ports          # last successful send (monotonic)
+        self._out_fail_logged = [False] * self.n_ports    # rate-limit fail log spam
         self._reconnect_cooldown = 2.0  # seconds between reconnect attempts per port
 
         self.active: dict[tuple[int, int], dict] = {}
@@ -1622,19 +1645,23 @@ class Duality:
         self._out_last_reconnect_attempt[port] = now
 
         name = self.port_names[port]
+        self._log_line(f"PORT  Reconnect attempt out {port + 1}: {name}")
         # Close stale handle
         try:
             self.outs[port].close()
-        except Exception:
-            pass
+        except Exception as e:
+            self._log_line(f"PORT  Close before reconnect out {port + 1}: {e}")
 
         try:
             self.outs[port] = mido.open_output(name)
             self._out_offline[port] = False
+            self._out_fail_logged[port] = False
+            self._log_line(f"PORT  Reconnected out {port + 1}: {name}")
             self._set_status(f"Reconnected out {port + 1}: {name}", duration=3.0)
             return True
-        except Exception:
+        except Exception as e:
             self._out_offline[port] = True
+            self._log_line(f"PORT  Reconnect FAILED out {port + 1}: {name} – {e}")
             self._set_status(
                 f"Out {port + 1} offline ({name}) – will retry",
                 duration=3.0,
@@ -1652,14 +1679,28 @@ class Duality:
 
         try:
             self.outs[port].send(msg)
+            self._out_last_ok[port] = time.monotonic()
+            self._out_fail_logged[port] = False
             return True
-        except Exception:
+        except Exception as e:
+            name = self.port_names[port]
+            if not self._out_fail_logged[port]:
+                self._out_fail_logged[port] = True
+                self._log_line(
+                    f"PORT  Send FAIL out {port + 1} ({name}): {type(e).__name__}: {e}"
+                )
             if self._try_reconnect_out(port, force=True):
                 try:
                     self.outs[port].send(msg)
+                    self._out_last_ok[port] = time.monotonic()
+                    self._out_fail_logged[port] = False
                     return True
-                except Exception:
+                except Exception as e2:
                     self._out_offline[port] = True
+                    self._log_line(
+                        f"PORT  Send FAIL after reconnect out {port + 1} ({name}): "
+                        f"{type(e2).__name__}: {e2}"
+                    )
                     return False
             return False
 
@@ -2958,15 +2999,33 @@ class Duality:
                 self.close()
 
     def close(self):
+        # Log last-ok ages so a wedged-but-silent out is visible in the session log
         try:
-            self.inport.close()
+            now = time.monotonic()
+            for i, name in enumerate(getattr(self, "port_names", []) or []):
+                last = self._out_last_ok[i] if i < len(self._out_last_ok) else 0.0
+                offline = self._out_offline[i] if i < len(self._out_offline) else False
+                if last <= 0.0:
+                    age = "never"
+                else:
+                    age = f"{now - last:.1f}s ago"
+                flag = " OFFLINE" if offline else ""
+                self._log_line(f"PORT  Session end out {i + 1} ({name}): last ok {age}{flag}")
         except Exception:
             pass
-        for out in self.outs:
+
+        try:
+            self.inport.close()
+            self._log_line(f"PORT  Closed input: {getattr(self, 'in_name', '?')}")
+        except Exception as e:
+            self._log_line(f"PORT  Close input error: {e}")
+        for i, out in enumerate(self.outs):
+            name = self.port_names[i] if i < len(self.port_names) else "?"
             try:
                 out.close()
-            except Exception:
-                pass
+                self._log_line(f"PORT  Closed out {i + 1}: {name}")
+            except Exception as e:
+                self._log_line(f"PORT  Close out {i + 1} ({name}) error: {e}")
         if self._log_file is not None:
             try:
                 self._log_file.write(
