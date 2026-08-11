@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-VERSION = "0.10.9"
+VERSION = "0.10.10"
+
 
 """
 Duality – Intelligent Multi-Device MIDI Polyphony Router
@@ -30,7 +31,8 @@ Features
 • Crucible: route by input/stream format (SysEx detect, --input-format, or hotkeys)
 • Unknown input format → GM-family ports only (pure MT-32 excluded until input is MT-32)
 • No spill-to-all when no port matches the current input format
-• Alchemy: gate for future transcoding (allows single output; conversion later)
+• Alchemy (BROKEN/EXPERIMENTAL): attempted GS↔XG SysEx/PC rewrite; --alchemy / --alchemy-all
+• Hybrid with Crucible: native affinity first, overflow+translate under poly pressure
 • Set input format (G/R/Y/M) vs lock input format (L); idle clear; F clears
 • Optional --strict-format-detection: Only actual SYSTEM ON or RESET SysEx messages set/switch input format.
 • GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
@@ -42,7 +44,7 @@ Hotkeys (input/stream format — not output tags)
 -------
 F clear input format   L lock/unlock input format
 G GM↔GM2   R GS   Y XG   M MT-32
-B balance↔rr     Q quit (panic)
+B balance↔rr     C clear log file     Q quit (panic)
 
 Usage examples
 --------------
@@ -447,6 +449,143 @@ XG_INSERTION_TYPES = {
     (0x57, 0x00): "Ensemble Detune",
 }
 
+# ----------------------------------------------------------------------
+# Alchemy Phase 1b – best-effort GS ↔ XG maps (resets already in methods)
+# ----------------------------------------------------------------------
+# GS reverb macro (0–7) → XG reverb type (MSB, LSB)
+ALCHEMY_GS_REVERB_TO_XG = {
+    0: (0x02, 0x00),  # Room 1
+    1: (0x02, 0x01),  # Room 2
+    2: (0x02, 0x02),  # Room 3
+    3: (0x01, 0x00),  # Hall 1
+    4: (0x01, 0x01),  # Hall 2
+    5: (0x04, 0x00),  # Plate
+    6: (0x02, 0x00),  # Delay → Room 1 stand-in
+    7: (0x02, 0x01),  # Panning Delay → Room 2 stand-in
+}
+# XG reverb (MSB, LSB) → GS reverb macro
+ALCHEMY_XG_REVERB_TO_GS = {
+    (0x00, 0x00): 0,  # No Effect → Room 1
+    (0x01, 0x00): 3,  # Hall 1
+    (0x01, 0x01): 4,  # Hall 2
+    (0x02, 0x00): 0,  # Room 1
+    (0x02, 0x01): 1,  # Room 2
+    (0x02, 0x02): 2,  # Room 3
+    (0x03, 0x00): 3,  # Stage 1 → Hall 1
+    (0x03, 0x01): 4,  # Stage 2 → Hall 2
+    (0x04, 0x00): 5,  # Plate
+}
+# GS chorus macro → XG chorus type
+ALCHEMY_GS_CHORUS_TO_XG = {
+    0: (0x41, 0x00),  # Chorus 1
+    1: (0x41, 0x01),  # Chorus 2
+    2: (0x41, 0x02),  # Chorus 3
+    3: (0x41, 0x08),  # Chorus 4
+    4: (0x41, 0x01),  # Feedback → Chorus 2
+    5: (0x43, 0x00),  # Flanger 1
+    6: (0x41, 0x00),  # Short Delay → Chorus 1
+    7: (0x41, 0x01),  # Short Delay FB → Chorus 2
+}
+ALCHEMY_XG_CHORUS_TO_GS = {
+    (0x00, 0x00): 0,
+    (0x41, 0x00): 0,
+    (0x41, 0x01): 1,
+    (0x41, 0x02): 2,
+    (0x41, 0x08): 3,
+    (0x42, 0x00): 1,  # Celeste → Chorus 2
+    (0x42, 0x01): 2,
+    (0x43, 0x00): 5,  # Flanger
+    (0x43, 0x01): 5,
+    (0x43, 0x08): 5,
+    (0x44, 0x00): 3,  # Symphonic → Chorus 4
+}
+
+# XG Variation types that are delay-like → GS Delay macro (prefer short: 0 = Delay 1)
+# Values are GS delay macro index (see GS_DELAY_MACRO)
+# True delay-family XG Variation → GS Delay macro (short: 0 = Delay 1)
+ALCHEMY_XG_VARIATION_DELAY_TO_GS = {
+    (0x05, 0x00): 0,  # Delay L,C,R
+    (0x06, 0x00): 0,  # Delay L,R
+    (0x07, 0x00): 1,  # Echo → Delay 2
+    (0x08, 0x00): 0,  # Cross Delay
+}
+# Early reflection / short special reverb → GS Reverb Room (not long Delay)
+# GS reverb macro: 0=Room1, 1=Room2, 2=Room3
+ALCHEMY_XG_VARIATION_REVERB_TO_GS = {
+    (0x09, 0x00): 0,  # ER 1 → Room 1
+    (0x09, 0x01): 1,  # ER 2 → Room 2
+    (0x0A, 0x00): 0,  # Gate Reverb → Room 1
+    (0x0B, 0x00): 0,  # Reverse Gate → Room 1
+    (0x10, 0x00): 0,  # White Room → Room 1 (short reverb + slight pre-delay)
+    (0x11, 0x00): 1,  # Tunnel → Room 2
+    (0x12, 0x00): 2,  # Canyon → Room 3
+    (0x13, 0x00): 1,  # Basement → Room 2
+}
+# XG Insertion / amp-sim family → GS EFX type (MSB, LSB) at 40 03 00
+ALCHEMY_XG_INS_TO_GS_EFX = {
+    (0x49, 0x00): (0x01, 0x11),  # Distortion
+    (0x4A, 0x00): (0x01, 0x10),  # Overdrive
+    (0x4B, 0x00): (0x01, 0x10),  # Amp Simulator → Overdrive stand-in
+    (0x4E, 0x00): (0x01, 0x21),  # Auto Wah
+    (0x48, 0x00): (0x01, 0x20),  # Phaser 1
+}
+# Reverse: GS EFX type → XG Insertion 1 type
+ALCHEMY_GS_EFX_TO_XG_INS = {
+    # Core
+    (0x01, 0x10): (0x4A, 0x00),  # Overdrive
+    (0x01, 0x11): (0x49, 0x00),  # Distortion
+    (0x01, 0x20): (0x48, 0x00),  # Phaser
+    (0x01, 0x21): (0x4E, 0x00),  # Auto Wah
+    (0x01, 0x00): (0x4C, 0x00),  # Stereo-EQ → 3-Band EQ
+    (0x01, 0x01): (0x4C, 0x00),  # Spectrum
+    (0x01, 0x02): (0x51, 0x00),  # Enhancer
+    (0x01, 0x22): (0x45, 0x00),  # Rotary
+    (0x01, 0x23): (0x43, 0x00),  # Stereo Flanger
+    (0x01, 0x24): (0x43, 0x08),  # Step Flanger
+    (0x01, 0x25): (0x46, 0x00),  # Tremolo
+    (0x01, 0x26): (0x47, 0x00),  # Auto Pan
+    (0x01, 0x30): (0x53, 0x00),  # Compressor
+    (0x01, 0x40): (0x41, 0x00),  # Hexa Chorus
+    (0x01, 0x42): (0x41, 0x00),  # Stereo Chorus
+    (0x01, 0x50): (0x05, 0x00),  # Stereo Delay
+    (0x01, 0x51): (0x06, 0x00),  # Mod Delay
+    (0x01, 0x55): (0x02, 0x00),  # Reverb
+    (0x01, 0x56): (0x0A, 0x00),  # Gate Reverb
+    (0x01, 0x57): (0x08, 0x00),  # 3D Delay → Cross Delay stand-in
+    # Series multi → nearest single
+    (0x02, 0x00): (0x4A, 0x00),  # OD→Cho → Overdrive
+    (0x02, 0x02): (0x4A, 0x00),  # OD→Delay
+    (0x02, 0x04): (0x49, 0x00),  # Dist→Cho
+    (0x02, 0x06): (0x49, 0x00),  # Dist→Delay
+    (0x02, 0x0A): (0x05, 0x00),  # Enh→Delay → Delay
+    (0x04, 0x01): (0x4B, 0x00),  # Guitar Multi → Amp Sim
+    (0x04, 0x02): (0x4B, 0x00),
+    (0x04, 0x03): (0x4B, 0x00),
+    (0x04, 0x04): (0x4A, 0x00),  # Clean Gt Multi → Overdrive (milder)
+    (0x04, 0x05): (0x4B, 0x00),  # Bass Multi
+    (0x05, 0x00): (0x41, 0x00),  # Keyboard Multi → Chorus
+    (0x11, 0x00): (0x41, 0x00),  # Cho/Delay
+    (0x11, 0x01): (0x43, 0x00),  # FL/Delay
+    (0x11, 0x02): (0x43, 0x00),  # Cho/Flanger
+    (0x11, 0x03): (0x4A, 0x00),  # OD1/OD2
+    (0x11, 0x08): (0x4E, 0x00),  # PH/Auto Wah
+}
+# Space-like Variation → GS EFX (dual path: system reverb stays independent)
+# Only used when EFX slot is not owned by Insertion
+ALCHEMY_XG_VARIATION_TO_GS_EFX = {
+    (0x09, 0x00): (0x01, 0x55),  # ER 1 → EFX Reverb
+    (0x09, 0x01): (0x01, 0x55),  # ER 2
+    (0x0A, 0x00): (0x01, 0x56),  # Gate Reverb
+    (0x0B, 0x00): (0x01, 0x56),  # Reverse Gate
+    (0x10, 0x00): (0x01, 0x55),  # White Room
+    (0x11, 0x00): (0x01, 0x55),  # Tunnel
+    (0x12, 0x00): (0x01, 0x55),  # Canyon
+    (0x13, 0x00): (0x01, 0x55),  # Basement
+}
+
+def _roland_checksum(body: list[int]) -> int:
+    return (128 - (sum(body) % 128)) % 128
+
 console = Console()
 
 class Duality:
@@ -460,6 +599,7 @@ class Duality:
         show_status: bool = True,
         out_formats: List[str] | None = None,
         alchemy: bool = False,
+        alchemy_all: bool = False,
         crucible: bool = False,
         crucible_notes: str = "affinity",
         crucible_gm_wide: bool = False,
@@ -467,6 +607,8 @@ class Duality:
         scpop: bool = False,
         sync_delays_ms: list[float] | None = None,
         strict_format_detection: bool = False,
+        log_path: str | None = None,
+        log_verbose: bool = False,
     ):
         # Alchemy may run with a single output (transcode-only path).
         # Classic router still requires at least two ports.
@@ -481,7 +623,9 @@ class Duality:
         self.n_ports = len(out_names)
         self.chord_window = chord_window_ms / 1000.0
         self.show_status = show_status
-        self.alchemy = alchemy
+        # --alchemy-all implies Alchemy; fan-out to all GS/XG-capable outs
+        self.alchemy_all = bool(alchemy_all)
+        self.alchemy = bool(alchemy) or self.alchemy_all
         self.crucible = crucible
         self.crucible_notes = crucible_notes if crucible_notes in ("affinity", "all") else "affinity"
         self.crucible_gm_wide = bool(crucible_gm_wide)
@@ -518,9 +662,31 @@ class Duality:
         self.scpop_mode = bool(scpop)
         self.scpop_forced = bool(scpop)
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
+        # Per-channel bank select state (for Alchemy PC mapping)
+        self.bank_msb = [0] * 16
+        self.bank_lsb = [0] * 16
+        self._gs_efx_pending = False
+        self._gs_efx_parts_on = [False] * 16
+        # GS EFX slot owner: None | 'ins' | 'var'  (Insertion wins over Variation)
+        self._gs_efx_owner = None
+        self._gs_efx_part_explicit = False
+        self._xg_var_connection = 1
         # When True, only strong identity/reset SysEx switches input format
         # (GM/GM2 On, GS Reset, XG System On, MT-32 reset). Default False = any family SysEx.
         self.strict_format_detection = bool(strict_format_detection)
+        self._log_path = log_path
+        self.log_verbose = bool(log_verbose)
+        self._log_file = None
+        if log_path:
+            try:
+                self._log_file = open(log_path, "a", encoding="utf-8")
+                self._log_file.write(
+                    f"\n--- Duality session start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"
+                )
+                self._log_file.flush()
+            except OSError as e:
+                console.print(f"[yellow]Could not open log {log_path!r}: {e}[/]")
+                self._log_file = None
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 7
         self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
@@ -611,7 +777,11 @@ class Duality:
             wide = ", gm-wide" if self.crucible_gm_wide else ""
             console.print(f"[green]Crucible[/]      : on (notes={self.crucible_notes}{wide})")
         if self.alchemy:
-            console.print("[green]Alchemy[/]       : on (conversion not yet implemented)")
+            mode = "fanout (all GS/XG)" if self.alchemy_all else "on"
+            console.print(f"[yellow]Alchemy[/]       : {mode} [BROKEN/EXPERIMENTAL]")
+        if self._log_file is not None:
+            verb = "verbose" if self.log_verbose else "normal"
+            console.print(f"[green]Log file[/]      : {self._log_path} ({verb})")
         if self.detected_format:
             console.print(f"[green]Input format[/]  : {self.detected_format} (assumed/seeded)")
         if self.strict_format_detection:
@@ -626,12 +796,116 @@ class Duality:
 
     # ------------------------------------------------------------------
     
+
+    def _log_line(self, line: str) -> None:
+        """Append one line to --log file (no-op if logging disabled)."""
+        if getattr(self, "_log_file", None) is None or not line:
+            return
+        try:
+            self._log_file.write(f"{time.strftime('%H:%M:%S')} {line}\n")
+            self._log_file.flush()
+        except OSError:
+            pass
+
+    def _clear_log(self) -> None:
+        """Truncate the --log file and start a fresh section (hotkey C)."""
+        if not getattr(self, "_log_path", None):
+            self._set_status("No log file (--log not set)", duration=2.0)
+            return
+        try:
+            if self._log_file is not None:
+                try:
+                    self._log_file.close()
+                except OSError:
+                    pass
+                self._log_file = None
+            self._log_file = open(self._log_path, "w", encoding="utf-8")
+            self._log_file.write(
+                f"--- Duality log cleared {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"
+            )
+            self._log_file.flush()
+            self._set_status(f"Log cleared: {self._log_path}", duration=2.5)
+        except OSError as e:
+            self._log_file = None
+            self._set_status(f"Log clear failed: {e}", duration=3.0)
+
+    def _log_msg(self, port: int | None, msg: mido.Message, note: str = "") -> None:
+        """
+        Log non-note MIDI of interest when --log is active.
+        port: 0-based out index, or None for input/pre-route.
+        """
+        if getattr(self, "_log_file", None) is None:
+            return
+        tag = f"OUT{port + 1}" if port is not None else "IN  "
+        extra = f"  {note}" if note else ""
+
+        if msg.type == "program_change":
+            ch = msg.channel + 1
+            msb = self.bank_msb[msg.channel]
+            lsb = self.bank_lsb[msg.channel]
+            self._log_line(
+                f"{tag}  ch{ch:02d}  bank {msb}/{lsb}  PC {msg.program + 1}{extra}"
+            )
+            return
+        if msg.type == "control_change":
+            ch = msg.channel + 1
+            cc, val = msg.control, msg.value
+            named = {
+                0: "BankMSB",
+                32: "BankLSB",
+                1: "Mod",
+                7: "Vol",
+                10: "Pan",
+                11: "Expr",
+                64: "Sustain",
+                91: "Reverb",
+                93: "Chorus",
+                98: "NRPN_LSB",
+                99: "NRPN_MSB",
+                100: "RPN_LSB",
+                101: "RPN_MSB",
+                6: "DataMSB",
+                38: "DataLSB",
+                96: "DataInc",
+                97: "DataDec",
+            }
+            # Normal --log: bank + RPN/NRPN/data only (patch path)
+            # Data entry (6/38) is high-rate in XG files — verbose only
+            normal_ccs = {0, 32, 98, 99, 100, 101}
+            if not self.log_verbose and cc not in normal_ccs:
+                return
+            # Verbose: every CC (named when known)
+            name = named.get(cc)
+            if name:
+                self._log_line(f"{tag}  ch{ch:02d}  CC{cc} {name}={val}{extra}")
+            else:
+                self._log_line(f"{tag}  ch{ch:02d}  CC{cc}={val}{extra}")
+            return
+        if msg.type == "sysex":
+            data = list(msg.data)[:10]
+            hx = " ".join(f"{b:02X}" for b in data)
+            more = "…" if len(msg.data) > 10 else ""
+            self._log_line(f"{tag}  SysEx [{hx}{more}]{extra}")
+            return
+        if msg.type == "pitchwheel":
+            if not self.log_verbose:
+                return
+            # Skip zero/center spam unless labeled
+            if msg.pitch == 0 and not note:
+                return
+            ch = msg.channel + 1
+            self._log_line(f"{tag}  ch{ch:02d}  Pitch {msg.pitch}{extra}")
+            return
+
     def _set_status(self, message: str, duration: float = 5.0):
         """
         Show a temporary message in the bottom row.
         When a new message arrives, the previous one is moved into history.
+        Optionally mirrors lines to --log file.
         """
         now = time.monotonic()
+        if message:
+            self._log_line(message)
 
         # Push the previous bottom message into history (if it still exists)
         if self.status_message and self.status_message != message:
@@ -764,18 +1038,81 @@ class Duality:
             return bool(tags & GM_FAMILY_TAGS)
 
         allowed = set(FORMAT_COMPAT.get(stream_tag, {stream_tag}))
-        if self.crucible_gm_wide and stream_tag in ("gm", "gm2"):
+        # Crucible gm-wide OR Alchemy Phase 1: GM/GM2 may use GS/XG hardware natively
+        if stream_tag in ("gm", "gm2") and (self.crucible_gm_wide or self.alchemy):
             allowed |= {"gs", "xg"}
         return bool(tags & allowed)
 
-    def _eligible_note_ports(self) -> list[int]:
-        """Ports allowed to receive notes under current Crucible policy."""
+    def _port_has_alchemy_target(self, port_idx: int) -> bool:
+        """Phase 1: port can participate in Alchemy (gs/xg/gm/any — not pure mt32-only)."""
+        tags = self.out_formats[port_idx]
+        if not tags or "any" in tags:
+            return True
+        return bool(tags & {"gs", "xg", "gm", "gm2"})
+
+    def _port_target_dialect(self, port_idx: int) -> str | None:
+        """Dialect to translate toward, or None = pass-through."""
+        tags = self.out_formats[port_idx]
+        if not tags or "any" in tags:
+            return None
+        has_gs = "gs" in tags
+        has_xg = "xg" in tags
+        if has_gs and has_xg:
+            return None
+        if has_gs:
+            return "gs"
+        if has_xg:
+            return "xg"
+        return None
+
+    def _primary_note_ports(self) -> list[int]:
+        """Native-affinity ports (Crucible match, or Alchemy-capable when Crucible off)."""
         if not self.crucible or self.crucible_notes == "all":
+            if self.alchemy and not self.crucible:
+                return [i for i in range(self.n_ports) if self._port_has_alchemy_target(i)]
             return list(range(self.n_ports))
         return [
             i for i in range(self.n_ports)
             if self._port_matches_format(i, self.detected_format)
         ]
+
+    def _overflow_note_ports(self) -> list[int]:
+        """Hybrid Alchemy: GS↔XG ports outside primary affinity (not used with --alchemy-all)."""
+        if not self.alchemy or self.alchemy_all:
+            return []
+        if not self.crucible or self.crucible_notes == "all":
+            return []
+        primary = set(self._primary_note_ports())
+        stream = DETECT_TO_TAG.get(self.detected_format or "", None)
+        out = []
+        for i in range(self.n_ports):
+            if i in primary:
+                continue
+            tags = self.out_formats[i]
+            if not tags or "any" in tags:
+                continue
+            if stream == "gs" and "xg" in tags:
+                out.append(i)
+            elif stream == "xg" and "gs" in tags:
+                out.append(i)
+            elif stream in ("gm", "gm2") and (tags & {"gs", "xg"}):
+                out.append(i)
+        return out
+
+    def _eligible_note_ports(self) -> list[int]:
+        """Ports allowed to receive notes under Crucible / Alchemy policy."""
+        if self.alchemy_all:
+            return [i for i in range(self.n_ports) if self._port_has_alchemy_target(i)]
+        if self.alchemy and not self.crucible:
+            return [i for i in range(self.n_ports) if self._port_has_alchemy_target(i)]
+        if not self.crucible or self.crucible_notes == "all":
+            return list(range(self.n_ports))
+        primary = self._primary_note_ports()
+        if primary:
+            return primary
+        if self.alchemy:
+            return self._overflow_note_ports()
+        return []
 
     def _is_strong_format_signal(self, data: list, fmt: str) -> bool:
         """
@@ -1157,20 +1494,18 @@ class Duality:
         off = mido.Message("note_off", channel=ch, note=note, velocity=0)
         ports = self.active[key].get("ports", [port])
         for p in ports:
-            self._send(p, off)
+            self._send_routed(p, off)
             self.voice_counts[p] = max(0, self.voice_counts[p] - 1)
         del self.active[key]
         self.steal_count += 1
 
-    def _choose_port(self, is_chord: bool) -> int | None:
-        counts = self.voice_counts   # fast path – no scanning
-        eligible = self._eligible_note_ports()
+    def _choose_from_ports(self, eligible: list[int], is_chord: bool) -> int | None:
+        """Utilization / RR / chord pick among a concrete eligible list."""
         if not eligible:
-            # No format-matched ports → refuse (do not spill onto wrong modules)
             return None
+        counts = self.voice_counts
 
         if self.mode == "rr":
-            # Round-robin among eligible ports only
             for _ in range(self.n_ports):
                 port = self.rr_next % self.n_ports
                 self.rr_next = (self.rr_next + 1) % self.n_ports
@@ -1178,24 +1513,11 @@ class Duality:
                     return port
             return eligible[0]
 
-        # balance mode – prefer continuing a chord (if still eligible)
         if is_chord and self.last_chord_port is not None and self.last_chord_port in eligible:
             preferred = self.last_chord_port
-            limit = self.poly_limits[preferred]
-            if counts[preferred] < limit:
+            if counts[preferred] < self.poly_limits[preferred]:
                 return preferred
-            # Preferred is full → spill to the least-utilized eligible port
-            def _util(i: int) -> float:
-                lim = self.poly_limits[i] or 1
-                return counts[i] / lim
 
-            best = min(eligible, key=lambda i: (_util(i), counts[i], i))
-            return best
-
-        # Classic load balance: lowest utilization (active/limit), then lowest
-        # absolute count. This keeps mixed poly limits (e.g. 32 vs 96) fair —
-        # absolute "remaining capacity" would otherwise dump everything on the
-        # highest-limit port until it was nearly full.
         def _util(i: int) -> float:
             lim = self.poly_limits[i] or 1
             return counts[i] / lim
@@ -1205,18 +1527,45 @@ class Duality:
         if len(candidates) > 1:
             min_count = min(counts[i] for i in candidates)
             candidates = [i for i in candidates if counts[i] == min_count]
-
         if len(candidates) == 1:
             return candidates[0]
-
-        # Tie → round-robin among candidates
         port = self.rr_next % self.n_ports
         self.rr_next = (self.rr_next + 1) % self.n_ports
         for c in candidates:
             if c == port:
                 return c
         return candidates[0]
-        
+
+    def _choose_port(self, is_chord: bool) -> int | None:
+        """
+        Pick an output port. With Alchemy hybrid (--alchemy + Crucible):
+        prefer primary (native) ports with free polyphony; overflow to
+        GS↔XG translate targets only when primary would steal/drop.
+        """
+        counts = self.voice_counts
+        if self.alchemy_all:
+            return self._choose_from_ports(self._eligible_note_ports(), is_chord)
+
+        primary = self._primary_note_ports()
+        overflow = self._overflow_note_ports() if self.alchemy else []
+
+        def _free(pool: list[int]) -> list[int]:
+            return [i for i in pool if counts[i] < self.poly_limits[i]]
+
+        free_primary = _free(primary)
+        if free_primary:
+            return self._choose_from_ports(free_primary, is_chord)
+
+        free_overflow = _free(overflow)
+        if free_overflow:
+            return self._choose_from_ports(free_overflow, is_chord)
+
+        if primary:
+            return self._choose_from_ports(primary, is_chord)
+        if overflow:
+            return self._choose_from_ports(overflow, is_chord)
+        return self._choose_from_ports(self._eligible_note_ports(), is_chord)
+
     def _should_send(self, port_idx: int, msg: mido.Message) -> bool:
         """
         Return True if this message should be sent to the given port.
@@ -1356,6 +1705,541 @@ class Duality:
             if offline and (now - self._out_last_reconnect_attempt[i]) >= self._reconnect_cooldown:
                 self._try_reconnect_out(i)
 
+
+
+    def _stream_dialect(self) -> str | None:
+        """Canonical input dialect tag or None."""
+        if not self.detected_format:
+            return None
+        return DETECT_TO_TAG.get(self.detected_format)
+
+    def _gs_dt1(self, addr: list[int], values: list[int]) -> mido.Message:
+        """Build Roland GS DT1 SysEx with checksum."""
+        body = list(addr) + list(values)
+        ck = _roland_checksum(body)
+        return mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, *body, ck])
+
+    def _xg_param(self, addr: list[int], values: list[int]) -> mido.Message:
+        """Build Yamaha XG parameter SysEx (device 0x10)."""
+        return mido.Message("sysex", data=[0x43, 0x10, 0x4C, *addr, *values])
+
+    def _gs_silence_delay(self) -> list:
+        """
+        Zero GS Delay times/feedback/levels so ER/reverb maps do not leave a
+        long echo tail from a previous Delay macro or sticky SC state.
+        """
+        return [
+            self._gs_dt1([0x40, 0x01, 0x50], [0x00]),  # Delay type 0
+            self._gs_dt1([0x40, 0x01, 0x52], [0x00]),  # time C
+            self._gs_dt1([0x40, 0x01, 0x53], [0x00]),  # time L
+            self._gs_dt1([0x40, 0x01, 0x54], [0x00]),  # time R
+            self._gs_dt1([0x40, 0x01, 0x55], [0x00]),  # level C
+            self._gs_dt1([0x40, 0x01, 0x56], [0x00]),  # feedback
+            self._gs_dt1([0x40, 0x01, 0x5A], [0x00]),  # delay send→rev (common)
+        ]
+
+    def _gs_efx_enable_all_parts(self) -> list:
+        """Turn GS EFX on for parts 1–16 (correct GS part mid encoding)."""
+        return [
+            self._gs_dt1([0x40, self._gs_part_mid(p), 0x22], [0x01])
+            for p in range(16)
+        ]
+
+    @staticmethod
+    def _gs_mid_to_part(mid: int):
+        """
+        GS PART mid address → part index 0–15.
+        Supports both classic SC-55/88 (10/11-1F) and SC-8850 EFX block (40-4F).
+        """
+        # SC-8850 / 11GT_EFX style: 40=Part1 … 4F=Part16
+        if 0x40 <= mid <= 0x4F:
+            return mid - 0x40
+        # Classic: 11-19 = parts 1-9, 10 = part 10, 1A-1F = parts 11-16
+        if mid == 0x10:
+            return 9
+        if 0x11 <= mid <= 0x19:
+            return mid - 0x11
+        if 0x1A <= mid <= 0x1F:
+            return mid - 0x1A + 10
+        return None
+
+    @staticmethod
+    def _gs_part_mid(part: int) -> int:
+        """
+        Roland GS PART block mid address for part index 0–15.
+        Encoding is non-linear: 11-19, 10, 1A-1F (not 10+part).
+        """
+        if part < 9:
+            return 0x11 + part          # parts 1–9 → 11h–19h
+        if part == 9:
+            return 0x10                # part 10 → 10h
+        return 0x1A + (part - 10)      # parts 11–16 → 1Ah–1Fh
+
+    def _maybe_gs_efx_on_note(self, port: int, msg: mido.Message) -> None:
+        """
+        Fallback when XG sets Insertion but never sends PART.
+        Enable GS EFX on the *first* note channel only (not every channel).
+        """
+        if not self.alchemy:
+            return
+        if self._port_target_dialect(port) != "gs":
+            return
+        if self._gs_efx_owner != "ins":
+            return
+        if self._gs_efx_part_explicit:
+            return
+        # Already assigned a fallback part this Ins session
+        if any(self._gs_efx_parts_on):
+            return
+        if msg.type != "note_on" or msg.velocity == 0:
+            return
+        ch = msg.channel
+        for m in self._gs_efx_on_part(ch):
+            self._send(port, m)
+            if self._log_file is not None:
+                data = list(m.data) if hasattr(m, "data") else []
+                hx = " ".join(f"{b:02X}" for b in data[:12])
+                self._log_line(
+                    f"OUT{port + 1}  SysEx [{hx}]  "
+                    f"Alchemy: GS EFX on ch{ch + 1} (first-note fallback)"
+                )
+        self._set_status(
+            f"Alchemy: GS EFX on ch{ch + 1} only (first-note fallback)",
+            duration=2.5,
+        )
+
+    def _gs_efx_on_part(self, part: int) -> list:
+        """Enable GS EFX for one part (0–15). Idempotent per-session flags."""
+        if part < 0 or part > 15:
+            return []
+        if self._gs_efx_parts_on[part]:
+            return []
+        self._gs_efx_parts_on[part] = True
+        mid = self._gs_part_mid(part)
+        return [self._gs_dt1([0x40, mid, 0x22], [0x01])]
+
+    def _translate_sysex(self, msg: mido.Message, target: str) -> tuple:
+        """
+        Phase 1 GS ↔ XG SysEx translation.
+        Returns (message_or_None, status_label_or_None).
+        """
+        data = list(msg.data)
+        stream = self._stream_dialect()
+        if stream is None or stream == target:
+            return msg, None
+        if stream in ("gm", "gm2") and target in ("gs", "xg"):
+            return msg, None
+
+        # --- GS → XG ---
+        if stream == "gs" and target == "xg":
+            if (
+                len(data) >= 7
+                and data[0] == 0x41
+                and data[2] == 0x42
+                and data[3] == 0x12
+                and data[4] == 0x40
+                and data[5] == 0x00
+                and data[6] == 0x7F
+            ):
+                return (
+                    mido.Message("sysex", data=[0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00]),
+                    "GS Reset → XG System On",
+                )
+            # GS Reverb Macro: 40 01 30 vv
+            if (
+                len(data) >= 8
+                and data[0] == 0x41
+                and data[2] == 0x42
+                and data[3] == 0x12
+                and data[4] == 0x40
+                and data[5] == 0x01
+                and data[6] == 0x30
+            ):
+                vv = data[7]
+                pair = ALCHEMY_GS_REVERB_TO_XG.get(vv, (0x02, 0x00))
+                return (
+                    self._xg_param([0x02, 0x01, 0x00], [pair[0], pair[1]]),
+                    f"GS Reverb {vv} → XG {pair[0]:02X}/{pair[1]:02X}",
+                )
+            # GS Chorus Macro: 40 01 38 vv
+            if (
+                len(data) >= 8
+                and data[0] == 0x41
+                and data[2] == 0x42
+                and data[3] == 0x12
+                and data[4] == 0x40
+                and data[5] == 0x01
+                and data[6] == 0x38
+            ):
+                vv = data[7]
+                pair = ALCHEMY_GS_CHORUS_TO_XG.get(vv, (0x41, 0x00))
+                return (
+                    self._xg_param([0x02, 0x01, 0x20], [pair[0], pair[1]]),
+                    f"GS Chorus {vv} → XG {pair[0]:02X}/{pair[1]:02X}",
+                )
+            # GS EFX type: 40 03 00 mm ll → XG Insertion 1 type
+            if (
+                len(data) >= 9
+                and data[0] == 0x41
+                and data[2] == 0x42
+                and data[3] == 0x12
+                and data[4] == 0x40
+                and data[5] == 0x03
+                and data[6] == 0x00
+            ):
+                mm, ll = data[7], data[8]
+                pair = ALCHEMY_GS_EFX_TO_XG_INS.get((mm, ll))
+                if pair is None:
+                    return None, f"GS EFX {mm:02X}/{ll:02X} unmapped"
+                return (
+                    self._xg_param([0x03, 0x00, 0x00], [pair[0], pair[1]]),
+                    f"GS EFX {mm:02X}/{ll:02X} → XG Ins {pair[0]:02X}/{pair[1]:02X}",
+                )
+            # GS EFX On/Off for a part: 40 <mid> 22 vv
+            if (
+                len(data) >= 8
+                and data[0] == 0x41
+                and data[2] == 0x42
+                and data[3] == 0x12
+                and data[4] == 0x40
+                and data[6] == 0x22
+            ):
+                mid = data[5]
+                part = self._gs_mid_to_part(mid)
+                if part is None:
+                    return None, f"GS EFX part mid {mid:02X} unmapped"
+                on = data[7] == 0x01
+                if on:
+                    msgs = [
+                        self._xg_param([0x03, 0x00, 0x50], [part]),
+                        self._xg_param([0x02, 0x01, 0x5A], [0x00]),  # Var Connection=INSERTION
+                    ]
+                    return (
+                        msgs,
+                        f"GS EFX On part {part + 1} → XG Ins PART {part + 1}",
+                    )
+                return (
+                    self._xg_param([0x03, 0x00, 0x50], [0x7F]),
+                    f"GS EFX Off part {part + 1} → XG Ins PART OFF",
+                )
+            if data[0] == 0x41 and len(data) >= 3 and data[2] == 0x42:
+                return None, None
+            return msg, None
+
+        # --- XG → GS ---
+        if stream == "xg" and target == "gs":
+            if (
+                len(data) >= 7
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x00
+                and data[4] == 0x00
+                and data[5] == 0x7E
+            ):
+                msgs = [self._gs_dt1([0x40, 0x00, 0x7F], [0x00])]
+                msgs.extend(self._gs_silence_delay())
+                self._gs_efx_pending = False
+                self._gs_efx_parts_on = [False] * 16
+                self._gs_efx_owner = None
+                self._gs_efx_part_explicit = False
+                self._xg_var_connection = 1
+                return (msgs, "XG System On → GS Reset + Delay clear")
+            # XG Reverb type: 02 01 00 mm ll
+            if (
+                len(data) >= 8
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x02
+                and data[4] == 0x01
+                and data[5] == 0x00
+            ):
+                mm, ll = data[6], data[7]
+                vv = ALCHEMY_XG_REVERB_TO_GS.get((mm, ll), 0)
+                return (
+                    self._gs_dt1([0x40, 0x01, 0x30], [vv]),
+                    f"XG Reverb {mm:02X}/{ll:02X} → GS macro {vv}",
+                )
+            # XG Chorus type: 02 01 20 mm ll
+            if (
+                len(data) >= 8
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x02
+                and data[4] == 0x01
+                and data[5] == 0x20
+            ):
+                mm, ll = data[6], data[7]
+                vv = ALCHEMY_XG_CHORUS_TO_GS.get((mm, ll), 0)
+                return (
+                    self._gs_dt1([0x40, 0x01, 0x38], [vv]),
+                    f"XG Chorus {mm:02X}/{ll:02X} → GS macro {vv}",
+                )
+            # XG Variation Connection: 02 01 5A vv (0=INSERTION, 1=SYSTEM)
+            if (
+                len(data) >= 7
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x02
+                and data[4] == 0x01
+                and data[5] == 0x5A
+            ):
+                self._xg_var_connection = data[6]
+                return (
+                    None,
+                    f"XG Variation Connection={'SYSTEM' if data[6] else 'INSERTION'}",
+                )
+            # XG Variation type: 02 01 40 mm ll
+            if (
+                len(data) >= 8
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x02
+                and data[4] == 0x01
+                and data[5] == 0x40
+            ):
+                mm, ll = data[6], data[7]
+                # True delay family → short GS Delay (system delay path)
+                if (mm, ll) in ALCHEMY_XG_VARIATION_DELAY_TO_GS:
+                    vv = ALCHEMY_XG_VARIATION_DELAY_TO_GS[(mm, ll)]
+                    msgs = [
+                        self._gs_dt1([0x40, 0x01, 0x50], [vv]),
+                        self._gs_dt1([0x40, 0x01, 0x52], [0x18]),
+                        self._gs_dt1([0x40, 0x01, 0x53], [0x14]),
+                        self._gs_dt1([0x40, 0x01, 0x54], [0x14]),
+                        self._gs_dt1([0x40, 0x01, 0x56], [0x0C]),
+                    ]
+                    return (
+                        msgs,
+                        f"XG Variation {mm:02X}/{ll:02X} → GS Delay macro {vv} (short)",
+                    )
+                # Space-like Variation
+                if (mm, ll) in ALCHEMY_XG_VARIATION_TO_GS_EFX:
+                    # SYSTEM connection (default / this PSR) → system reverb, keep EFX free
+                    if getattr(self, "_xg_var_connection", 1) == 1:
+                        vv = ALCHEMY_XG_VARIATION_REVERB_TO_GS.get((mm, ll), 0)
+                        msgs = self._gs_silence_delay()
+                        msgs.append(self._gs_dt1([0x40, 0x01, 0x30], [vv]))
+                        return (
+                            msgs,
+                            f"XG Variation {mm:02X}/{ll:02X} (SYSTEM) → GS Room {vv}",
+                        )
+                    if self._gs_efx_owner == "ins":
+                        return (
+                            None,
+                            f"XG Variation {mm:02X}/{ll:02X} skipped (EFX owned by Insertion)",
+                        )
+                    efx = ALCHEMY_XG_VARIATION_TO_GS_EFX[(mm, ll)]
+                    self._gs_efx_owner = "var"
+                    self._gs_efx_pending = True
+                    msgs = self._gs_silence_delay()
+                    msgs.append(self._gs_dt1([0x40, 0x03, 0x00], [efx[0], efx[1]]))
+                    return (
+                        msgs,
+                        f"XG Variation {mm:02X}/{ll:02X} → GS EFX {efx[0]:02X}/{efx[1]:02X}",
+                    )
+                return None, None
+            # XG Variation Part Number: 02 01 5B vv (0..63 part, 127=off)
+            if (
+                len(data) >= 7
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x02
+                and data[4] == 0x01
+                and data[5] == 0x5B
+            ):
+                part = data[6]
+                if part >= 127:
+                    return None, None
+                if part > 15:
+                    part = part % 16  # map higher parts into 1–16 for GS
+                self._gs_efx_part_explicit = True
+                msgs = self._gs_efx_on_part(part)
+                return (msgs, f"XG Variation part {part + 1} → GS EFX on")
+            # XG Insertion 1 type: 03 00 00 mm ll — amp/drive → GS EFX (priority)
+            if (
+                len(data) >= 8
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x03
+                and data[4] == 0x00
+                and data[5] == 0x00
+            ):
+                mm, ll = data[6], data[7]
+                efx = ALCHEMY_XG_INS_TO_GS_EFX.get((mm, ll))
+                if efx is not None:
+                    self._gs_efx_owner = "ins"
+                    self._gs_efx_pending = True
+                    self._gs_efx_parts_on = [False] * 16
+                    return (
+                        self._gs_dt1([0x40, 0x03, 0x00], [efx[0], efx[1]]),
+                        f"XG Ins {mm:02X}/{ll:02X} → GS EFX {efx[0]:02X}/{efx[1]:02X}",
+                    )
+                return None, None
+            # XG Insertion 1 PART: 03 00 50 vv (0..3 on some, often 0..15; 127=off)
+            if (
+                len(data) >= 7
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x03
+                and data[4] == 0x00
+                and data[5] == 0x50
+            ):
+                part = data[6]
+                if part >= 127:
+                    return None, None
+                if part > 15:
+                    part = part % 16
+                self._gs_efx_part_explicit = True
+                msgs = self._gs_efx_on_part(part)
+                return (msgs, f"XG Ins part {part + 1} → GS EFX on")
+            # XG Multi Part Variation Send: 08 nn 14 vv — high send ⇒ enable EFX on that part
+            if (
+                len(data) >= 7
+                and data[0] == 0x43
+                and data[2] == 0x4C
+                and data[3] == 0x08
+                and data[5] == 0x14
+            ):
+                nn, vv = data[4], data[6]
+                if vv > 0 and nn <= 15 and self._gs_efx_owner in ("var", "ins", None):
+                    # Only useful once an EFX type is set; still enable part for later
+                    self._gs_efx_part_explicit = True
+                    msgs = self._gs_efx_on_part(nn)
+                    return (msgs, f"XG VarSend part {nn + 1}={vv} → GS EFX on")
+                return None, None
+            if data[0] == 0x43 and len(data) >= 3 and data[2] == 0x4C:
+                return None, None
+            return msg, None
+
+        return msg, None
+
+    def _translate_program(self, msg: mido.Message, target: str) -> tuple:
+        """
+        Best-effort program/bank mapping GS ↔ XG.
+        Returns (msg_or_list_of_msgs, label). list = bank select(s) + PC to send in order.
+        """
+        stream = self._stream_dialect()
+        ch = msg.channel
+        pc = msg.program
+        msb = self.bank_msb[ch]
+        lsb = self.bank_lsb[ch]
+
+        if stream is None or stream == target:
+            return msg, None
+        if stream in ("gm", "gm2") and target in ("gs", "xg"):
+            return msg, None
+
+        # GS → XG: capital tones (MSB 0) pass; variations → GM capital PC on MSB/LSB 0
+        if stream == "gs" and target == "xg":
+            if msb == 0 and lsb == 0:
+                return msg, None
+            # Variation / map: fall back to capital-style on XG melody bank 0
+            msgs = [
+                mido.Message("control_change", channel=ch, control=0, value=0),
+                mido.Message("control_change", channel=ch, control=32, value=0),
+                mido.Message("program_change", channel=ch, program=pc),
+            ]
+            return msgs, f"GS bank {msb}/{lsb} PC {pc + 1} → XG GM bank PC {pc + 1}"
+
+        # XG → GS: melody bank 0 pass; other banks → GS capital (MSB 0) same PC
+        if stream == "xg" and target == "gs":
+            # XG drum banks 126/127 — pass through PC only with GS drum-ish bank 0
+            # (full drum-channel policy is a later Alchemy item)
+            if msb in (126, 127):
+                msgs = [
+                    mido.Message("control_change", channel=ch, control=0, value=0),
+                    mido.Message("control_change", channel=ch, control=32, value=0),
+                    mido.Message("program_change", channel=ch, program=pc),
+                ]
+                return msgs, f"XG drum bank {msb} PC {pc + 1} → GS PC {pc + 1} (best-effort)"
+            if msb == 0 and lsb == 0:
+                return msg, None
+            msgs = [
+                mido.Message("control_change", channel=ch, control=0, value=0),
+                mido.Message("control_change", channel=ch, control=32, value=0),
+                mido.Message("program_change", channel=ch, program=pc),
+            ]
+            return msgs, f"XG bank {msb}/{lsb} PC {pc + 1} → GS capital PC {pc + 1}"
+
+        return msg, None
+
+    def _alchemy_prepare(self, msg: mido.Message, port: int):
+        """
+        Prepare message(s) for a specific out.
+        Returns msg | list[msg] | None (skip).
+        """
+        if not self.alchemy:
+            return msg
+        target = self._port_target_dialect(port)
+        if target is None:
+            return msg
+
+        stream = self._stream_dialect()
+        if stream is None or stream == target:
+            return msg
+        if stream in ("gm", "gm2") and target in ("gs", "xg"):
+            return msg
+
+        if msg.type == "sysex":
+            out, label = self._translate_sysex(msg, target)
+            if label:
+                self._alchemy_last_label = label
+            return out
+
+        if msg.type == "program_change":
+            out, label = self._translate_program(msg, target)
+            if label:
+                self._alchemy_last_label = label
+            # EFX On is driven by XG part-assign SysEx (Ins PART / Var PART / VarSend),
+            # not by every Program Change (that was flooding all parts).
+            return out
+
+        # CCs: do not pass raw bank select to a foreign dialect (PC path emits banks)
+        if msg.type == "control_change":
+            if msg.control in (0, 32):
+                # Opposite dialect: skip; same dialect / GM: pass
+                return None
+            return msg
+
+        return msg
+
+    def _send_routed(self, port: int, msg: mido.Message) -> None:
+        """Send with optional Alchemy prepare (skip if translation says None)."""
+        self._alchemy_last_label = None
+        out_msg = self._alchemy_prepare(msg, port)
+        if out_msg is None:
+            if msg.type == "sysex":
+                label = getattr(self, "_alchemy_last_label", None)
+                if label:
+                    self._set_status(f"Alchemy: {label} → out {port + 1}", duration=2.5)
+                else:
+                    self._set_status(
+                        f"Alchemy: skipped SysEx → out {port + 1} (no Phase-1 map)",
+                        duration=2.0,
+                    )
+            elif (
+                self._log_file is not None
+                and msg.type == "program_change"
+            ):
+                self._log_msg(port, msg, note="SKIP")
+            # Bank CC suppressed on foreign dialect: silent (expected)
+            return
+        label = getattr(self, "_alchemy_last_label", None)
+        note = f"Alchemy: {label}" if label else ("pass" if self.alchemy else "")
+        if isinstance(out_msg, list):
+            for m in out_msg:
+                self._send(port, m)
+                self._log_msg(port, m, note=note or "Alchemy multi")
+            if label:
+                self._set_status(f"Alchemy: {label} → out {port + 1}", duration=2.5)
+            return
+        self._send(port, out_msg)
+        # Log non-notes on the wire (mapped or pass-through)
+        if out_msg.type != "note_on" and out_msg.type != "note_off":
+            self._log_msg(port, out_msg, note=note)
+        if label:
+            self._set_status(f"Alchemy: {label} → out {port + 1}", duration=2.5)
+
     def process(self, msg: mido.Message):
         # Any MIDI activity refreshes format-idle timer
         self.last_midi_time = time.monotonic()
@@ -1418,7 +2302,8 @@ class Duality:
                     real_count = _notes_on_port(port)
                     if real_count >= self.poly_limits[port]:
                         continue  # this port full – try others when broadcasting
-                    self._send(port, msg)
+                    self._maybe_gs_efx_on_note(port, msg)
+                    self._send_routed(port, msg)
                     self.voice_counts[port] += 1
                     sent_ports.append(port)
 
@@ -1444,11 +2329,11 @@ class Duality:
                 if info is not None:
                     ports = info.get("ports") or [info["port"]]
                     for port in ports:
-                        self._send(port, msg)
+                        self._send_routed(port, msg)
                         self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
                 else:
                     for i in range(self.n_ports):
-                        self._send(i, msg)
+                        self._send_routed(i, msg)
 
                 # Only resync if the drift is significant
                 if abs(sum(self.voice_counts) - len(self.active)) > 1:
@@ -1473,14 +2358,46 @@ class Duality:
             else:
                 self._set_status(description, duration=3.5)
 
-            # Crucible: format-specific SysEx only to matching (or any) ports
-            for i in range(self.n_ports):
-                if self.crucible and not self._port_matches_format(i, self.detected_format):
-                    continue
-                self._send(i, msg)
+            # Route SysEx: Crucible affinity, Alchemy translate / overflow / fanout
+            if self.alchemy_all:
+                targets = [i for i in range(self.n_ports) if self._port_has_alchemy_target(i)]
+            elif self.crucible:
+                targets = [
+                    i for i in range(self.n_ports)
+                    if self._port_matches_format(i, self.detected_format)
+                ]
+                if self.alchemy:
+                    for i in self._overflow_note_ports():
+                        if i not in targets:
+                            targets.append(i)
+                    if not targets:
+                        targets = self._overflow_note_ports()
+            elif self.alchemy:
+                targets = [i for i in range(self.n_ports) if self._port_has_alchemy_target(i)]
+            else:
+                targets = list(range(self.n_ports))
+
+            for i in targets:
+                self._send_routed(i, msg)
             return
 
         # Track common controllers per channel + timestamp
+        # Bank select for Alchemy program mapping
+        if msg.type == "control_change":
+            if msg.control == 0:
+                self.bank_msb[msg.channel] = msg.value
+            elif msg.control == 32:
+                self.bank_lsb[msg.channel] = msg.value
+
+        # Input-side log for patch path (OUT lines still show per-port result)
+        if self._log_file is not None and msg.type in (
+            "program_change", "control_change", "sysex"
+        ):
+            if msg.type != "control_change" or msg.control in (
+                0, 32, 7, 10, 11, 91, 93, 64, 1, 98, 99, 100, 101, 6, 38
+            ):
+                self._log_msg(None, msg)
+
         now = time.monotonic()
         if msg.type == "control_change":
             ch = msg.channel
@@ -1499,10 +2416,27 @@ class Duality:
             self.pitch[ch] = round(msg.pitch / 128)
             self.pitch_time[ch] = now
 
-        # Everything else → all devices, with optional deduplication
-        for i in range(self.n_ports):
+        # Everything else (CC, PC, pitch, …): same destination policy as SysEx
+        # --alchemy-all fans out to all GS/XG-capable outs with per-port translate.
+        if self.alchemy_all:
+            targets = [i for i in range(self.n_ports) if self._port_has_alchemy_target(i)]
+        elif self.crucible:
+            targets = [
+                i for i in range(self.n_ports)
+                if self._port_matches_format(i, self.detected_format)
+            ]
+            if self.alchemy:
+                for i in self._overflow_note_ports():
+                    if i not in targets:
+                        targets.append(i)
+        elif self.alchemy:
+            targets = [i for i in range(self.n_ports) if self._port_has_alchemy_target(i)]
+        else:
+            targets = list(range(self.n_ports))
+
+        for i in targets:
             if self._should_send(i, msg):
-                self._send(i, msg)
+                self._send_routed(i, msg)
 
     def _is_panic(self, msg: mido.Message) -> bool:
         if msg.type == "control_change" and msg.control in (120, 123):
@@ -1929,6 +2863,8 @@ class Duality:
             # Toggle note assignment strategy
             self.mode = "rr" if self.mode == "balance" else "balance"
             self._set_status(f"Mode → {self.mode}", duration=2.5)
+        elif c == "c":
+            self._clear_log()
         elif c == "l":
             self._toggle_format_lock()
         elif c == "q":
@@ -2031,6 +2967,15 @@ class Duality:
                 out.close()
             except Exception:
                 pass
+        if self._log_file is not None:
+            try:
+                self._log_file.write(
+                    f"--- session end {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"
+                )
+                self._log_file.close()
+            except OSError:
+                pass
+            self._log_file = None
 
 # ----------------------------------------------------------------------
 def list_ports():
@@ -2128,7 +3073,18 @@ def main():
     parser.add_argument(
         "--alchemy",
         action="store_true",
-        help="Enable Alchemy path (allows single output; format conversion comes in a later phase)",
+        help=(
+            "Enable Alchemy (BROKEN/EXPERIMENTAL). Attempts GS↔XG SysEx/PC rewrite; "
+            "allows single output. Same-dialect traffic should pass through unchanged."
+        ),
+    )
+    parser.add_argument(
+        "--alchemy-all",
+        action="store_true",
+        help=(
+            "Enable Alchemy (BROKEN/EXPERIMENTAL) and fan out to all GS/XG-capable outs. "
+            "Implies --alchemy."
+        ),
     )
     parser.add_argument(
         "--crucible",
@@ -2204,6 +3160,29 @@ def main():
         action="store_true",
         help="Disable the live status panel",
     )
+    parser.add_argument(
+        "--log",
+        nargs="?",
+        const="duality.log",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Append status, Alchemy, bank/PC, and RPN/NRPN events to a log file "
+            "(default path: duality.log). See also --log-verbose."
+        ),
+    )
+    parser.add_argument(
+        "--log-verbose",
+        nargs="?",
+        const="duality.log",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Enable logging in verbose mode (all CCs, pitch, etc.). "
+            "Optional path (default: duality.log). "
+            "If both --log and --log-verbose are given, verbose wins."
+        ),
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -2253,6 +3232,17 @@ def main():
         sys.exit(1)
 
     try:
+        # Resolve --log / --log-verbose (verbose wins if both given)
+        if args.log_verbose is not None:
+            log_path = args.log_verbose
+            log_verbose = True
+        elif args.log is not None:
+            log_path = args.log
+            log_verbose = False
+        else:
+            log_path = None
+            log_verbose = False
+
         router = Duality(
             in_name=in_name,
             out_names=out_names,
@@ -2262,6 +3252,7 @@ def main():
             show_status=not args.no_status,
             out_formats=out_formats,
             alchemy=args.alchemy,
+            alchemy_all=args.alchemy_all,
             crucible=args.crucible,
             crucible_notes=args.crucible_notes,
             crucible_gm_wide=args.crucible_gm_wide,
@@ -2269,6 +3260,8 @@ def main():
             scpop=args.scpop,
             sync_delays_ms=args.sync_delay,
             strict_format_detection=args.strict_format_detection,
+            log_path=log_path,
+            log_verbose=log_verbose,
         )
         router.run()
     except ValueError as e:
