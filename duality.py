@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.12.6"
+VERSION = "0.13.0"
 
 
 """
@@ -41,7 +41,7 @@ Features
 • Graceful handling and attempted reconnect of dropped or lost output ports.
 • Voodoo Phase V2: 2+ :mt32 outs get alternating 16-channel map
   (melody affinity + load-balanced rhythm) with equal partial reserve
-• MT-32 pan map for Voodoo / non-MT-32 streams (reversed + center≈55, ~15 detents)
+• LA32 pan map for Voodoo / non-MT-32 streams (8 real positions, MT-32 & CM-32L tables)
 • Port health logging (open/close/send fail/reconnect) when --log is enabled.
 • Voodoo: Super-Munt-style GM bank load for MT-32 outs (Roland MT-TO-GM 1993).
   --voodoo / M multi-press / auto when only :mt32 outs + non-MT-32 stream.
@@ -136,10 +136,17 @@ VOODOO_CATCHUP_SPEED = 3.0        # target multiple of realtime during catch-up
 # Partial reserve (parts 1-8 + rhythm) must sum to 32
 VOODOO_PARTIAL_RESERVE = [4, 4, 4, 4, 4, 4, 3, 3, 2]
 VOODOO_MIDI_CH_OFF = 16           # MT-32: 0-15 = ch1-16, 16+ = OFF
-# Wire CC10 value that images center on MT-32 under reversed stereo.
-# Calibrated so GM 64 lands on the same acoustic center that GM 50 hit
-# when this was 55 (bench: GM50 → wire 76 ≈ true center).
-VOODOO_MT32_PAN_CENTER = 76
+
+# LA32 only has 8 pan positions (3-bit), not the 15 the manuals imply.
+# Higher CC = LEFT (reversed vs GM). Bands from fresh-boot hardware tests.
+# Representative wire values = mid of each measured band.
+# Order: L4, L3, L2, L1, Center, R1, R2, R3
+# LA32 8 positions from measured bands (forum chart). Order:
+#   L4, L3, L2, L1, Center, R1, R2, R3  (higher CC = left)
+# Values = mid of each band. Perceptual GM center is L1 (not the chip's
+# "Center" slot) — L1 is what images best as middle on real hardware. IMHO
+MT32_PAN_POSITIONS = [127, 116, 98, 80, 62, 44, 26, 8]   # L1=80 (72-89)
+CM32_PAN_POSITIONS = [123, 110, 93, 76, 59, 42, 25, 8]    # L1=76 (68-84)
 
 # Port / stream format tags (CLI values → canonical)
 FORMAT_ALIASES = {
@@ -147,8 +154,12 @@ FORMAT_ALIASES = {
     "gm2": "gm2",
     "gs": "gs",
     "xg": "xg",
+    "mt": "mt32",
     "mt32": "mt32",
     "mt-32": "mt32",
+    "cm": "cm32",
+    "cm32": "cm32",
+    "cm-32": "cm32",
     "any": "any",
 }
 FORMAT_DISPLAY = {
@@ -157,6 +168,7 @@ FORMAT_DISPLAY = {
     "gs": "GS",
     "xg": "XG",
     "mt32": "MT-32",
+    "cm32": "CM-32L",
     "any": "ANY",
 }
 
@@ -2389,16 +2401,23 @@ class Duality:
 
         return msg
 
-    def _mt32_port(self, port: int) -> bool:
+    def _la_port_kind(self, port: int) -> str | None:
+        """Return 'mt32', 'cm32', or None for pan-table selection."""
         tags = self.out_formats[port] if port < len(self.out_formats) else None
-        return bool(tags) and "mt32" in tags
+        if not tags:
+            return None
+        if "cm32" in tags or "cm" in tags:
+            return "cm32"
+        if "mt32" in tags:
+            return "mt32"
+        return None
 
     def _should_map_mt32_pan(self, port: int) -> bool:
         """
-        Apply GM→MT-32 pan mapping when feeding non-native material to :mt32.
+        Apply GM→LA pan mapping when feeding non-native material to :mt32/:cm32.
         Native MT-32 streams keep author pan as-is.
         """
-        if not self._mt32_port(port):
+        if self._la_port_kind(port) is None:
             return False
         if self.voodoo_active:
             return True
@@ -2406,51 +2425,39 @@ class Duality:
         return bool(fmt) and fmt != "MT-32"
 
     @staticmethod
-    def _gm_pan_to_mt32(gm_value: int) -> int:
+    def _gm_pan_to_la(gm_value: int, positions: list[int]) -> int:
         """
-        Best-effort GM CC10 (0–127, center 64) → MT-32 pan on the wire.
+        GM CC10 (0–127, center 64) → one of 8 LA32 pan wire values.
 
-        Hardware notes:
-        • Stereo is reversed vs GM/GS/XG — GM left → high CC on the wire
-        • Acoustic center on the wire is VOODOO_MT32_PAN_CENTER (calibrated 76;
-          earlier 55 was wrong once reverse was folded into the same map)
-        • ~15 coarse detents (−7…+7 style), not continuous
+        LA32: 8 positions only; higher CC = left (reversed vs GM).
+        `positions` = [L4, L3, L2, L1, Center, R1, R2, R3] from measured bands.
 
-          GM 0   (left)  → 127
-          GM 64  (center)→ VOODOO_MT32_PAN_CENTER
-          GM 127 (right) →   0
+        Perceptual center is L1 (index 3), not the chip's Center slot —
+        bench listening: L1 images as middle; chip Center sits slightly right.
+        Skew so GM 64 → L1:
+          GM 0   → L4
+          GM 64  → L1
+          GM 127 → R3
         """
         gm = max(0, min(127, int(gm_value)))
-        center = VOODOO_MT32_PAN_CENTER
-
-        # Continuous skewed-reverse, then snap to 15 detents
         if gm <= 64:
-            # 0→127 … 64→center
-            raw = 127 - gm * (127 - center) / 64.0
+            # 0→0 … 64→3
+            idx = int(round(gm * 3 / 64))
         else:
-            # 64→center … 127→0
-            raw = center - (gm - 64) * center / 63.0
-
-        # Quantize: index 0 → 127 (left), 7 → center, 14 → 0 (right)
-        if raw >= center:
-            idx = 7 - int(round((raw - center) * 7 / max(1, (127 - center))))
-        else:
-            idx = 7 + int(round((center - raw) * 7 / max(1, center)))
-        idx = max(0, min(14, idx))
-
-        if idx <= 7:
-            mt = int(round(127 - idx * (127 - center) / 7)) if idx else 127
-        else:
-            mt = int(round(center - (idx - 7) * center / 7))
-        return max(0, min(127, mt))
+            # 64→3 … 127→7
+            idx = 3 + int(round((gm - 64) * 4 / 63))
+        idx = max(0, min(7, idx))
+        return positions[idx]
 
     def _apply_mt32_pan_invert(self, port: int, msg: mido.Message) -> mido.Message:
-        """Call-site name kept; maps GM pan onto MT-32 detents + center skew."""
+        """Call-site name kept; maps GM pan onto LA32 8-position tables."""
         if msg.type != "control_change" or msg.control != 10:
             return msg
         if not self._should_map_mt32_pan(port):
             return msg
-        val = self._gm_pan_to_mt32(msg.value)
+        kind = self._la_port_kind(port)
+        positions = CM32_PAN_POSITIONS if kind == "cm32" else MT32_PAN_POSITIONS
+        val = self._gm_pan_to_la(msg.value, positions)
         try:
             return msg.copy(value=val)
         except Exception:
@@ -2505,10 +2512,10 @@ class Duality:
     # Voodoo – Super-Munt-style GM bank for MT-32 hardware
     # ------------------------------------------------------------------
     def _mt32_port_indices(self) -> list[int]:
-        """Ports whose capability tags include mt32."""
+        """Ports whose capability tags include mt32 or cm32 (LA family)."""
         out = []
         for i, tags in enumerate(self.out_formats):
-            if tags and "mt32" in tags:
+            if tags and (tags & {"mt32", "cm32"}):
                 out.append(i)
         return out
 
