@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.14.0"
+VERSION = "0.14.2"
 
 
 """
@@ -155,13 +155,18 @@ SYNC_DELAY_MAX_MS = 500.0  # clamp |offset| for --sync-delay
 
 # Voodoo (MT-32 GM bank) pacing – real hardware is buffer-sensitive
 VOODOO_SYSEX_GAP = 0.035          # seconds between DT1 SysEx during bank load
-VOODOO_CATCHUP_MIN_GAP = 0.008    # min gap while draining the deferred queue
-VOODOO_CATCHUP_SPEED = 3.0        # target multiple of realtime during catch-up
+VOODOO_CATCHUP_MIN_GAP = 0.001    # floor gap between catch-up sends (was 8ms → too slow)
+VOODOO_CATCHUP_SPEED = 8.0        # compress original spacing by this factor
+VOODOO_CATCHUP_BURST = 48         # max messages drained per run-loop tick
+VOODOO_CATCHUP_FAST_DEPTH = 400   # above this, ignore timing and burst
 
 # Phase V2 – multi-MT-32 Super Munt channel map
 # Partial reserve (parts 1-8 + rhythm) must sum to 32
 VOODOO_PARTIAL_RESERVE = [4, 4, 4, 4, 4, 4, 3, 3, 2]
 VOODOO_MIDI_CH_OFF = 16           # MT-32: 0-15 = ch1-16, 16+ = OFF
+
+# Set master volume on MT/CM outs in Voodoo to avoid clipping on hardware.
+VOODOO_MASTER_VOLUME = 70
 
 # LA32 only has 8 pan positions (3-bit), not the 15 the manuals imply.
 # Higher CC = LEFT (reversed vs GM). Bands from fresh-boot hardware tests.
@@ -838,6 +843,7 @@ class Duality:
         self._voodoo_next_send = 0.0
         self._voodoo_targets: list[int] = []
         self._voodoo_catchup_idx = 0
+        self._voodoo_catchup_end = 0
         self._voodoo_catchup_next = 0.0
         self._voodoo_catchup_origin = 0.0
         self._voodoo_catchup_t0 = 0.0
@@ -2667,6 +2673,13 @@ class Duality:
             # Single unit: no remap – leave factory/bank receive channels as-is
             self._voodoo_ch_owners = [[] for _ in range(16)]
 
+        # Master volume last so it wins over any level in the bank dump.
+        # MT-32 scale is 0–100; GM banks at 100 often clip on original hardware.
+        vol = max(0, min(100, int(VOODOO_MASTER_VOLUME)))
+        vol_msg = _mt32_dt1((0x10, 0x00, 0x16), [vol])
+        send_list.extend(_all([vol_msg]))
+        self._log_line(f"VOODOO master volume → {vol}/100")
+
         self._voodoo_send_list = send_list
         self._voodoo_send_idx = 0
         self._voodoo_next_send = time.monotonic()
@@ -2753,6 +2766,10 @@ class Duality:
                 else:
                     self.voodoo_catchup = True
                     self._voodoo_catchup_idx = 0
+                    # Snapshot: only drain what was queued during load. Messages that
+                    # arrive during catch-up are flushed after, then we go live —
+                    # avoids chasing a still-playing song for tens of seconds.
+                    self._voodoo_catchup_end = qn
                     self._voodoo_catchup_origin = self._voodoo_queue[0][0]
                     self._voodoo_catchup_t0 = time.monotonic()
                     self._voodoo_catchup_next = self._voodoo_catchup_t0
@@ -2760,25 +2777,44 @@ class Duality:
                         f"Voodoo: catching up {qn} msgs",
                         duration=4.0,
                     )
+                    self._log_line(f"VOODOO catch-up start depth={qn}")
             return
 
         if self.voodoo_catchup:
-            # Drain whatever is currently in the queue (may grow if player still sends)
-            while self._voodoo_catchup_idx < len(self._voodoo_queue):
+            # Drain the load-time snapshot first (not a moving live target).
+            end = getattr(self, "_voodoo_catchup_end", len(self._voodoo_queue))
+            end = min(end, len(self._voodoo_queue))
+            burst = 0
+            now = time.monotonic()
+            remaining = end - self._voodoo_catchup_idx
+            fast = remaining >= VOODOO_CATCHUP_FAST_DEPTH
+            while (
+                self._voodoo_catchup_idx < end
+                and burst < VOODOO_CATCHUP_BURST
+            ):
                 recv_ts, msg = self._voodoo_queue[self._voodoo_catchup_idx]
-                # Elastic: play at VOODOO_CATCHUP_SPEED × original spacing
-                rel = max(0.0, (recv_ts - self._voodoo_catchup_origin) / VOODOO_CATCHUP_SPEED)
-                due = self._voodoo_catchup_t0 + rel
-                # Enforce minimum gap from previous send
-                due = max(due, self._voodoo_catchup_next)
-                if time.monotonic() < due:
-                    break
+                if not fast:
+                    # Elastic: compress original spacing, with a small floor gap
+                    rel = max(0.0, (recv_ts - self._voodoo_catchup_origin) / VOODOO_CATCHUP_SPEED)
+                    due = max(self._voodoo_catchup_t0 + rel, self._voodoo_catchup_next)
+                    if now < due:
+                        break
                 self._voodoo_deliver_live(msg)
                 self._voodoo_catchup_idx += 1
-                self._voodoo_catchup_next = time.monotonic() + VOODOO_CATCHUP_MIN_GAP
-            if self._voodoo_catchup_idx >= len(self._voodoo_queue):
+                burst += 1
+                self._voodoo_catchup_next = time.monotonic() + (
+                    0.0 if fast else VOODOO_CATCHUP_MIN_GAP
+                )
+                now = time.monotonic()
+            if self._voodoo_catchup_idx >= end:
+                # Snapshot done — flush anything that arrived during catch-up ASAP
+                while self._voodoo_catchup_idx < len(self._voodoo_queue):
+                    _, msg = self._voodoo_queue[self._voodoo_catchup_idx]
+                    self._voodoo_deliver_live(msg)
+                    self._voodoo_catchup_idx += 1
                 self._voodoo_queue.clear()
                 self._voodoo_catchup_idx = 0
+                self._voodoo_catchup_end = 0
                 self.voodoo_catchup = False
                 self._set_status("Voodoo: live", duration=2.0)
                 self._log_line("VOODOO catch-up complete")
