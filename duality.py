@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.12.3"
+VERSION = "0.12.6"
 
 
 """
@@ -41,7 +41,7 @@ Features
 • Graceful handling and attempted reconnect of dropped or lost output ports.
 • Voodoo Phase V2: 2+ :mt32 outs get alternating 16-channel map
   (melody affinity + load-balanced rhythm) with equal partial reserve
-• MT-32 pan invert (CC10 → 127−value) for Voodoo / non-MT-32 streams
+• MT-32 pan map for Voodoo / non-MT-32 streams (reversed + center≈55, ~15 detents)
 • Port health logging (open/close/send fail/reconnect) when --log is enabled.
 • Voodoo: Super-Munt-style GM bank load for MT-32 outs (Roland MT-TO-GM 1993).
   --voodoo / M multi-press / auto when only :mt32 outs + non-MT-32 stream.
@@ -136,6 +136,10 @@ VOODOO_CATCHUP_SPEED = 3.0        # target multiple of realtime during catch-up
 # Partial reserve (parts 1-8 + rhythm) must sum to 32
 VOODOO_PARTIAL_RESERVE = [4, 4, 4, 4, 4, 4, 3, 3, 2]
 VOODOO_MIDI_CH_OFF = 16           # MT-32: 0-15 = ch1-16, 16+ = OFF
+# Wire CC10 value that images center on MT-32 under reversed stereo.
+# Calibrated so GM 64 lands on the same acoustic center that GM 50 hit
+# when this was 55 (bench: GM50 → wire 76 ≈ true center).
+VOODOO_MT32_PAN_CENTER = 76
 
 # Port / stream format tags (CLI values → canonical)
 FORMAT_ALIASES = {
@@ -2389,10 +2393,9 @@ class Duality:
         tags = self.out_formats[port] if port < len(self.out_formats) else None
         return bool(tags) and "mt32" in tags
 
-    def _should_invert_mt32_pan(self, port: int) -> bool:
+    def _should_map_mt32_pan(self, port: int) -> bool:
         """
-        MT-32 / CM-32L hardware has left/right reversed vs GM/GS/XG.
-        Invert CC10 when feeding GM-family (or Voodoo) material to :mt32 outs.
+        Apply GM→MT-32 pan mapping when feeding non-native material to :mt32.
         Native MT-32 streams keep author pan as-is.
         """
         if not self._mt32_port(port):
@@ -2402,12 +2405,52 @@ class Duality:
         fmt = self.detected_format
         return bool(fmt) and fmt != "MT-32"
 
+    @staticmethod
+    def _gm_pan_to_mt32(gm_value: int) -> int:
+        """
+        Best-effort GM CC10 (0–127, center 64) → MT-32 pan on the wire.
+
+        Hardware notes:
+        • Stereo is reversed vs GM/GS/XG — GM left → high CC on the wire
+        • Acoustic center on the wire is VOODOO_MT32_PAN_CENTER (calibrated 76;
+          earlier 55 was wrong once reverse was folded into the same map)
+        • ~15 coarse detents (−7…+7 style), not continuous
+
+          GM 0   (left)  → 127
+          GM 64  (center)→ VOODOO_MT32_PAN_CENTER
+          GM 127 (right) →   0
+        """
+        gm = max(0, min(127, int(gm_value)))
+        center = VOODOO_MT32_PAN_CENTER
+
+        # Continuous skewed-reverse, then snap to 15 detents
+        if gm <= 64:
+            # 0→127 … 64→center
+            raw = 127 - gm * (127 - center) / 64.0
+        else:
+            # 64→center … 127→0
+            raw = center - (gm - 64) * center / 63.0
+
+        # Quantize: index 0 → 127 (left), 7 → center, 14 → 0 (right)
+        if raw >= center:
+            idx = 7 - int(round((raw - center) * 7 / max(1, (127 - center))))
+        else:
+            idx = 7 + int(round((center - raw) * 7 / max(1, center)))
+        idx = max(0, min(14, idx))
+
+        if idx <= 7:
+            mt = int(round(127 - idx * (127 - center) / 7)) if idx else 127
+        else:
+            mt = int(round(center - (idx - 7) * center / 7))
+        return max(0, min(127, mt))
+
     def _apply_mt32_pan_invert(self, port: int, msg: mido.Message) -> mido.Message:
+        """Call-site name kept; maps GM pan onto MT-32 detents + center skew."""
         if msg.type != "control_change" or msg.control != 10:
             return msg
-        if not self._should_invert_mt32_pan(port):
+        if not self._should_map_mt32_pan(port):
             return msg
-        val = 127 - int(msg.value)
+        val = self._gm_pan_to_mt32(msg.value)
         try:
             return msg.copy(value=val)
         except Exception:
