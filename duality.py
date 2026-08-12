@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.13.0"
+VERSION = "0.13.3"
 
 
 """
@@ -2425,39 +2425,41 @@ class Duality:
         return bool(fmt) and fmt != "MT-32"
 
     @staticmethod
-    def _gm_pan_to_la(gm_value: int, positions: list[int]) -> int:
+    def _gm_pan_to_la(
+        gm_value: int,
+        positions: list[int],
+        channel: int = 0,
+    ) -> int:
         """
         GM CC10 (0–127, center 64) → one of 8 LA32 pan wire values.
 
         LA32: 8 positions only; higher CC = left (reversed vs GM).
         `positions` = [L4, L3, L2, L1, Center, R1, R2, R3] from measured bands.
 
-        Perceptual center is L1 (index 3), not the chip's Center slot —
-        bench listening: L1 images as middle; chip Center sits slightly right.
-        Skew so GM 64 → L1:
-          GM 0   → L4
-          GM 64  → L1
-          GM 127 → R3
+        No whole-range skew toward L1 — equal bins across the pot.
+        Near GM center (56–72) there is no true mono detent; alternate
+        L1 and chip-Center by channel parity so the mix averages middle.
+        (Rhythm ch10 excluded upstream.)
         """
         gm = max(0, min(127, int(gm_value)))
-        if gm <= 64:
-            # 0→0 … 64→3
-            idx = int(round(gm * 3 / 64))
-        else:
-            # 64→3 … 127→7
-            idx = 3 + int(round((gm - 64) * 4 / 63))
-        idx = max(0, min(7, idx))
+        idx = min(7, gm // 16)
+        if 56 <= gm <= 72:
+            idx = 3 if (channel & 1) == 0 else 4
         return positions[idx]
 
     def _apply_mt32_pan_invert(self, port: int, msg: mido.Message) -> mido.Message:
         """Call-site name kept; maps GM pan onto LA32 8-position tables."""
         if msg.type != "control_change" or msg.control != 10:
             return msg
+        # Rhythm (ch10) ignores pan on MT-32/CM — leave CC10 alone, and do not
+        # consume an even/odd slot in the artistic center split.
+        if msg.channel == 9:
+            return msg
         if not self._should_map_mt32_pan(port):
             return msg
         kind = self._la_port_kind(port)
         positions = CM32_PAN_POSITIONS if kind == "cm32" else MT32_PAN_POSITIONS
-        val = self._gm_pan_to_la(msg.value, positions)
+        val = self._gm_pan_to_la(msg.value, positions, channel=msg.channel)
         try:
             return msg.copy(value=val)
         except Exception:
