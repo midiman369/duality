@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.13.3"
+VERSION = "0.14.0"
 
 
 """
@@ -104,12 +104,23 @@ try:
         mtgm_sysex,
         mtr_stnd_sysex,
         mtr_orch_sysex,
+        kq6_sysex,
         GM_ORCHESTRA_KIT_PC,
+        VOODOO_BANK_INFO,
+        VOODOO_BANK_NAMES,
+        DEFAULT_VOODOO_BANK,
+        get_bank_sysex,
+        bank_has_kits,
+        bank_label,
+        bank_display,
     )
     _VOODOO_BANKS = True
 except ImportError:
     _VOODOO_BANKS = False
     GM_ORCHESTRA_KIT_PC = frozenset({48})
+    VOODOO_BANK_NAMES = ("mtgm",)
+    DEFAULT_VOODOO_BANK = "mtgm"
+    VOODOO_BANK_INFO = {}
 
     def mtgm_sysex():
         return []
@@ -119,6 +130,21 @@ except ImportError:
 
     def mtr_orch_sysex():
         return []
+
+    def kq6_sysex():
+        return []
+
+    def get_bank_sysex(name):
+        return []
+
+    def bank_has_kits(name):
+        return True
+
+    def bank_label(name):
+        return name or "mtgm"
+
+    def bank_display(name):
+        return (name or "MT-TO-GM")[:20]
 
 mido.set_backend("mido.backends.rtmidi")
 
@@ -725,6 +751,7 @@ class Duality:
         log_path: str | None = None,
         log_verbose: bool = False,
         voodoo: bool = False,
+        voodoo_bank: str = "mtgm",
     ):
         # Alchemy may run with a single output (transcode-only path).
         # Classic router still requires at least two ports.
@@ -794,6 +821,9 @@ class Duality:
         self.log_verbose = bool(log_verbose)
         # Voodoo – hardware Super-Munt GM for :mt32 outs
         self.voodoo_requested = bool(voodoo)  # --voodoo startup flag
+        self.voodoo_bank = (voodoo_bank or "mtgm").lower().strip()
+        if _VOODOO_BANKS and self.voodoo_bank not in VOODOO_BANK_NAMES:
+            self.voodoo_bank = DEFAULT_VOODOO_BANK
         self.voodoo_active = False            # GM bank is loaded / mode on
         self.voodoo_loading = False           # paced SysEx in progress
         self.voodoo_catchup = False           # draining deferred input queue
@@ -2570,8 +2600,14 @@ class Duality:
             self._set_status("Voodoo: already loading", duration=2.0)
             return
 
-        bank = list(mtgm_sysex())
-        kit = list(mtr_stnd_sysex())
+        try:
+            bank = list(get_bank_sysex(self.voodoo_bank))
+        except Exception as e:
+            self._set_status(f"Voodoo: bank load failed ({e})", duration=4.0)
+            return
+        kit: list = []
+        if bank_has_kits(self.voodoo_bank):
+            kit = list(mtr_stnd_sysex())
         if not bank:
             self._set_status("Voodoo: empty GM bank data", duration=3.0)
             return
@@ -2600,7 +2636,7 @@ class Duality:
             return out
 
         banner_load = bytes(self._mt32_display_msg("Duality Voodoo...").data)
-        banner_gm = bytes(self._mt32_display_msg("Loading GM Bank...").data)
+        banner_gm = bytes(self._mt32_display_msg(("Loading " + bank_display(self.voodoo_bank))[:20]).data)
         send_list = _all([banner_load, banner_gm]) + _all(bank) + _all(kit)
 
         # Phase V2: with 2+ MT-32s, program alternating channel map + equal reserve
@@ -2640,7 +2676,7 @@ class Duality:
         est = n * VOODOO_SYSEX_GAP
         multi = " 16ch" if len(targets) >= 2 else ""
         self._set_status(
-            f"Voodoo: loading GM bank{multi} ({n} SysEx, ~{est:.0f}s) – {reason}",
+            f"Voodoo: loading {bank_label(self.voodoo_bank)}{multi} ({n} SysEx, ~{est:.0f}s) – {reason}",
             duration=max(4.0, est + 2.0),
         )
         self._log_line(
@@ -2842,6 +2878,9 @@ class Duality:
         if not self.voodoo_active or self.voodoo_loading:
             return False
         if msg.type != "program_change" or msg.channel != 9:  # ch 10
+            return False
+        # KQ6 (and similar) bake rhythm into the bank — no STND/ORCH overlay
+        if not bank_has_kits(self.voodoo_bank):
             return False
         targets = self._mt32_port_indices()
         if not targets:
@@ -3568,6 +3607,23 @@ class Duality:
                 self._force_format("MT-32", "hotkey M")
             else:
                 self._force_format("MT-32", "hotkey M")
+        elif c == "v":
+            # Cycle Voodoo bank and reload when Voodoo is engaged
+            names = list(VOODOO_BANK_NAMES) if _VOODOO_BANKS else ["mtgm"]
+            try:
+                i = names.index(self.voodoo_bank)
+            except ValueError:
+                i = 0
+            self.voodoo_bank = names[(i + 1) % len(names)]
+            label = bank_label(self.voodoo_bank)
+            if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
+                self._set_status(f"Voodoo bank → {label} (reloading…)", duration=3.0)
+                self._voodoo_begin(f"bank → {self.voodoo_bank}")
+            else:
+                self._set_status(
+                    f"Voodoo bank → {label} (load with M / --voodoo)",
+                    duration=3.0,
+                )
         elif c == "b":
             # Toggle note assignment strategy
             self.mode = "rr" if self.mode == "balance" else "balance"
@@ -3807,10 +3863,19 @@ def main():
         "--voodoo",
         action="store_true",
         help=(
-            "Load Roland MT-TO-GM bank onto all :mt32 outs at startup "
+            "Load a GM-style bank onto all :mt32/:cm outs at startup "
             "(paced SysEx + input queue with elastic catch-up). "
             "Also: M when format is already MT-32; auto when only :mt32 outs "
-            "and the input stream is non-MT-32."
+            "and the input stream is non-MT-32. Hotkey V cycles banks."
+        ),
+    )
+    parser.add_argument(
+        "--voodoo-bank",
+        default="mtgm",
+        metavar="NAME",
+        help=(
+            "Voodoo bank: mtgm (Roland MT-TO-GM, default) or kq6 "
+            "(Sierra King's Quest VI). Hotkey V cycles while running."
         ),
     )
     parser.add_argument(
@@ -4006,6 +4071,7 @@ def main():
             log_path=log_path,
             log_verbose=log_verbose,
             voodoo=args.voodoo,
+            voodoo_bank=getattr(args, "voodoo_bank", "mtgm"),
         )
         router.run()
     except ValueError as e:
