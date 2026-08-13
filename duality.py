@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.14.2"
+VERSION = "0.14.6"
 
 
 """
@@ -88,6 +88,7 @@ import argparse
 import signal
 import sys
 import time
+import threading
 from typing import List, Optional
 
 import mido
@@ -155,6 +156,10 @@ SYNC_DELAY_MAX_MS = 500.0  # clamp |offset| for --sync-delay
 
 # Voodoo (MT-32 GM bank) pacing – real hardware is buffer-sensitive
 VOODOO_SYSEX_GAP = 0.035          # seconds between DT1 SysEx during bank load
+# Host/USB transfer dominates over SYSEX_GAP on multiport interfaces (e.g. M8U).
+# Bench: ~75ms of wall time per unit per paced step when all units share one
+# USB MIDI device — estimate uses max(gap, units × this) so the UI is honest.
+VOODOO_SEC_PER_UNIT_STEP = 0.075
 VOODOO_CATCHUP_MIN_GAP = 0.001    # floor gap between catch-up sends (was 8ms → too slow)
 VOODOO_CATCHUP_SPEED = 8.0        # compress original spacing by this factor
 VOODOO_CATCHUP_BURST = 48         # max messages drained per run-loop tick
@@ -1861,6 +1866,34 @@ class Duality:
             )
             return False
 
+    def _voodoo_fanout(self, dest: list[int], payload) -> None:
+        """
+        Deliver one SysEx payload to one or more ports.
+
+        When multiple ports are listed, sends run concurrently so wall-clock
+        time tracks a single port — not N × serial WinMM blocking calls.
+        (Each MT-32 still only receives one DT1 per paced step.)
+        """
+        ports = list(dest)
+        if not ports:
+            return
+        data = list(payload) if not isinstance(payload, list) else payload
+        if len(ports) == 1:
+            self._safe_out_send(ports[0], mido.Message("sysex", data=data))
+            return
+
+        def _one(p: int) -> None:
+            self._safe_out_send(p, mido.Message("sysex", data=list(data)))
+
+        threads = [
+            threading.Thread(target=_one, args=(p,), daemon=True)
+            for p in ports
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=2.0)
+
     def _safe_out_send(self, port: int, msg: mido.Message) -> bool:
         """
         Send on an output port. On failure, attempt one reconnect + resend.
@@ -2650,17 +2683,29 @@ class Duality:
             banner_map = bytes(self._mt32_display_msg("Mapping 16ch...").data)
             send_list.extend(_all([banner_map]))
             plan = _voodoo_channel_plan(len(targets))
+            # Build per-unit map SysEx, then interleave by step so all units
+            # receive their i-th message in the SAME paced tick. Wall-clock
+            # map time stays ~constant as unit count grows.
+            unit_maps: list[tuple[int, list]] = []
             for u, port in enumerate(targets):
                 melody = plan[u]
                 for ch in melody:
                     self._voodoo_ch_owners[ch - 1].append(port)
                 # Rhythm (ch 10): every unit – Duality load-balances notes
                 self._voodoo_ch_owners[9].append(port)
-                send_list.extend(_one(_voodoo_unit_map_sysex(melody), port))
+                unit_maps.append((port, list(_voodoo_unit_map_sysex(melody))))
                 self._log_line(
                     f"VOODOO map → port{port + 1} ONLY: "
                     f"melody ch {','.join(str(c) for c in melody)} + rhythm/10"
                 )
+            max_steps = max((len(ms) for _, ms in unit_maps), default=0)
+            for step in range(max_steps):
+                batch = []
+                for port, ms in unit_maps:
+                    if step < len(ms):
+                        batch.append((ms[step], [port]))
+                if batch:
+                    send_list.append(batch)  # parallel multi-port step
             # Ownership summary for debugging missing channels
             for ch in range(16):
                 owners = self._voodoo_ch_owners[ch]
@@ -2683,18 +2728,25 @@ class Duality:
         self._voodoo_send_list = send_list
         self._voodoo_send_idx = 0
         self._voodoo_next_send = time.monotonic()
+        self._voodoo_load_t0 = time.monotonic()
         self._voodoo_queue.clear()
         self._voodoo_catchup_idx = 0
         n = len(self._voodoo_send_list)
-        est = n * VOODOO_SYSEX_GAP
+        n_units = max(1, len(targets))
+        # Honest ETA: paced gap is a floor; shared USB MIDI scales with unit count.
+        est = n * max(VOODOO_SYSEX_GAP, n_units * VOODOO_SEC_PER_UNIT_STEP)
         multi = " 16ch" if len(targets) >= 2 else ""
         self._set_status(
-            f"Voodoo: loading {bank_label(self.voodoo_bank)}{multi} ({n} SysEx, ~{est:.0f}s) – {reason}",
-            duration=max(4.0, est + 2.0),
+            f"Voodoo: loading {bank_label(self.voodoo_bank)}{multi} "
+            f"({n} steps × {n_units} unit(s), ~{est:.0f}s) – {reason}",
+            duration=max(est + 5.0, 15.0),
         )
         self._log_line(
-            f"VOODOO begin ({reason}): {n} msgs → ports "
+            f"VOODOO begin ({reason}): {n} paced steps → "
+            f"{n_units} unit(s) ["
             + ",".join(str(i + 1) for i in targets)
+            + f"] est ~{est:.0f}s "
+            f"(USB-bound ~{VOODOO_SEC_PER_UNIT_STEP*1000:.0f}ms×units/step)"
         )
 
     def _voodoo_exit(self, reason: str = "manual") -> None:
@@ -2735,17 +2787,41 @@ class Duality:
                 and now >= self._voodoo_next_send
             ):
                 item = self._voodoo_send_list[self._voodoo_send_idx]
-                # (payload, ports|None) — None means all current voodoo targets
-                if isinstance(item, tuple):
-                    payload, ports = item
+                # Formats:
+                #   (payload, ports|None) — None = all voodoo targets
+                #   [(payload, ports), ...] — parallel step (different maps to
+                #       different units in ONE gap interval)
+                # Gap is anchored to step START so 2 vs 4 outs share the same
+                # wall-clock pace. Each device still sees one DT1 per gap.
+                step_t0 = time.monotonic()
+                if isinstance(item, list):
+                    # Parallel map step: different payloads to different units
+                    # concurrently (one thread per unit).
+                    def _send_pair(payload, ports) -> None:
+                        dest = ports if ports is not None else self._voodoo_targets
+                        self._voodoo_fanout(dest, payload)
+
+                    threads = [
+                        threading.Thread(
+                            target=_send_pair,
+                            args=(payload, ports),
+                            daemon=True,
+                        )
+                        for payload, ports in item
+                    ]
+                    for t in threads:
+                        t.start()
+                    for t in threads:
+                        t.join(timeout=2.0)
                 else:
-                    payload, ports = item, None
-                dest = ports if ports is not None else self._voodoo_targets
-                msg = mido.Message("sysex", data=list(payload))
-                for p in dest:
-                    self._safe_out_send(p, msg)
+                    if isinstance(item, tuple):
+                        payload, ports = item
+                    else:
+                        payload, ports = item, None
+                    dest = ports if ports is not None else self._voodoo_targets
+                    self._voodoo_fanout(dest, payload)
                 self._voodoo_send_idx += 1
-                self._voodoo_next_send = time.monotonic() + VOODOO_SYSEX_GAP
+                self._voodoo_next_send = step_t0 + VOODOO_SYSEX_GAP
             if self._voodoo_send_idx >= len(self._voodoo_send_list):
                 self.voodoo_loading = False
                 self.voodoo_active = True
@@ -2756,12 +2832,14 @@ class Duality:
                     else:
                         self._voodoo_display("Voodoo GM Ready!")
                 qn = len(self._voodoo_queue)
+                elapsed = time.monotonic() - getattr(self, "_voodoo_load_t0", time.monotonic())
                 self._log_line(
-                    f"VOODOO send done (full_bank={self._voodoo_full_bank}); queue depth={qn}"
+                    f"VOODOO send done (full_bank={self._voodoo_full_bank}); "
+                    f"elapsed={elapsed:.1f}s; queue depth={qn}"
                 )
                 if qn == 0:
                     if self._voodoo_full_bank:
-                        self._set_status("Voodoo: GM ready", duration=3.0)
+                        self._set_status("Voodoo: GM ready", duration=6.0)
                     # kit-only: status already set by _voodoo_rhythm_pc
                 else:
                     self.voodoo_catchup = True
