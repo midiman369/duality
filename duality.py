@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.14.6"
+VERSION = "0.15.1"
 
 
 """
@@ -683,21 +683,42 @@ def _mt32_dt1(addr: tuple[int, int, int], data: list[int]) -> bytes:
     return bytes([0x41, 0x10, 0x16, 0x12, *body, _roland_checksum(body)])
 
 
-def _voodoo_channel_plan(n_units: int) -> list[list[int]]:
+def _voodoo_channel_plan(
+    n_units: int,
+    layout: str = "stripe",
+) -> list[list[int]]:
     """
-    Assign GM melody channels (1-9, 11-16) across n_units by alternating.
+    Assign GM melody channels (1-9, 11-16) across n_units.
 
-    Returns list of length n_units; each entry is the sorted list of 1-based
-    MIDI channels that unit should receive on its 8 parts (≤8 channels).
-    Rhythm (ch 10) is handled separately (all units).
+    layout:
+      stripe – alternate channels across all units (default; best for 3)
+      pairs  – even unit counts ≥4: mirrored 2-unit maps, notes LB across twins
+
+    Returns list of length n_units; each entry is 1-based MIDI channels for
+    that unit's parts (≤8). Rhythm (ch 10) is handled separately (all units).
     """
     if n_units < 1:
         return []
     melody = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16]
-    buckets: list[list[int]] = [[] for _ in range(n_units)]
+    layout = (layout or "stripe").lower().strip()
+
+    if layout == "pairs" and n_units >= 4 and n_units % 2 == 0:
+        # Each pair is a full 2-unit Super-Munt split; pairs mirror each other
+        # so Duality can load-balance a channel across the twins.
+        base: list[list[int]] = [[], []]
+        for i, ch in enumerate(melody):
+            base[i % 2].append(ch)
+        base = [b[:8] for b in base]
+        buckets: list[list[int]] = []
+        for _ in range(n_units // 2):
+            buckets.append(list(base[0]))
+            buckets.append(list(base[1]))
+        return buckets
+
+    # stripe (and any fallback)
+    buckets = [[] for _ in range(n_units)]
     for i, ch in enumerate(melody):
         buckets[i % n_units].append(ch)
-    # Cap at 8 parts per MT-32 (extra would need a 3rd+ unit in a later pass)
     return [b[:8] for b in buckets]
 
 
@@ -762,6 +783,7 @@ class Duality:
         log_verbose: bool = False,
         voodoo: bool = False,
         voodoo_bank: str = "mtgm",
+        voodoo_layout: str = "stripe",
     ):
         # Alchemy may run with a single output (transcode-only path).
         # Classic router still requires at least two ports.
@@ -834,6 +856,8 @@ class Duality:
         self.voodoo_bank = (voodoo_bank or "mtgm").lower().strip()
         if _VOODOO_BANKS and self.voodoo_bank not in VOODOO_BANK_NAMES:
             self.voodoo_bank = DEFAULT_VOODOO_BANK
+        layout = (voodoo_layout or "stripe").lower().strip()
+        self.voodoo_layout = layout if layout in ("stripe", "pairs") else "stripe"
         self.voodoo_active = False            # GM bank is loaded / mode on
         self.voodoo_loading = False           # paced SysEx in progress
         self.voodoo_catchup = False           # draining deferred input queue
@@ -2682,7 +2706,7 @@ class Duality:
         if len(targets) >= 2:
             banner_map = bytes(self._mt32_display_msg("Mapping 16ch...").data)
             send_list.extend(_all([banner_map]))
-            plan = _voodoo_channel_plan(len(targets))
+            plan = _voodoo_channel_plan(len(targets), self.voodoo_layout)
             # Build per-unit map SysEx, then interleave by step so all units
             # receive their i-th message in the SAME paced tick. Wall-clock
             # map time stays ~constant as unit count grows.
@@ -2695,7 +2719,7 @@ class Duality:
                 self._voodoo_ch_owners[9].append(port)
                 unit_maps.append((port, list(_voodoo_unit_map_sysex(melody))))
                 self._log_line(
-                    f"VOODOO map → port{port + 1} ONLY: "
+                    f"VOODOO map [{self.voodoo_layout}] → port{port + 1}: "
                     f"melody ch {','.join(str(c) for c in melody)} + rhythm/10"
                 )
             max_steps = max((len(ms) for _, ms in unit_maps), default=0)
@@ -2953,6 +2977,27 @@ class Duality:
             # User intentionally locked (typically to MT-32) – stay in Voodoo
             return
         self._voodoo_exit(f"format → {fmt}")
+
+
+    def _voodoo_toggle_layout(self) -> None:
+        """Hotkey P: stripe ↔ pairs when 4+ even MT-32 units are present."""
+        targets = self._mt32_port_indices()
+        n = len(targets)
+        if n < 4 or n % 2 != 0:
+            self._set_status(
+                f"Voodoo pairs layout needs 4+ even units (have {n})",
+                duration=3.0,
+            )
+            return
+        self.voodoo_layout = "pairs" if self.voodoo_layout == "stripe" else "stripe"
+        self._set_status(
+            f"Voodoo layout → {self.voodoo_layout}",
+            duration=3.0,
+        )
+        self._log_line(f"VOODOO layout → {self.voodoo_layout}")
+        if self.voodoo_active or self.voodoo_loading:
+            # Re-program channel maps (bank reload keeps SysEx consistent)
+            self._voodoo_begin(f"layout → {self.voodoo_layout}")
 
     def _voodoo_ports_for_channel(self, channel: int) -> list[int] | None:
         """
@@ -3738,8 +3783,11 @@ class Duality:
                     f"Voodoo bank → {label} (load with M / --voodoo)",
                     duration=3.0,
                 )
+        elif c == "p":
+            # Voodoo layout: stripe ↔ pairs (4+ even :mt32 units only)
+            self._voodoo_toggle_layout()
         elif c == "b":
-            # Toggle note assignment strategy
+            # Toggle note assignment strategy (balance ↔ round-robin)
             self.mode = "rr" if self.mode == "balance" else "balance"
             self._set_status(f"Mode → {self.mode}", duration=2.5)
         elif c == "c":
@@ -3993,6 +4041,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--voodoo-layout",
+        default="stripe",
+        choices=("stripe", "pairs"),
+        help=(
+            "Multi-MT-32 channel layout: stripe (default, best for 3) or "
+            "pairs (4+ even units — mirrored 2-unit maps with note LB). "
+            "Hotkey P toggles when eligible."
+        ),
+    )
+    parser.add_argument(
         "--alchemy",
         action="store_true",
         help=(
@@ -4186,6 +4244,7 @@ def main():
             log_verbose=log_verbose,
             voodoo=args.voodoo,
             voodoo_bank=getattr(args, "voodoo_bank", "mtgm"),
+            voodoo_layout=getattr(args, "voodoo_layout", "stripe"),
         )
         router.run()
     except ValueError as e:
