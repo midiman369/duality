@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.15.1"
+VERSION = "0.15.3"
 
 
 """
@@ -36,7 +36,7 @@ Features
 • Set input format (G/R/Y/M) vs lock input format (L); idle clear; F clears
 • Optional --strict-format-detection: Only actual SYSTEM ON or RESET SysEx messages set/switch input format.
 • GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
-• SCPOP / SC-ext detection (model 45 or banner) + optional --scpop
+• SCPOP / SC-ext detection (banner or bulk model-45; not LCD text) + optional --scpop
 • Per-port --sync-delay (ms); relative negatives normalized; 0 = fast path
 • Graceful handling and attempted reconnect of dropped or lost output ports.
 • Voodoo Phase V2: 2+ :mt32 outs get alternating 16-channel map
@@ -1439,32 +1439,63 @@ class Duality:
             fmt = None
 
         # SCPOP / SC-extended detection (broadcast notes to format-matched ports)
-        # 1) Roland model 0x45 (SC-ext / SCPOP setup dumps) – text optional
-        # 2) Any Roland SysEx whose printable payload contains "SCPOP"
-        if data[0] == 0x41 and len(data) >= 6 and not self.scpop_mode:
-            try:
-                ascii_payload = bytes(
-                    b for b in data[4:] if 32 <= b <= 126
-                ).decode("ascii", errors="ignore")
-            except Exception:
-                ascii_payload = ""
-            model = data[2]
-            triggered = False
-            reason = ""
-            if model == 0x45:
-                triggered = True
-                reason = "SCPOP/SC-ext (model 45)"
-            elif "SCPOP" in ascii_payload.upper():
-                triggered = True
-                reason = "SCPOP banner in SysEx"
-            if triggered:
-                self.scpop_mode = True
-                if fmt is None:
-                    fmt = "GS"
-                self._set_status(
-                    f"{reason} – broadcasting notes to format-matched ports",
-                    duration=5.0,
-                )
+        #
+        # Model ID 0x45 is SC-88-family, NOT SCPOP-specific — many games only
+        # use it for LCD text (e.g. Noctropolis "NOCTROPOLIS AWAITS"). Require a
+        # stronger signal than bare model 0x45:
+        #   1) printable payload contains "SCPOP", or
+        #   2) model 0x45 + large bulk DT1 that is not a short display string
+        # Never auto-arm when format is locked away from GS, or when the active
+        # format is clearly non-GS (GM/XG/MT-32). --scpop still forces the mode.
+        if (
+            data[0] == 0x41
+            and len(data) >= 6
+            and not self.scpop_mode
+            and not self.scpop_forced
+        ):
+            # Respect lock / non-GS world
+            active_fmt = (fmt or self.detected_format or "").upper()
+            if self.format_locked and active_fmt and active_fmt != "GS":
+                pass  # ignore auto-SCPOP while locked to something else
+            elif active_fmt in ("GM", "GM2", "XG", "MT32", "MT-32"):
+                pass
+            else:
+                try:
+                    ascii_payload = bytes(
+                        b for b in data[4:] if 32 <= b <= 126
+                    ).decode("ascii", errors="ignore")
+                except Exception:
+                    ascii_payload = ""
+                model = data[2]
+                # DT1: 41 dd model 12 aa bb cc ... checksum
+                addr = tuple(data[4:7]) if len(data) >= 7 and data[3] == 0x12 else ()
+                body_len = max(0, len(data) - 8)  # after addr, before checksum-ish
+
+                triggered = False
+                reason = ""
+                if "SCPOP" in ascii_payload.upper():
+                    triggered = True
+                    reason = "SCPOP banner in SysEx"
+                elif model == 0x45 and data[3] == 0x12:
+                    # Display-only: short text at 10 00 00 (SC LCD) — not SCPOP
+                    is_display = (
+                        addr == (0x10, 0x00, 0x00)
+                        and body_len <= 32
+                        and bool(ascii_payload.strip(" ."))
+                    )
+                    # Real SCPOP setups use larger bulk dumps (part/map area)
+                    is_bulk_map = body_len >= 40 and addr[:1] == (0x10,)
+                    if is_bulk_map and not is_display:
+                        triggered = True
+                        reason = "SCPOP/SC-ext bulk (model 45)"
+                if triggered:
+                    self.scpop_mode = True
+                    if fmt is None:
+                        fmt = "GS"
+                    self._set_status(
+                        f"{reason} – broadcasting notes to format-matched ports",
+                        duration=5.0,
+                    )
 
         if fmt:
             if self.format_locked:
@@ -1612,7 +1643,9 @@ class Duality:
 
             return "XG SysEx"
 
-        # ----- SCPOP / SC extended (Roland Model ID 45) -----
+        # ----- SC-88 family / SC-ext (Roland Model ID 45) -----
+        # Model 0x45 is not SCPOP-specific (LCD text, bulk dumps, etc.).
+        # Only prefix "SCPOP:" when the payload actually says so.
         if data[0] == 0x41 and len(data) >= 6 and data[2] == 0x45:
             try:
                 text_payload = bytes(
@@ -1620,11 +1653,19 @@ class Duality:
                 ).decode("ascii", errors="ignore").strip()
             except Exception:
                 text_payload = ""
+            addr = tuple(data[4:7]) if len(data) >= 7 else ()
             if text_payload:
                 if len(text_payload) > 40:
                     text_payload = text_payload[:37] + "…"
-                return f"SCPOP: {text_payload}"
-            return "SCPOP SysEx"
+                if "SCPOP" in text_payload.upper():
+                    return f"SCPOP: {text_payload}"
+                # SC LCD / display string (e.g. Noctropolis)
+                if addr == (0x10, 0x00, 0x00) or len(data) <= 40:
+                    return f"SC Display: {text_payload}"
+                return f"SC-ext: {text_payload}"
+            if len(data) >= 48:
+                return "SC-ext bulk SysEx"
+            return "SC-ext SysEx"
 
         # ----- MT-32 / CM-32 / CM-64 (Roland Model ID 16) -----
         if data[0] == 0x41 and len(data) >= 6 and data[2] == 0x16 and data[3] == 0x12:
