@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.15.3"
+VERSION = "0.16.18"
 
 
 """
@@ -13,6 +13,7 @@ synchronized across all devices.
 
 Features
 --------
+• Anima (opt-in): GM-category CC phrasing + velocity humanize
 • Load-balancing by utilization (fair with mixed poly limits) or pure round-robin
 • Chord preference (notes arriving close together stay on the same device)
 • Smart voice stealing (lowest velocity first, then oldest)
@@ -51,7 +52,7 @@ Hotkeys (input/stream format — not output tags)
 -------
 F clear input format   L lock/unlock input format
 G GM↔GM2   R GS   Y XG   M MT-32 (again = Voodoo GM)
-B balance↔rr     C clear log file     Q quit (panic)
+A Anima on/off   B balance↔rr     C clear log file     Q quit (panic)
 
 Usage examples
 --------------
@@ -146,6 +147,9 @@ except ImportError:
 
     def bank_display(name):
         return (name or "MT-TO-GM")[:20]
+
+    def bank_anima_map(name):
+        return "gm"
 
 mido.set_backend("mido.backends.rtmidi")
 
@@ -760,6 +764,143 @@ def _voodoo_unit_map_sysex(melody_chs: list[int]) -> list[bytes]:
 
 console = Console()
 
+
+# ---------------------------------------------------------------------------
+# Anima – automatic phrasing / humanize (Phase 1)
+# Opt-in via --anima. When off, cost is a single boolean on the note path.
+# ---------------------------------------------------------------------------
+# Asymmetric humanize: favor lift; at high velocity, tame machine-gun peaks
+ANIMA_HUMANIZE_DOWN = 3         # max velocity decrease (normal repeats)
+ANIMA_HUMANIZE_UP = 7           # max velocity increase (normal repeats)
+ANIMA_HUMANIZE_HOT = 120        # velocity >= this → invert bias (tame)
+ANIMA_HUMANIZE_HOT_DOWN = 7     # max decrease when hot
+ANIMA_HUMANIZE_HOT_UP = 3       # max increase when hot
+ANIMA_REPEAT_IOI = 0.11         # seconds – near-grid repeat window
+ANIMA_REPEAT_VEL_SLACK = 2      # velocities within this count as "same"
+ANIMA_EXPR_FLOOR = 36           # min CC11 when Anima drives expression
+ANIMA_MOD_HELD_SEC = 0.45       # default hold before light auto-mod
+ANIMA_MOD_LEVEL = 18            # default gentle CC1
+# Brass/wind: engage sooner + slightly stronger vibrato/breath motion
+ANIMA_MOD_HELD_SEC_WIND = 0.32  # user-tuned
+ANIMA_MOD_HELD_SEC_MT32 = 0.18  # MT-32 has no CC11; CC1 speaks sooner
+ANIMA_MOD_LEVEL_WIND = 28
+ANIMA_FILE_CC11_HOLD = 2.0      # if file sent CC11 recently, do not override
+ANIMA_STATUS_GAP = 2.5          # min seconds between Anima status-line flashes
+ANIMA_EXPR_DEFAULT = 127        # GM default (full) – return here on idle
+ANIMA_IDLE_SEC = 0.28           # quiet time before ramping back to defaults
+ANIMA_RAMP_MOD_UP = 55          # CC1 units / second (joystick-like)
+ANIMA_RAMP_MOD_DOWN = 70
+ANIMA_RAMP_EXPR_UP = 80         # CC11 units / second
+ANIMA_RAMP_EXPR_DOWN = 55
+ANIMA_CC_QUANT = 4              # only emit CC when value moves by this
+ANIMA_CC_GAP = 0.003            # min seconds between Anima CCs on a port
+# Thin high-rate channel streams so DIN-speed modules (MS40 via M8U)
+# are not asked to eat > MIDI 31.25 kbps (e.g. 190 pitchbends / 100ms).
+STREAM_THIN_SEC = 0.008         # min gap per channel for pitch/AT/CC1
+# Strum (plucked / guitar)
+ANIMA_STRUM_COLLECT = 0.010     # gather window before a stroke
+ANIMA_STRUM_STEP = 0.0035       # seconds between strings
+ANIMA_STRUM_CATS = frozenset({"guitar"})
+ANIMA_HETFIELD_PC = frozenset(range(29, 31))  # OD / Distortion – down only
+
+
+def _gm_category(program: int) -> str:
+    """Map GM program 0–127 to a coarse articulation category."""
+    p = max(0, min(127, int(program)))
+    if p <= 7:
+        return "piano"
+    if p <= 15:
+        return "chromatic"
+    if p <= 23:
+        return "organ"
+    if p <= 31:
+        return "guitar"
+    if p <= 39:
+        return "bass"
+    if p <= 47:
+        return "strings"
+    if p <= 55:
+        return "ensemble"
+    if p <= 63:
+        return "brass"
+    if p <= 79:
+        return "wind"
+    if p <= 87:
+        return "lead"
+    if p <= 95:
+        return "pad"
+    if p <= 103:
+        return "fx"
+    if p <= 111:
+        return "ethnic"
+    if p <= 119:
+        return "percussive"
+    return "sfx"
+
+
+# Roland MT-32 factory timbre / default patch map (program 0–127).
+# Used when the stream is native MT-32 (not a Voodoo GM bank).
+_MT32_DEFAULT_CAT = [
+    # Preset A 0–63
+    "piano","piano","piano","piano","piano","piano","piano","piano",          # 0–7 pianos / honky
+    "organ","organ","organ","organ","organ","organ","organ","organ",          # 8–15 organs / accordion
+    "chromatic","chromatic","chromatic","chromatic","chromatic","chromatic","chromatic","chromatic",  # 16–23 harpsi/clavi/celesta
+    "brass","brass","brass","brass","bass","bass","bass","bass",              # 24–31 syn brass / syn bass
+    "pad","pad","ensemble","fx","pad","pad","chromatic","fx",                 # 32–39 Fantasy…Funny Vox
+    "fx","fx","wind","fx","lead","fx","chromatic","lead",                     # 40–47 Echo Bell…Square Wave
+    "strings","strings","strings","strings","strings","strings","strings","strings",  # 48–55 strings
+    "strings","strings","strings","guitar","guitar","guitar","guitar","ethnic",       # 56–63 bass-str / harp / gtr / sitar
+    # Preset B 64–127
+    "bass","bass","bass","bass","bass","bass","bass","bass",                  # 64–71 basses
+    "wind","wind","wind","wind","wind","wind","wind","wind",                  # 72–79 flute…sax2
+    "wind","wind","wind","wind","wind","wind","wind","wind",                  # 80–87 sax3…harmonica
+    "brass","brass","brass","brass","brass","brass","brass","ensemble",        # 88–95 Tpt…Tuba, Brs Sect 1
+    "ensemble","chromatic","chromatic","chromatic","ethnic","wind","wind","chromatic",  # 96–103 Brs2, Vibe1/2, Kalimba/Marimba, Koto, Sho, Shak, Tinkle
+    "percussive","percussive","percussive","percussive","percussive","percussive","ensemble","sfx",  # 104–111
+    "fx","fx","fx","sfx","sfx","sfx","sfx","sfx",                              # 112–119
+    "sfx","sfx","sfx","sfx","sfx","sfx","sfx","sfx",                          # 120–127
+]
+
+
+def _mt32_category(program: int) -> str:
+    p = max(0, min(127, int(program)))
+    return _MT32_DEFAULT_CAT[p]
+
+
+# Detect Sierra (and similar) custom MT-32 banks from the *stream*, not Voodoo load.
+# Match display text and distinctive timbre names that soundtrack MIDIs dump at start.
+ANIMA_BANK_SIGNATURES = (
+    # Title needles are unique. Do NOT use "Quest Studios" — every QS dump
+    # ends with that credit and would steal the bank.
+    (("leisure suit larry", "larry 3"),
+     "lsl3", "sfx", "Larry 3"),
+    (("space quest 4", "space quest iv"),
+     "sq4", "sfx", "Space Quest 4"),
+    (("king's quest 5", "king's quest v"),
+     "kq5", "sfx", "King's Quest 5"),
+)
+# Extra timbre names only used if no title has locked a bank yet
+ANIMA_BANK_NAME_HINTS = (
+    (("open box", "airlock2", "coolphone"), "lsl3", "sfx", "Larry 3"),
+    (("shipdoplr", "resosynth", "takeoff ms", "spaceguit"), "sq4", "sfx", "Space Quest 4"),
+    (("firedart", "lone wolf", "frogger", "whiporill"), "kq5", "sfx", "King's Quest 5"),
+)
+
+ANIMA_SIERRA_PC = {
+    "lsl3": {0: "P113", 1: "P114", 2: "P119", 3: "P113", 4: "P119", 5: "sfx", 6: "P124", 7: "P103", 8: "P51", 9: "P112", 10: "P84", 11: "P2", 12: "P108", 13: "P8", 14: "P63", 15: "P110", 16: "P107", 17: "P43", 18: "P32", 19: "sfx", 20: "P62", 21: "P78", 22: "P72", 23: "P44", 24: "P73", 25: "P75", 26: "P82", 27: "P62", 28: "P86", 29: "P105", 30: "P48", 31: "P50", 32: "P81", 33: "P62", 34: "P60", 35: "P95", 36: "P37", 37: "P68", 38: "P94", 39: "P64", 40: "P117", 41: "P7", 42: "P92", 43: "P70", 44: "P36", 45: "P90", 46: "P91", 47: "P34", 48: "P58", 49: "P109", 50: "P39", 51: "P7", 52: "P59", 53: "P95", 54: "P68", 55: "P3", 56: "P61", 57: "sfx", 58: "P89", 59: "P88", 60: "P59", 61: "P1", 62: "P97", 63: "P93", 64: "P50", 65: "P79", 66: "P47", 67: "P38", 68: "P122", 69: "P52", 70: "sfx", 71: "sfx", 72: "sfx", 73: "sfx", 74: "sfx", 75: "sfx", 76: "percussive", 77: "sfx", 78: "percussive", 79: "sfx", 80: "bass", 81: "sfx", 82: "sfx", 83: "sfx", 84: "sfx", 85: "sfx", 86: "sfx", 87: "sfx", 88: "sfx", 89: "sfx", 90: "sfx", 91: "sfx", 92: "sfx", 93: "P87", 94: "P104", 95: "P24", 96: "P96", 97: "P97", 98: "P98", 99: "P99", 100: "P100", 101: "P101", 102: "P102", 103: "P103", 104: "P104", 105: "P105", 106: "P106", 107: "P107", 108: "P108", 109: "P109", 110: "P110", 111: "P111", 112: "P112", 113: "P113", 114: "P114", 115: "P115", 116: "P116", 117: "P117", 118: "P118", 119: "P119", 120: "P120", 121: "P121", 122: "P122", 123: "P123", 124: "P124", 125: "P125", 126: "P126", 127: "P127"},
+    "sq4": {0: "sfx", 1: "percussive", 2: "sfx", 3: "piano", 4: "P49", 5: "P50", 6: "P51", 7: "P34", 8: "pad", 9: "P37", 10: "P41", 11: "P88", 12: "P25", 13: "P30", 14: "P31", 15: "P32", 16: "P7", 17: "P92", 18: "P72", 19: "P101", 20: "P102", 21: "P38", 22: "P112", 23: "P43", 24: "lead", 25: "P122", 26: "P8", 27: "P104", 28: "P69", 29: "ensemble", 30: "sfx", 31: "sfx", 32: "brass", 33: "P12", 34: "P78", 35: "sfx", 36: "P87", 37: "P62", 38: "P64", 39: "guitar", 40: "P57", 41: "sfx", 42: "sfx", 43: "P86", 44: "chromatic", 45: "pad", 46: "sfx", 47: "sfx", 48: "sfx", 49: "P0", 50: "sfx", 51: "sfx", 52: "sfx", 53: "sfx", 54: "sfx", 55: "sfx", 56: "sfx", 57: "sfx", 58: "sfx", 59: "sfx", 60: "sfx", 61: "sfx", 62: "sfx", 63: "sfx", 64: "sfx", 65: "sfx", 66: "sfx", 67: "sfx", 68: "sfx", 69: "sfx", 70: "sfx", 71: "sfx", 72: "sfx", 73: "sfx", 74: "sfx", 75: "guitar", 76: "sfx", 77: "sfx", 78: "sfx", 79: "sfx", 80: "sfx", 81: "ensemble", 82: "bass", 83: "sfx", 84: "sfx", 85: "sfx", 86: "sfx", 87: "pad", 88: "sfx", 89: "sfx", 90: "sfx", 91: "sfx", 92: "sfx", 93: "sfx", 94: "P0", 95: "P0", 96: "P96", 97: "P97", 98: "P98", 99: "P99", 100: "P100", 101: "P101", 102: "P102", 103: "P103", 104: "P104", 105: "P105", 106: "P106", 107: "P107", 108: "P108", 109: "P109", 110: "P110", 111: "P111", 112: "P112", 113: "P113", 114: "P114", 115: "P115", 116: "P116", 117: "P117", 118: "P118", 119: "P119", 120: "P120", 121: "P121", 122: "P122", 123: "P123", 124: "P124", 125: "P125", 126: "P126", 127: "P127"},
+    "kq5": {0: "P0", 1: "P0", 2: "P0", 3: "P0", 4: "P0", 5: "P59", 6: "strings", 7: "pad", 8: "brass", 9: "pad", 10: "wind", 11: "chromatic", 12: "brass", 13: "wind", 14: "strings", 15: "wind", 16: "strings", 17: "strings", 18: "P86", 19: "P85", 20: "P15", 21: "P112", 22: "P108", 23: "P89", 24: "P95", 25: "P56", 26: "P63", 27: "P57", 28: "wind", 29: "P49", 30: "P12", 31: "P0", 32: "P0", 33: "P0", 34: "P0", 35: "P0", 36: "P0", 37: "P0", 38: "P0", 39: "P0", 40: "P0", 41: "P0", 42: "P0", 43: "P0", 44: "P0", 45: "P0", 46: "P0", 47: "P0", 48: "sfx", 49: "sfx", 50: "sfx", 51: "sfx", 52: "sfx", 53: "sfx", 54: "sfx", 55: "sfx", 56: "sfx", 57: "sfx", 58: "sfx", 59: "sfx", 60: "sfx", 61: "P124", 62: "sfx", 63: "sfx", 64: "sfx", 65: "sfx", 66: "sfx", 67: "sfx", 68: "piano", 69: "sfx", 70: "sfx", 71: "sfx", 72: "sfx", 73: "sfx", 74: "sfx", 75: "sfx", 76: "sfx", 77: "sfx", 78: "sfx", 79: "sfx", 80: "sfx", 81: "sfx", 82: "sfx", 83: "sfx", 84: "sfx", 85: "sfx", 86: "sfx", 87: "sfx", 88: "sfx", 89: "sfx", 90: "sfx", 91: "sfx", 92: "sfx", 93: "chromatic", 94: "sfx", 95: "sfx", 96: "P96", 97: "P97", 98: "P98", 99: "P99", 100: "P100", 101: "P101", 102: "P102", 103: "P103", 104: "P104", 105: "P105", 106: "P106", 107: "P107", 108: "P108", 109: "P109", 110: "P110", 111: "P111", 112: "P112", 113: "P113", 114: "P114", 115: "P115", 116: "P116", 117: "P117", 118: "P118", 119: "P119", 120: "P120", 121: "P121", 122: "P122", 123: "P123", 124: "P124", 125: "P125", 126: "P126", 127: "P127"},
+}
+
+
+ANIMA_EXPR_CATS = frozenset(
+    {"strings", "ensemble", "brass", "wind", "pad", "lead", "organ", "fx"}
+)
+ANIMA_MOD_CATS = frozenset(
+    {"strings", "ensemble", "pad", "wind", "brass", "lead"}
+)
+
+
 class Duality:
     def __init__(
         self,
@@ -784,18 +925,21 @@ class Duality:
         voodoo: bool = False,
         voodoo_bank: str = "mtgm",
         voodoo_layout: str = "stripe",
+        anima: bool = False,
     ):
-        # Alchemy may run with a single output (transcode-only path).
+        # Alchemy / Voodoo / Anima may run with a single output.
         # Classic router still requires at least two ports.
-        min_ports = 1 if (alchemy or voodoo) else 2
+        min_ports = 1 if (alchemy or voodoo or anima) else 2
         if len(out_names) < min_ports:
+            extra = " with --alchemy/--voodoo/--anima." if (alchemy or voodoo or anima) else "."
             raise ValueError(
-                f"At least {min_ports} output port(s) required"
-                + (" with --alchemy." if alchemy else ".")
+                f"At least {min_ports} output port(s) required{extra}"
             )
 
         self.mode = mode
         self.n_ports = len(out_names)
+        self._anima_cc_port_t = [0.0] * self.n_ports
+        self._thin_last = {}  # (ch, kind) -> monotonic
         self.chord_window = chord_window_ms / 1000.0
         self.show_status = show_status
         # --alchemy-all implies Alchemy; fan-out to all GS/XG-capable outs
@@ -836,6 +980,32 @@ class Duality:
         # SCPOP: broadcast notes to format-matched ports (force via --scpop or auto-detect)
         self.scpop_mode = bool(scpop)
         self.scpop_forced = bool(scpop)
+        # Anima Phase 1 – CC phrasing + velocity humanize
+        self.anima = bool(anima)
+        self._anima_prog = [0] * 16
+        self._anima_last_note = [-1] * 16
+        self._anima_last_vel = [-1] * 16
+        self._anima_last_on = [0.0] * 16
+        self._anima_file_cc11_t = [0.0] * 16
+        self._anima_mod_on = set()          # (ch, note) already armed for auto-mod
+        self._anima_mod_ch = [False] * 16
+        self._anima_status_t = 0.0
+        self._anima_stats = {"humanize": 0, "expr": 0, "mod": 0, "skip_cc11": 0}
+        self._anima_stream_bank = None   # lsl3 / sq4 / kq5 from MIDI SysEx
+        self._anima_stream_map = None    # gm | mt32 | sfx learned from stream
+        self._anima_ports = [[] for _ in range(16)]
+        self._anima_cc1_cur = [0] * 16
+        self._anima_cc1_tgt = [0] * 16
+        self._anima_cc11_cur = [ANIMA_EXPR_DEFAULT] * 16
+        self._anima_cc11_tgt = [ANIMA_EXPR_DEFAULT] * 16
+        self._anima_cc11_own = [False] * 16  # Anima is driving CC11
+        self._anima_idle_t = [0.0] * 16
+        self._anima_ramp_t = time.monotonic()
+        self._anima_cc_sent = [(-1, -1)] * 16   # last (cc1, cc11) actually sent
+        self._anima_strum_buf = [None] * 16
+        self._anima_strum_dir = [1] * 16     # 1 = down (low→high)
+        self._anima_strum_n = [0] * 16       # completed strokes per ch
+        self._anima_strum_q = []             # (when, port, msg)
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
         # Per-channel bank select state (for Alchemy PC mapping)
         self.bank_msb = [0] * 16
@@ -1027,12 +1197,19 @@ class Duality:
     
 
     def _log_line(self, line: str) -> None:
-        """Append one line to --log file (no-op if logging disabled)."""
+        """Append one line to --log file (no-op if logging disabled).
+
+        Flush at most ~4 times/sec so dense Anima sessions cannot stall MIDI.
+        """
         if getattr(self, "_log_file", None) is None or not line:
             return
         try:
             self._log_file.write(f"{time.strftime('%H:%M:%S')} {line}\n")
-            self._log_file.flush()
+            now = time.monotonic()
+            last = getattr(self, "_log_flush_t", 0.0)
+            if now - last >= 0.25:
+                self._log_file.flush()
+                self._log_flush_t = now
         except OSError:
             pass
 
@@ -3123,9 +3300,516 @@ class Duality:
         return True
 
 
+
+    # ----- Anima Phase 1 -----------------------------------------------------
+
+    def _anima_feedback(self, kind: str, detail: str, *, status: bool = False) -> None:
+        """Always log (with --log); optional throttled status-line flash."""
+        self._log_line(f"ANIMA {kind}: {detail}")
+        if not status:
+            return
+        now = time.monotonic()
+        if now - self._anima_status_t < ANIMA_STATUS_GAP:
+            return
+        self._anima_status_t = now
+        self._set_status(f"Anima {kind}: {detail}", duration=2.0)
+
+    def _anima_on_cc(self, msg: mido.Message) -> None:
+        """Track file-driven expression so we do not fight it."""
+        if msg.type == "control_change" and msg.control == 11:
+            self._anima_file_cc11_t[msg.channel & 0x0F] = time.monotonic()
+
+    def _anima_on_pc(self, msg: mido.Message) -> None:
+        if msg.type != "program_change":
+            return
+        ch = msg.channel & 0x0F
+        self._anima_prog[ch] = msg.program & 0x7F
+        self._anima_mod_on = {k for k in self._anima_mod_on if k[0] != ch}
+        self._anima_mod_ch[ch] = False
+        if self.anima:
+            cat = self._anima_category(ch)
+            bank = getattr(self, "_anima_stream_bank", None) or "-"
+            self._anima_feedback(
+                "cat",
+                f"ch{ch + 1} PC{msg.program} → {cat} [{bank}]",
+                status=True,
+            )
+
+    def _anima_category(self, ch: int) -> str:
+        """Pick articulation family from the active tonemap."""
+        prog = self._anima_prog[ch & 0x0F]
+        voodoo_on = bool(
+            getattr(self, "voodoo_active", False)
+            or getattr(self, "voodoo_loading", False)
+        )
+        bank = getattr(self, "_anima_stream_bank", None)
+        if bank and bank in ANIMA_SIERRA_PC:
+            spec = ANIMA_SIERRA_PC[bank].get(prog)
+            if spec is None:
+                return _mt32_category(prog)
+            if isinstance(spec, str) and spec.startswith("P"):
+                try:
+                    return _mt32_category(int(spec[1:]))
+                except ValueError:
+                    return _mt32_category(prog)
+            return spec
+        if voodoo_on and _VOODOO_BANKS:
+            amap = bank_anima_map(getattr(self, "voodoo_bank", "mtgm"))
+            if amap == "sfx":
+                return "sfx"
+            if amap == "mt32":
+                return _mt32_category(prog)
+            return _gm_category(prog)
+        fmt = (getattr(self, "detected_format", None) or "").upper()
+        if getattr(self, "_anima_stream_map", None) == "sfx":
+            return "sfx"
+        if getattr(self, "_anima_stream_map", None) == "mt32":
+            return _mt32_category(prog)
+        if fmt in ("MT-32", "MT32", "MT"):
+            return _mt32_category(prog)
+        return _gm_category(prog)
+
+    def _anima_mt32_mode(self) -> bool:
+        fmt = (getattr(self, "detected_format", None) or "").upper()
+        if fmt in ("MT-32", "MT32", "MT"):
+            return True
+        if getattr(self, "_anima_stream_bank", None) in ANIMA_SIERRA_PC:
+            return True
+        if getattr(self, "voodoo_active", False) or getattr(self, "voodoo_loading", False):
+            return True
+        return False
+
+    def _anima_observe_sysex(self, msg: mido.Message, description: str = "") -> None:
+        """Learn custom MT-32 banks from dumped SysEx / display text."""
+        if not self.anima and not True:
+            # Cheap enough to always track; category only used when Anima is on
+            pass
+        data = list(msg.data) if msg.data else []
+        blob = ""
+        if description:
+            blob += " " + description.lower()
+        # Display + timbre-name ASCII from MT-32 DT1
+        if (
+            len(data) >= 8
+            and data[0] == 0x41
+            and data[2] == 0x16
+            and data[3] == 0x12
+        ):
+            aa, bb, cc = data[4], data[5], data[6]
+            body = bytes(data[7:-1] if len(data) > 8 else data[7:])
+            chars = "".join(chr(b) if 32 <= b < 127 else " " for b in body)
+            blob += " " + chars.lower()
+            # Factory reset wipes custom memory → back to stock MT-32 map
+            if aa == 0x7F:
+                if getattr(self, "_anima_stream_bank", None):
+                    self._anima_stream_bank = None
+                    self._anima_stream_map = None
+                    self._anima_feedback("bank", "MT-32 factory map", status=True)
+                return
+        blob = " ".join(blob.split())
+        if not blob:
+            return
+        locked = getattr(self, "_anima_stream_bank", None)
+        for needles, bank_id, amap, label in ANIMA_BANK_SIGNATURES:
+            if any(n in blob for n in needles):
+                if locked == bank_id:
+                    return
+                self._anima_stream_bank = bank_id
+                self._anima_stream_map = amap
+                self._anima_feedback("bank", f"{label} custom MT-32 ({amap})", status=True)
+                return
+        # Names only fill in when nothing is locked yet
+        if locked:
+            return
+        for needles, bank_id, amap, label in ANIMA_BANK_NAME_HINTS:
+            if any(n in blob for n in needles):
+                self._anima_stream_bank = bank_id
+                self._anima_stream_map = amap
+                self._anima_feedback("bank", f"{label} custom MT-32 ({amap})", status=True)
+                return
+
+    def _anima_humanize_velocity(self, msg: mido.Message) -> mido.Message:
+        """Nudge velocity on rigid same-note repeats (including channel 10).
+
+        Normal repeats: bias upward (-3..+7). High-velocity machine-gunning
+        (vel >= ANIMA_HUMANIZE_HOT): bias downward (-7..+3) to tame peaks.
+        """
+        ch = msg.channel & 0x0F
+        note = msg.note
+        vel = msg.velocity
+        now = time.monotonic()
+        last_n = self._anima_last_note[ch]
+        last_v = self._anima_last_vel[ch]
+        last_t = self._anima_last_on[ch]
+        ioi = (now - last_t) if last_t else 999.0
+
+        new_vel = vel
+        if (
+            last_n == note
+            and last_v >= 0
+            and abs(last_v - vel) <= ANIMA_REPEAT_VEL_SLACK
+            and ioi <= ANIMA_REPEAT_IOI
+            and vel > 0
+        ):
+            if vel >= ANIMA_HUMANIZE_HOT:
+                lo, hi = -ANIMA_HUMANIZE_HOT_DOWN, ANIMA_HUMANIZE_HOT_UP
+                bias = "tame"
+            else:
+                lo, hi = -ANIMA_HUMANIZE_DOWN, ANIMA_HUMANIZE_UP
+                bias = "lift"
+            span = hi - lo
+            wobble = lo + ((note * 3 + int(now * 50) + ch) % (span + 1))
+            if wobble == 0:
+                wobble = 1 if bias == "lift" else -1
+            new_vel = max(1, min(127, vel + wobble))
+            self._anima_stats["humanize"] += 1
+            if self._anima_stats["humanize"] % 8 == 1:
+                self._anima_feedback(
+                    "humanize",
+                    f"ch{ch + 1} n{note} {vel}→{new_vel} ({bias} {wobble:+d})",
+                    status=True,
+                )
+
+        self._anima_last_note[ch] = note
+        self._anima_last_vel[ch] = new_vel
+        self._anima_last_on[ch] = now
+        if new_vel != vel:
+            try:
+                return msg.copy(velocity=new_vel)
+            except Exception:
+                return mido.Message("note_on", channel=ch, note=note, velocity=new_vel)
+        return msg
+
+    def _anima_apply_note_on_cc(self, port: int, msg: mido.Message) -> None:
+        """Set expression *target* (Phase 1.5 ramp). No one-shot jump."""
+        ch = msg.channel & 0x0F
+        ports = self._anima_ports[ch]
+        if port not in ports:
+            ports.append(port)
+        if ch == 9:
+            return
+        cat = self._anima_category(ch)
+        if cat not in ANIMA_EXPR_CATS:
+            return
+        if self._anima_mt32_mode() and cat in ANIMA_MOD_CATS:
+            if self._anima_cc1_tgt[ch] < 8:
+                self._anima_cc1_tgt[ch] = 12
+            return
+        if time.monotonic() - self._anima_file_cc11_t[ch] < ANIMA_FILE_CC11_HOLD:
+            self._anima_stats["skip_cc11"] += 1
+            self._anima_cc11_own[ch] = False
+            self._anima_feedback(
+                "expr-skip",
+                f"ch{ch + 1} {cat} file CC11 active",
+                status=False,
+            )
+            return
+        tgt = ANIMA_EXPR_FLOOR + (msg.velocity * (127 - ANIMA_EXPR_FLOOR)) // 127
+        tgt = max(1, min(127, tgt))
+        # Ignore tiny target hops (stops CC chatter / hitching on busy lines)
+        if self._anima_cc11_own[ch] and abs(tgt - self._anima_cc11_tgt[ch]) < 4:
+            self._anima_idle_t[ch] = 0.0
+            return
+        # Swell-from-below only when coming off idle AND target isn't already loud
+        if (not self._anima_cc11_own[ch]) and tgt < 118:
+            start = min(tgt, max(ANIMA_EXPR_FLOOR, tgt - 24))
+            self._anima_cc11_cur[ch] = start
+        self._anima_cc11_tgt[ch] = tgt
+        self._anima_cc11_own[ch] = True
+        self._anima_idle_t[ch] = 0.0
+        self._anima_stats["expr"] += 1
+        self._anima_feedback(
+            "expr-tgt",
+            f"ch{ch + 1} {cat} CC11 → {tgt} (vel {msg.velocity})",
+            status=True,
+        )
+
+    def _anima_live_ports(self, ch: int) -> list:
+        """Ports that currently hold notes on this channel — not historical."""
+        ports = []
+        for key, info in self.active.items():
+            if key[0] != ch:
+                continue
+            for p in info.get("ports") or [info["port"]]:
+                if p not in ports:
+                    ports.append(p)
+        if not ports:
+            ports = list(self._anima_ports[ch])
+        return ports
+
+    def _anima_send_cc(self, ports, ch: int, control: int, value: int) -> None:
+        """Send a CC only to live ports, quantized, with a small per-port gap.
+
+        MS40 / busy USB interfaces choke if we spray every ramp step to every
+        port a channel has ever touched.
+        """
+        if not ports:
+            return
+        last1, last11 = self._anima_cc_sent[ch]
+        last = last1 if control == 1 else last11
+        if last >= 0 and abs(value - last) < ANIMA_CC_QUANT and value not in (0, 127):
+            return
+        now = time.monotonic()
+        sent_any = False
+        msg = mido.Message("control_change", channel=ch, control=control, value=value)
+        gap_t = self._anima_cc_port_t or []
+        for p in ports:
+            if p < len(gap_t) and now - gap_t[p] < ANIMA_CC_GAP:
+                continue
+            self._safe_out_send(p, msg)
+            if p < len(gap_t):
+                gap_t[p] = now
+            sent_any = True
+        if not sent_any:
+            return
+        if control == 1:
+            self._anima_cc_sent[ch] = (value, last11)
+            self.mod[ch] = value
+            self.mod_time[ch] = now
+        elif control == 11:
+            self._anima_cc_sent[ch] = (last1, value)
+
+    def _anima_step(self, cur: int, tgt: int, rate: float, dt: float) -> int:
+        if cur == tgt or dt <= 0:
+            return tgt if cur == tgt else cur
+        delta = rate * dt
+        if tgt > cur:
+            return min(tgt, int(cur + max(1, delta)))
+        return max(tgt, int(cur - max(1, delta)))
+
+    def _anima_should_strum(self, ch: int) -> bool:
+        if ch == 9:
+            return False
+        return self._anima_category(ch) in ANIMA_STRUM_CATS
+
+    def _anima_strum_style(self, ch: int) -> str:
+        """Choose stroke style for this chord.
+
+        Default: alternate. Occasional double down/up for feel.
+        Distortion/overdrive (Hetfield): down-picks only.
+        """
+        pc = self._anima_prog[ch]
+        if pc in ANIMA_HETFIELD_PC:
+            return "hetfield"
+        n = self._anima_strum_n[ch]
+        # Every 8th stroke: stay in the same direction (double down or up)
+        if n and n % 8 == 0:
+            return "hold"
+        # Every 13th: forced down (accent)
+        if n and n % 13 == 0:
+            return "down"
+        return "alt"
+
+    def _anima_strum_push(self, ch: int, note_msg, ports: list) -> None:
+        now = time.monotonic()
+        buf = self._anima_strum_buf[ch]
+        if buf is None:
+            style = self._anima_strum_style(ch)
+            if style == "hetfield" or style == "down":
+                direction = 1
+            elif style == "hold":
+                direction = self._anima_strum_dir[ch]
+            else:
+                direction = -self._anima_strum_dir[ch]
+            self._anima_strum_dir[ch] = direction
+            buf = {
+                "t0": now,
+                "dir": direction,
+                "style": style,
+                "items": [],
+            }
+            self._anima_strum_buf[ch] = buf
+        buf["items"].append((note_msg, list(ports)))
+
+    def _anima_strum_flush(self, ch: int, *, immediate: bool = False) -> None:
+        buf = self._anima_strum_buf[ch]
+        if not buf or not buf["items"]:
+            self._anima_strum_buf[ch] = None
+            return
+        now = time.monotonic()
+        if not immediate and (now - buf["t0"]) < ANIMA_STRUM_COLLECT:
+            return
+        items = buf["items"]
+        items.sort(key=lambda it: it[0].note)
+        if buf["dir"] < 0:
+            items.reverse()
+        t = now
+        for i, (note_msg, ports) in enumerate(items):
+            when = t + (i * ANIMA_STRUM_STEP)
+            for p in ports:
+                self._anima_strum_q.append((when, p, note_msg))
+        self._anima_strum_n[ch] += 1
+        nstr = len(items)
+        label = {1: "down", -1: "up"}[buf["dir"]]
+        if buf["style"] == "hetfield":
+            label = "down/Hetfield"
+        if nstr >= 2:
+            self._anima_feedback(
+                "strum",
+                f"ch{ch + 1} {label} x{nstr}",
+                status=True,
+            )
+        self._anima_strum_buf[ch] = None
+
+    def _anima_strum_drain(self) -> None:
+        if not self._anima_strum_q:
+            return
+        now = time.monotonic()
+        keep = []
+        for when, port, msg in self._anima_strum_q:
+            if when <= now:
+                self._send_routed(port, msg)
+            else:
+                keep.append((when, port, msg))
+        self._anima_strum_q = keep
+
+    def _anima_tick(self) -> None:
+        """Hold-detect + joystick-style ramps for CC1 / CC11."""
+
+        if not self.anima:
+            return
+        for ch in range(16):
+            if self._anima_strum_buf[ch] is not None:
+                self._anima_strum_flush(ch)
+        self._anima_strum_drain()
+        now = time.monotonic()
+        dt = now - self._anima_ramp_t
+        if dt <= 0:
+            return
+        # Cap dt so a UI stall doesn't jump the wheel
+        if dt > 0.08:
+            dt = 0.08
+        self._anima_ramp_t = now
+
+        # --- arm mod targets for notes held long enough ---
+        for key, info in list(self.active.items()):
+            ch, note = key[0], key[1]
+            if ch == 9 or key in self._anima_mod_on:
+                continue
+            cat = self._anima_category(ch)
+            if cat not in ANIMA_MOD_CATS:
+                continue
+            if cat in ("brass", "wind"):
+                if self._anima_mt32_mode():
+                    held_need, mod_level = ANIMA_MOD_HELD_SEC_MT32, ANIMA_MOD_LEVEL_WIND
+                else:
+                    held_need, mod_level = ANIMA_MOD_HELD_SEC_WIND, ANIMA_MOD_LEVEL_WIND
+            else:
+                held_need, mod_level = ANIMA_MOD_HELD_SEC, ANIMA_MOD_LEVEL
+            if (now - info.get("time", now)) < held_need:
+                continue
+            ports = info.get("ports") or [info["port"]]
+            self._anima_ports[ch] = list(ports)
+            self._anima_cc1_tgt[ch] = mod_level
+            self._anima_mod_on.add(key)
+            self._anima_mod_ch[ch] = True
+            self._anima_stats["mod"] += 1
+            self._anima_feedback(
+                "mod-tgt",
+                f"ch{ch + 1} n{note} {cat} CC1 → {mod_level} (held {held_need:.2f}s)",
+                status=True,
+            )
+
+        # --- idle: return wheels to rest ---
+        active_ch = {k[0] for k in self.active}
+        for ch in range(16):
+            if ch in active_ch:
+                self._anima_idle_t[ch] = now
+                continue
+            if self._anima_idle_t[ch] == 0.0:
+                self._anima_idle_t[ch] = now
+            if now - self._anima_idle_t[ch] < ANIMA_IDLE_SEC:
+                continue
+            if self._anima_mod_ch[ch] or self._anima_cc1_tgt[ch] or self._anima_cc1_cur[ch]:
+                self._anima_cc1_tgt[ch] = 0
+            if self._anima_cc11_own[ch] and self._anima_cc11_tgt[ch] != ANIMA_EXPR_DEFAULT:
+                if now - self._anima_file_cc11_t[ch] >= ANIMA_FILE_CC11_HOLD:
+                    self._anima_cc11_tgt[ch] = ANIMA_EXPR_DEFAULT
+
+        # --- ramp toward targets ---
+        for ch in range(16):
+            ports = self._anima_live_ports(ch) if self.active else self._anima_ports[ch]
+            if not ports:
+                continue
+            # Mod
+            cur, tgt = self._anima_cc1_cur[ch], self._anima_cc1_tgt[ch]
+            if cur != tgt:
+                rate = ANIMA_RAMP_MOD_UP if tgt > cur else ANIMA_RAMP_MOD_DOWN
+                nxt = self._anima_step(cur, tgt, rate, dt)
+                if nxt != cur:
+                    self._anima_cc1_cur[ch] = nxt
+                    self._anima_send_cc(ports, ch, 1, nxt)
+                    if nxt == tgt:
+                        if tgt == 0:
+                            self._anima_mod_ch[ch] = False
+                            self._anima_feedback("mod-rest", f"ch{ch + 1} CC1=0", status=False)
+                        else:
+                            self._anima_feedback("mod", f"ch{ch + 1} CC1={nxt}", status=False)
+            # Expression
+            if not self._anima_cc11_own[ch]:
+                continue
+            if now - self._anima_file_cc11_t[ch] < ANIMA_FILE_CC11_HOLD:
+                continue
+            cur, tgt = self._anima_cc11_cur[ch], self._anima_cc11_tgt[ch]
+            if cur != tgt:
+                rate = ANIMA_RAMP_EXPR_UP if tgt > cur else ANIMA_RAMP_EXPR_DOWN
+                nxt = self._anima_step(cur, tgt, rate, dt)
+                if nxt != cur:
+                    self._anima_cc11_cur[ch] = nxt
+                    self._anima_send_cc(ports, ch, 11, nxt)
+                    # Only drop ownership after a real idle return to default
+                    active_ch = {k[0] for k in self.active}
+                    if (
+                        nxt == ANIMA_EXPR_DEFAULT
+                        and tgt == ANIMA_EXPR_DEFAULT
+                        and ch not in active_ch
+                    ):
+                        self._anima_cc11_own[ch] = False
+                        self._anima_feedback("expr-rest", f"ch{ch + 1} CC11=127", status=False)
+
+    def _thin_high_rate(self, msg: mido.Message) -> bool:
+        """True = drop this message (too soon after the last of its kind)."""
+        kind = None
+        settle = False
+        if msg.type == "pitchwheel":
+            kind = "pw"
+            settle = msg.pitch == 0
+        elif msg.type == "aftertouch":
+            kind = "at"
+            settle = msg.value == 0
+        elif msg.type == "polytouch":
+            kind = "pt"
+            settle = msg.value == 0
+        elif msg.type == "control_change" and msg.control == 1:
+            kind = "cc1"
+            settle = msg.value == 0
+        if kind is None:
+            return False
+        ch = getattr(msg, "channel", 0) & 0x0F
+        key = (ch, kind)
+        now = time.monotonic()
+        last = self._thin_last.get(key, 0.0)
+        if settle or now - last >= STREAM_THIN_SEC:
+            self._thin_last[key] = now
+            return False
+        return True
+
     def process(self, msg: mido.Message):
         # Any MIDI activity refreshes format-idle timer
         self.last_midi_time = time.monotonic()
+
+        # Drop surplus pitch/AT/mod from the FILE. 190 pitchbends in 100ms
+        # cannot fit a 31.25 kbps DIN cable (MS40, many M8U ports). USB
+        # modules hide this; hardware does not. Always keep center/zero.
+        if self._thin_high_rate(msg):
+            return
+
+        # Anima bookkeeping (no-ops when disabled aside from the bool check)
+        if self.anima:
+            if msg.type == "control_change":
+                self._anima_on_cc(msg)
+            elif msg.type == "program_change":
+                self._anima_on_pc(msg)
 
         # Voodoo: while loading or catching up, defer input (catch-up owns drain)
         if self.voodoo_loading or self.voodoo_catchup:
@@ -3201,6 +3885,11 @@ class Duality:
                     self.last_chord_port = port
                     targets = [port]
 
+                # Anima Phase 1: velocity humanize before send
+                note_msg = msg
+                if self.anima:
+                    note_msg = self._anima_humanize_velocity(msg)
+
                 def _notes_on_port(p: int) -> int:
                     return sum(
                         1 for info in self.active.values()
@@ -3215,8 +3904,7 @@ class Duality:
                     real_count = _notes_on_port(port)
                     if real_count >= self.poly_limits[port]:
                         continue  # this port full – try others when broadcasting
-                    self._maybe_gs_efx_on_note(port, msg)
-                    self._send_routed(port, msg)
+                    self._maybe_gs_efx_on_note(port, note_msg)
                     self.voice_counts[port] += 1
                     sent_ports.append(port)
 
@@ -3224,13 +3912,23 @@ class Duality:
                     self.drop_count += 1
                     return
 
+                if self.anima and self._anima_should_strum(note_msg.channel & 0x0F):
+                    self._anima_strum_push(note_msg.channel & 0x0F, note_msg, sent_ports)
+                else:
+                    for port in sent_ports:
+                        self._send_routed(port, note_msg)
+
+                if self.anima:
+                    for port in sent_ports:
+                        self._anima_apply_note_on_cc(port, note_msg)
+
                 primary = sent_ports[0]
                 self.last_chord_port = primary
                 self.active[key] = {
                     "port": primary,
                     "ports": sent_ports,
                     "time": now,
-                    "velocity": msg.velocity,
+                    "velocity": note_msg.velocity,
                 }
 
                 total_now = sum(self.voice_counts)
@@ -3244,6 +3942,15 @@ class Duality:
                     for port in ports:
                         self._send_routed(port, msg)
                         self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+                    if self.anima:
+                        self._anima_mod_on.discard(key)
+                        ch = msg.channel & 0x0F
+                        if self._anima_strum_buf[ch] is not None:
+                            self._anima_strum_flush(ch, immediate=True)
+                            self._anima_strum_drain()
+                        still = any(k[0] == ch for k in self.active)
+                        if not still:
+                            self._anima_idle_t[ch] = time.monotonic()
                 else:
                     for i in range(self.n_ports):
                         self._send_routed(i, msg)
@@ -3264,6 +3971,7 @@ class Duality:
             self._detect_format(msg)
             self._voodoo_maybe_auto()
             description = self._describe_sysex(msg)
+            self._anima_observe_sysex(msg, description)
 
             # Suppress pure noise
             if description in ("GS SysEx", "SysEx", "GM/Universal SysEx", "XG SysEx", "MT-32 SysEx"):
@@ -3676,6 +4384,10 @@ class Duality:
             badge_scpop = " [bold bright_green][SCPOP][/]"
         else:
             badge_scpop = " " * 8  # len(" [SCPOP]")
+        if self.anima:
+            badge_anima = " [bold magenta][Anima][/]"
+        else:
+            badge_anima = ""
         if self.voodoo_loading:
             badge_voodoo = " [bold bright_red][Voodoo…][/]"
         elif self.voodoo_catchup:
@@ -3684,7 +4396,7 @@ class Duality:
             badge_voodoo = " [bold bright_red][Voodoo][/]"
         else:
             badge_voodoo = " " * 10  # len(" [Voodoo…]") approx
-        mode_badges = f"{badge_crucible}{badge_alchemy}{badge_scpop}{badge_voodoo}"
+        mode_badges = f"{badge_crucible}{badge_alchemy}{badge_scpop}{badge_anima}{badge_voodoo}"
 
         # Header: pulse + fixed badges + core counters only (no Drops/Steals/Filtered)
         header = Text.from_markup(
@@ -3835,6 +4547,25 @@ class Duality:
             self._clear_log()
         elif c == "l":
             self._toggle_format_lock()
+        elif c == "a":
+            self.anima = not self.anima
+            if not self.anima:
+                # Park wheels we were driving so A/B compare is clean
+                for ch in range(16):
+                    if self._anima_mod_ch[ch] or self._anima_cc1_cur[ch]:
+                        ports = self._anima_live_ports(ch) or self._anima_ports[ch]
+                        if ports:
+                            self._anima_send_cc(ports, ch, 1, 0)
+                    self._anima_cc1_tgt[ch] = 0
+                    self._anima_cc1_cur[ch] = 0
+                    self._anima_mod_ch[ch] = False
+                self._anima_mod_on.clear()
+                self._set_status("Anima OFF", duration=2.5)
+                self._log_line("ANIMA off (hotkey A)")
+            else:
+                self._anima_ramp_t = time.monotonic()
+                self._set_status("Anima ON", duration=2.5)
+                self._log_line("ANIMA on (hotkey A)")
         elif c == "q":
             self._set_status("Quit requested – panicking and exiting…", duration=2.0)
             self.panic(reason="hotkey Q")
@@ -3886,6 +4617,10 @@ class Duality:
                         if self.voodoo_loading or self.voodoo_catchup:
                             self._voodoo_tick()
 
+                        # Anima sustained-note mod (idle when disabled / no notes)
+                        if self.anima:
+                            self._anima_tick()
+
                         # Background reconnect for offline outputs
                         self._retry_offline_ports()
 
@@ -3921,6 +4656,8 @@ class Duality:
                     self._flush_send_queue()
                     if self.voodoo_loading or self.voodoo_catchup:
                         self._voodoo_tick()
+                    if self.anima:
+                        self._anima_tick()
                     self._retry_offline_ports()
             except Exception as e:
                 console.print(f"[red]Error: {e}[/]")
@@ -4060,6 +4797,14 @@ def main():
         help=(
             "MIDI output port names. Optional format tag: Name:gs|xg|gm|gm2|mt32. "
             "Minimum 2 ports (or 1 with --alchemy). Example: --outs \"SC:gs\" \"MU:xg\""
+        ),
+    )
+    parser.add_argument(
+        "--anima",
+        action="store_true",
+        help=(
+            "Anima: GM-category phrasing (expr/mod ramps, velocity humanize, "
+            "guitar strum). May be used with a single output port. Off by default."
         ),
     )
     parser.add_argument(
@@ -4215,14 +4960,15 @@ def main():
 
     in_name = resolve_port(args.input, inputs, "input port")
 
-    min_ports = 1 if (args.alchemy or args.voodoo) else 2
+    min_ports = 1 if (args.alchemy or args.voodoo or args.anima) else 2
     out_formats: list[str] = []
 
     if args.outs:
         if len(args.outs) < min_ports:
             console.print(
                 f"[red]Error: at least {min_ports} output port(s) required"
-                + (" with --alchemy.[/]" if args.alchemy else ".[/]")
+                + (" with --alchemy/--voodoo/--anima.[/]"
+                   if (args.alchemy or args.voodoo or args.anima) else ".[/]")
             )
             sys.exit(1)
         out_names = []
@@ -4286,6 +5032,7 @@ def main():
             voodoo=args.voodoo,
             voodoo_bank=getattr(args, "voodoo_bank", "mtgm"),
             voodoo_layout=getattr(args, "voodoo_layout", "stripe"),
+            anima=getattr(args, "anima", False),
         )
         router.run()
     except ValueError as e:
