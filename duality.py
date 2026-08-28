@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.16.18"
+VERSION = "0.16.19"
 
 
 """
@@ -115,6 +115,7 @@ try:
         bank_has_kits,
         bank_label,
         bank_display,
+        bank_anima_map,
     )
     _VOODOO_BANKS = True
 except ImportError:
