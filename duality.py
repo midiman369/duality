@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.16.19"
+VERSION = "0.17.15"
 
 
 """
@@ -157,6 +157,7 @@ mido.set_backend("mido.backends.rtmidi")
 POLY_DEFAULT = 24
 CHORD_MS_DEFAULT = 30.0
 FORMAT_IDLE_SEC = 60.0
+RECORD_IDLE_SEC = 10.0  # auto-split recording after this much MIDI silence
 SYNC_DELAY_MAX_MS = 500.0  # clamp |offset| for --sync-delay
 
 # Voodoo (MT-32 GM bank) pacing – real hardware is buffer-sensitive
@@ -352,14 +353,16 @@ GS_EFX_TYPES = {
     (0x02, 0x0B): "Enh → Phaser",
 
     # Higher multi / parallel
-    (0x04, 0x00): "Rotary Multi",
-    (0x04, 0x01): "Guitar Multi 1",
-    (0x04, 0x02): "Guitar Multi 2",
-    (0x04, 0x03): "Guitar Multi 3",
-    (0x04, 0x04): "Clean Gt Multi 1",
-    (0x04, 0x05): "Bass Multi",
-    (0x04, 0x06): "Rhodes Multi",
-    (0x05, 0x00): "Keyboard Multi",
+    # SC-8850 Insertion list #47–55 (manual: 47 Rotary = 03 00, 48 GTR Multi 1 = 04 00)
+    (0x03, 0x00): "Rotary Multi",      # #47
+    (0x04, 0x00): "GTR Multi 1",       # #48
+    (0x04, 0x01): "GTR Multi 2",       # #49
+    (0x04, 0x02): "GTR Multi 3",       # #50
+    (0x04, 0x03): "Clean Gt Multi 1",  # #51
+    (0x04, 0x04): "Clean Gt Multi 2",  # #52
+    (0x04, 0x05): "Bass Multi",        # #53
+    (0x04, 0x06): "Rhodes Multi",      # #54
+    (0x05, 0x00): "Keyboard Multi",    # #55
     (0x11, 0x00): "Cho/Delay",
     (0x11, 0x01): "FL/Delay",
     (0x11, 0x02): "Cho/Flanger",
@@ -802,6 +805,46 @@ STREAM_THIN_SEC = 0.008         # min gap per channel for pitch/AT/CC1
 ANIMA_STRUM_COLLECT = 0.010     # gather window before a stroke
 ANIMA_STRUM_STEP = 0.0035       # seconds between strings
 ANIMA_STRUM_CATS = frozenset({"guitar"})
+
+# Phase 2.5 – one GS insertion EFX for the unit. Sticky per phrase.
+# Values are (type_msb, type_lsb, label) from GS_EFX_TYPES.
+ANIMA_EFX_GS = {
+    "organ": [
+        (0x03, 0x00, "Rotary Multi"),  # SC-8850 #47
+    ],
+    "guitar_clean": [
+        (0x04, 0x03, "Clean Gt Multi 1"),
+        (0x01, 0x42, "Stereo Chorus"),
+        (0x01, 0x50, "Stereo Delay"),
+        (0x01, 0x40, "Hexa Chorus"),
+    ],
+    "guitar_dist": [
+        (0x04, 0x00, "GTR Multi 1"),  # SC-8850 #48
+    ],
+    "bass": [
+        (0x04, 0x05, "Bass Multi"),
+    ],
+    "strings": [
+        (0x01, 0x42, "Stereo Chorus"),
+        (0x01, 0x43, "Space-D"),
+        (0x01, 0x50, "Stereo Delay"),
+    ],
+    "pad": [
+        (0x01, 0x43, "Space-D"),
+        (0x01, 0x42, "Stereo Chorus"),
+    ],
+    "piano": [
+        (0x05, 0x00, "Keyboard Multi"),
+        (0x04, 0x06, "Rhodes Multi"),
+    ],
+}
+ANIMA_EFX_PRIORITY = (
+    "guitar_dist", "guitar_clean", "organ", "bass", "strings", "pad", "piano",
+)
+ANIMA_FILE_EFX_HOLD = 1e9   # file-owned EFX lasts until GS Reset / format clear
+ANIMA_EFX_IDLE_SEC = 4.0    # keep current EFX this long after hero goes quiet
+ANIMA_EFX_HOLD_SEC = 0.80   # family stays "sounding" this long after last note
+ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX *type* changes (priority upgrade exempt)
 ANIMA_HETFIELD_PC = frozenset(range(29, 31))  # OD / Distortion – down only
 
 
@@ -927,6 +970,7 @@ class Duality:
         voodoo_bank: str = "mtgm",
         voodoo_layout: str = "stripe",
         anima: bool = False,
+        record_dir: str | None = None,
     ):
         # Alchemy / Voodoo / Anima may run with a single output.
         # Classic router still requires at least two ports.
@@ -983,6 +1027,14 @@ class Duality:
         self.scpop_forced = bool(scpop)
         # Anima Phase 1 – CC phrasing + velocity humanize
         self.anima = bool(anima)
+        self.record_dir = record_dir
+        self._rec_on = False
+        self._rec_wanted = False
+        self._rec_last = 0.0
+        self._rec_t0 = 0.0
+        self._rec_in = []
+        self._rec_out = []
+        self._rec_stamp = ""
         self._anima_prog = [0] * 16
         self._anima_last_note = [-1] * 16
         self._anima_last_vel = [-1] * 16
@@ -994,6 +1046,15 @@ class Duality:
         self._anima_stats = {"humanize": 0, "expr": 0, "mod": 0, "skip_cc11": 0}
         self._anima_stream_bank = None   # lsl3 / sq4 / kq5 from MIDI SysEx
         self._anima_stream_map = None    # gm | mt32 | sfx learned from stream
+        self._anima_file_efx_t = 0.0
+        self._anima_efx_ours = False
+        self._anima_efx_hero = None     # channel owning the insertion slot
+        self._anima_efx_key = None      # palette key currently applied
+        self._anima_efx_label = ""
+        self._anima_efx_sent = None     # (msb,lsb) last sent
+        self._anima_efx_sound_t = {}
+        self._anima_efx_switch_t = 0.0
+        self._anima_efx_pending = None  # (fam, since)
         self._anima_ports = [[] for _ in range(16)]
         self._anima_cc1_cur = [0] * 16
         self._anima_cc1_tgt = [0] * 16
@@ -1145,6 +1206,10 @@ class Duality:
             except Exception as e:
                 self._log_line(f"PORT  FAILED out {i + 1}: {name} – {e}")
                 raise
+
+        if self.record_dir:
+            self._rec_wanted = True
+            self._record_start("startup --record")
 
         # Output health / reconnect (Windows often invalidates ports when apps quit)
         self._out_offline = [False] * self.n_ports
@@ -1414,6 +1479,7 @@ class Duality:
             self._voodoo_exit(f"format cleared ({reason})")
         prev = self.detected_format or "none"
         was_locked = self.format_locked
+        self._anima_release_efx_lock("format clear")
         self.detected_format = None
         self.format_pulse_time = 0.0
         self.format_locked = False
@@ -1744,9 +1810,15 @@ class Duality:
 
             # EFX On/Off for a part (address 40 xx 22)
             if aa == 0x40 and cc == 0x22 and len(data) >= 8:
-                # bb is the block/part indicator
-                # Common mapping for parts 1-16 is roughly 0x11-0x1F / 0x41-...
-                part = (bb & 0x0F) + 1
+                # Use the same block map as send
+                if bb == 0x40:
+                    part = 10
+                elif 0x41 <= bb <= 0x49:
+                    part = bb - 0x40
+                elif 0x4A <= bb <= 0x4F:
+                    part = bb - 0x4A + 11
+                else:
+                    part = (bb & 0x0F) + 1
                 state = "On" if data[7] == 0x01 else "Off"
                 return f"GS EFX {state} → Part {part}"
 
@@ -2150,6 +2222,7 @@ class Duality:
             self.outs[port].send(msg)
             self._out_last_ok[port] = time.monotonic()
             self._out_fail_logged[port] = False
+            self._record_out(port, msg)
             return True
         except Exception as e:
             name = self.port_names[port]
@@ -2251,39 +2324,43 @@ class Duality:
     def _gs_efx_enable_all_parts(self) -> list:
         """Turn GS EFX on for parts 1–16 (correct GS part mid encoding)."""
         return [
-            self._gs_dt1([0x40, self._gs_part_mid(p), 0x22], [0x01])
+            self._gs_dt1([0x40, self._gs_efx_part_mid(p), 0x22], [0x01])
             for p in range(16)
         ]
 
     @staticmethod
+    def _gs_part_mid(part: int) -> int:
+        """Classic GS PART mid: 1–9 → 11–19, 10 → 10, 11–16 → 1A–1F."""
+        part = int(part) & 0x0F
+        if part < 9:
+            return 0x11 + part
+        if part == 9:
+            return 0x10
+        return 0x1A + (part - 10)
+
+    @staticmethod
+    def _gs_efx_part_mid(part: int) -> int:
+        """SC-8850 EFX On/Off: Part 1–9 → 41–49, Part 10 → 40, 11–16 → 4A–4F."""
+        cm = Duality._gs_part_mid(part)
+        if cm == 0x10:
+            return 0x40
+        return 0x40 + (cm & 0x0F)
+
+    @staticmethod
     def _gs_mid_to_part(mid: int):
-        """
-        GS PART mid address → part index 0–15.
-        Supports both classic SC-55/88 (10/11-1F) and SC-8850 EFX block (40-4F).
-        """
-        # SC-8850 / 11GT_EFX style: 40=Part1 … 4F=Part16
-        if 0x40 <= mid <= 0x4F:
-            return mid - 0x40
-        # Classic: 11-19 = parts 1-9, 10 = part 10, 1A-1F = parts 11-16
-        if mid == 0x10:
+        """GS PART mid → part index 0–15 (classic 1x and EFX 4x)."""
+        mid = int(mid) & 0xFF
+        if mid == 0x40 or mid == 0x10:
             return 9
+        if 0x41 <= mid <= 0x49:
+            return mid - 0x41
+        if 0x4A <= mid <= 0x4F:
+            return mid - 0x4A + 10
         if 0x11 <= mid <= 0x19:
             return mid - 0x11
         if 0x1A <= mid <= 0x1F:
             return mid - 0x1A + 10
         return None
-
-    @staticmethod
-    def _gs_part_mid(part: int) -> int:
-        """
-        Roland GS PART block mid address for part index 0–15.
-        Encoding is non-linear: 11-19, 10, 1A-1F (not 10+part).
-        """
-        if part < 9:
-            return 0x11 + part          # parts 1–9 → 11h–19h
-        if part == 9:
-            return 0x10                # part 10 → 10h
-        return 0x1A + (part - 10)      # parts 11–16 → 1Ah–1Fh
 
     def _maybe_gs_efx_on_note(self, port: int, msg: mido.Message) -> None:
         """
@@ -2325,7 +2402,7 @@ class Duality:
         if self._gs_efx_parts_on[part]:
             return []
         self._gs_efx_parts_on[part] = True
-        mid = self._gs_part_mid(part)
+        mid = self._gs_efx_part_mid(part)
         return [self._gs_dt1([0x40, mid, 0x22], [0x01])]
 
     def _translate_sysex(self, msg: mido.Message, target: str) -> tuple:
@@ -3330,9 +3407,12 @@ class Duality:
         if self.anima:
             cat = self._anima_category(ch)
             bank = getattr(self, "_anima_stream_bank", None) or "-"
+            msb = self.bank_msb[ch] if hasattr(self, "bank_msb") else 0
+            lsb = self.bank_lsb[ch] if hasattr(self, "bank_lsb") else 0
+            fmt = getattr(self, "detected_format", None) or "-"
             self._anima_feedback(
                 "cat",
-                f"ch{ch + 1} PC{msg.program} → {cat} [{bank}]",
+                f"ch{ch + 1} PC{msg.program} bank {msb}/{lsb} → {cat} [{bank}|{fmt}]",
                 status=True,
             )
 
@@ -3368,6 +3448,34 @@ class Duality:
             return _mt32_category(prog)
         if fmt in ("MT-32", "MT32", "MT"):
             return _mt32_category(prog)
+        return self._gs_xg_gm_category(ch, prog, fmt)
+
+    def _gs_xg_gm_category(self, ch: int, prog: int, fmt: str) -> str:
+        """GM / GS / XG family from program + bank select (CC0 / CC32).
+
+        Capital / GM and most GS/XG *variations* keep the GM program number,
+        so family follows _gm_category(PC). Special maps:
+          GS CC0=127  MT-32 / CM-32L tone map
+          GS CC0=126  CM-32P / CM-64 PCM (approx as GM family)
+          XG CC0=64 or 126  SFX voices
+          XG CC0=127        drum kit (non-ch10)
+        """
+        ch = ch & 0x0F
+        try:
+            msb = int(self.bank_msb[ch]) & 0x7F
+        except Exception:
+            msb = 0
+        fmt = (fmt or "").upper().replace(" ", "")
+        if fmt in ("GS", "SC", "SC-8850", "SC8850"):
+            if msb == 127:
+                return _mt32_category(prog)
+            return _gm_category(prog)
+        if fmt in ("XG",):
+            if msb in (64, 126):
+                return "sfx"
+            if msb == 127:
+                return "percussive"
+            return _gm_category(prog)
         return _gm_category(prog)
 
     def _anima_mt32_mode(self) -> bool:
@@ -3429,6 +3537,169 @@ class Duality:
                 self._anima_feedback("bank", f"{label} custom MT-32 ({amap})", status=True)
                 return
 
+
+
+    def _anima_release_efx_lock(self, reason: str = "") -> None:
+        """Drop file-owned EFX ban so Anima can pick again (test / format clear)."""
+        had = bool(self._anima_file_efx_t) or bool(self._anima_efx_key)
+        self._anima_file_efx_t = 0.0
+        self._anima_efx_key = None
+        self._anima_efx_sent = None
+        self._anima_efx_hero = None
+        self._anima_efx_label = ""
+        self._gs_efx_parts_on = [False] * 16
+        if had and reason:
+            self._anima_feedback("efx", f"EFX lock cleared ({reason})", status=True)
+    def _anima_observe_file_efx(self, msg: mido.Message, description: str) -> None:
+        """If the FILE set EFX/insertion, do not steal the unit's one slot."""
+        if self._anima_efx_ours:
+            self._anima_efx_ours = False
+            return
+        d = (description or "").lower()
+        if "gs reset" in d or d.startswith("xg system on") or "gm system on" in d:
+            self._anima_release_efx_lock("reset")
+            return
+        if d.startswith("gs efx") or "insertion" in d or "xg variation" in d:
+            if "thru" in d:
+                return
+            self._anima_file_efx_t = time.monotonic()
+            self._anima_feedback("efx-skip", f"file owns EFX ({description})", status=True)
+
+    def _anima_efx_family(self, ch: int) -> str | None:
+        cat = self._anima_category(ch)
+        if cat == "guitar":
+            prog = self._anima_prog[ch & 0x0F]
+            return "guitar_dist" if 28 <= prog <= 31 else "guitar_clean"
+        if cat in ANIMA_EFX_GS:
+            return cat
+        return None
+
+    def _anima_gs_ports(self) -> list[int]:
+        ports = []
+        fmt = (getattr(self, "detected_format", None) or "").upper()
+        for i, tags in enumerate(self.out_formats):
+            names = {str(t).lower() for t in tags}
+            if names & {"xg", "mt32", "mt-32", "mt"}:
+                continue
+            if names & {"gs", "sc", "sc-8850", "sc8850"}:
+                ports.append(i)
+            elif names <= {"any"} and fmt in ("GS", "SC", "SC-8850"):
+                ports.append(i)
+        return ports
+
+    def _anima_maybe_efx(self, ch: int) -> None:
+        if not self.anima or ch == 9:
+            return
+        fmt = (getattr(self, "detected_format", None) or "").upper()
+        if fmt not in ("GS", "SC", "SC-8850", "XG") and not self._anima_gs_ports():
+            return
+        now = time.monotonic()
+        if self._anima_file_efx_t and now - self._anima_file_efx_t < ANIMA_FILE_EFX_HOLD:
+            return
+        # First priority family that currently has notes (short hold on gaps).
+        sounding = {}
+        for key in self.active:
+            c = key[0]
+            if c == 9:
+                continue
+            fam = self._anima_efx_family(c)
+            if not fam:
+                continue
+            sounding.setdefault(fam, c)
+            self._anima_efx_sound_t[fam] = now
+        for fam, ts in list(self._anima_efx_sound_t.items()):
+            if fam not in sounding and now - ts < ANIMA_EFX_HOLD_SEC:
+                sounding[fam] = self._anima_efx_hero if self._anima_efx_key == fam else next(
+                    (c for c in range(16) if self._anima_efx_family(c) == fam), 0)
+        fam = None
+        hero = ch
+        for cand in ANIMA_EFX_PRIORITY:
+            if cand in sounding:
+                fam = cand
+                hero = sounding[cand]
+                break
+        if not fam:
+            return
+        # Same family: keep the current type/parts. Do not resend.
+        if self._anima_efx_key == fam:
+            self._anima_efx_pending = None
+            return
+        # Want a different family. Current family still holding notes?
+        cur_still_up = bool(
+            self._anima_efx_key
+            and self._anima_efx_key in sounding
+        )
+        if cur_still_up:
+            # Must request the new family continuously for SWITCH_SEC.
+            pend = self._anima_efx_pending
+            if not pend or pend[0] != fam:
+                self._anima_efx_pending = (fam, now)
+                return
+            if (now - pend[1]) < ANIMA_EFX_SWITCH_SEC:
+                return
+        else:
+            self._anima_efx_pending = None
+        palette = ANIMA_EFX_GS.get(fam) or []
+        if not palette:
+            return
+        pick = palette[0]  # stable type per family (no rotating Multi 2)
+        msb, lsb, label = pick
+        if self._anima_efx_sent == (msb, lsb):
+            self._anima_efx_key = fam
+            self._anima_efx_assign_part(hero)
+            return
+        ports = self._anima_gs_ports()
+        if not ports:
+            return
+        self._anima_efx_ours = True
+        self._anima_efx_pending = None
+        msg = self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb])
+        for i in ports:
+            self._safe_out_send(i, msg)
+        self._anima_efx_sent = (msb, lsb)
+        self._anima_efx_key = fam
+        self._anima_efx_label = label
+        self._anima_efx_switch_t = now
+        self._anima_efx_assign_part(hero)
+        self._anima_feedback(
+            "efx",
+            f"ch{hero + 1} {fam} → GS {label}",
+            status=True,
+        )
+
+    def _anima_efx_assign_family(self, fam: str, hero: int) -> None:
+        """EFX On for every channel in this family; Off for the others."""
+        ports = self._anima_gs_ports()
+        want = {c for c in range(16) if c != 9 and self._anima_efx_family(c) == fam}
+        for c in range(16):
+            if c in want or not self._gs_efx_parts_on[c]:
+                continue
+            off = self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x00])
+            self._anima_efx_ours = True
+            for i in ports:
+                self._safe_out_send(i, off)
+            self._gs_efx_parts_on[c] = False
+        newly = []
+        for c in sorted(want):
+            already = self._gs_efx_parts_on[c]
+            for m in self._gs_efx_on_part(c):
+                self._anima_efx_ours = True
+                for i in ports:
+                    self._safe_out_send(i, m)
+            if not already:
+                newly.append(c + 1)
+        self._anima_efx_hero = hero
+        if newly:
+            self._anima_feedback(
+                "efx-on",
+                "GS EFX On → Part " + ",".join(str(n) for n in newly),
+                status=True,
+            )
+
+    def _anima_efx_assign_part(self, hero: int) -> None:
+        fam = self._anima_efx_family(hero) or self._anima_efx_key
+        if fam:
+            self._anima_efx_assign_family(fam, hero)
     def _anima_humanize_velocity(self, msg: mido.Message) -> mido.Message:
         """Nudge velocity on rigid same-note repeats (including channel 10).
 
@@ -3795,9 +4066,141 @@ class Duality:
             return False
         return True
 
+
+    def _record_skip(self, msg: mido.Message) -> bool:
+        return msg.type in ("clock", "start", "stop", "continue", "songpos", "songselect", "active_sensing")
+
+    def _record_fmt_tag(self, port: int | None = None) -> str:
+        if port is None:
+            fmt = (getattr(self, "detected_format", None) or "in").lower()
+            return fmt.replace(" ", "") or "in"
+        tags = []
+        try:
+            tags = sorted(str(t).lower() for t in self.out_formats[port] if str(t).lower() != "any")
+        except Exception:
+            tags = []
+        if tags:
+            return "+".join(tags)
+        fmt = (getattr(self, "detected_format", None) or "out").lower()
+        return fmt.replace(" ", "") or "out"
+
+    @staticmethod
+    def _record_slug(name: str) -> str:
+        s = "".join(ch if ch.isalnum() or ch in "-_+" else "-" for ch in (name or "port"))
+        while "--" in s:
+            s = s.replace("--", "-")
+        return s.strip("-")[:40] or "port"
+
+    def _record_start(self, reason: str = "") -> None:
+        import datetime
+        if self._rec_on:
+            self._record_stop("restart")
+        self._rec_on = True
+        self._rec_wanted = True
+        self._rec_t0 = time.monotonic()
+        self._rec_last = self._rec_t0
+        self._rec_in = []
+        self._rec_out = [[] for _ in range(self.n_ports)]
+        self._rec_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        self._set_status(f"Recording ON ({self._rec_stamp})", duration=3.0)
+        self._log_line(f"RECORD start {self._rec_stamp} ({reason})")
+
+    def _record_touch(self) -> None:
+        self._rec_last = time.monotonic()
+
+    def _record_in(self, msg: mido.Message) -> None:
+        if self._record_skip(msg):
+            return
+        if self._rec_wanted and not self._rec_on:
+            self._record_start("activity after idle")
+        if not self._rec_on:
+            return
+        self._record_touch()
+        self._rec_in.append((time.monotonic() - self._rec_t0, msg.copy(time=0)))
+
+    def _record_out(self, port: int, msg: mido.Message) -> None:
+        if self._record_skip(msg):
+            return
+        if self._rec_wanted and not self._rec_on:
+            self._record_start("activity after idle")
+        if not self._rec_on:
+            return
+        self._record_touch()
+        if 0 <= port < len(self._rec_out):
+            self._rec_out[port].append((time.monotonic() - self._rec_t0, msg.copy(time=0)))
+
+    def _record_idle_check(self) -> None:
+        if not self._rec_on or not self._rec_wanted:
+            return
+        if (time.monotonic() - self._rec_last) < RECORD_IDLE_SEC:
+            return
+        has = self._rec_in or any(self._rec_out)
+        if has:
+            self._record_stop("idle 10s")
+            self._rec_wanted = True  # next MIDI opens a new take
+        else:
+            # nothing captured — just roll the stamp so we don't sit on an empty take
+            self._rec_t0 = time.monotonic()
+            self._rec_last = self._rec_t0
+
+    def _record_write_track(self, events, name: str):
+        track = mido.MidiTrack()
+        track.append(mido.MetaMessage("track_name", name=name[:32], time=0))
+        track.append(mido.MetaMessage("set_tempo", tempo=500000, time=0))
+        last_tick = 0
+        for t, msg in events:
+            tick = int(max(0.0, t) * 960.0)  # 120 BPM, 480 TPB
+            delta = max(0, tick - last_tick)
+            last_tick = tick
+            try:
+                track.append(msg.copy(time=delta))
+            except Exception:
+                continue
+        track.append(mido.MetaMessage("end_of_track", time=1))
+        return track
+
+    def _record_stop(self, reason: str = "") -> None:
+        if not self._rec_on:
+            return
+        self._rec_on = False
+        import os
+        dest = self.record_dir or "."
+        try:
+            os.makedirs(dest, exist_ok=True)
+        except Exception:
+            dest = "."
+        stamp = self._rec_stamp or "take"
+        written = []
+
+        def _save(events, port_label, fmt_tag, direction):
+            if not events:
+                return
+            mid = mido.MidiFile(type=1, ticks_per_beat=480)
+            mid.tracks.append(self._record_write_track(events, port_label[:32]))
+            fname = f"{direction}-{self._record_slug(port_label)}-{self._record_slug(fmt_tag)}-{stamp}.mid"
+            path = os.path.join(dest, fname)
+            mid.save(path)
+            written.append(path)
+
+        try:
+            _save(self._rec_in, getattr(self, "in_name", None) or "IN", self._record_fmt_tag(None), "IN")
+        except Exception as e:
+            self._log_line(f"RECORD IN save failed: {e}")
+        for i, ev in enumerate(self._rec_out):
+            try:
+                _save(ev, self.port_names[i], self._record_fmt_tag(i), "OUT")
+            except Exception as e:
+                self._log_line(f"RECORD OUT{i + 1} save failed: {e}")
+        self._rec_in = []
+        self._rec_out = [[] for _ in range(self.n_ports)]
+        names = ", ".join(written) if written else "(none)"
+        self._set_status(f"Recording saved: {names}", duration=5.0)
+        self._log_line(f"RECORD stop ({reason}): {names}")
+
     def process(self, msg: mido.Message):
         # Any MIDI activity refreshes format-idle timer
         self.last_midi_time = time.monotonic()
+        self._record_in(msg)
 
         # Drop surplus pitch/AT/mod from the FILE. 190 pitchbends in 100ms
         # cannot fit a 31.25 kbps DIN cable (MS40, many M8U ports). USB
@@ -3922,6 +4325,7 @@ class Duality:
                 if self.anima:
                     for port in sent_ports:
                         self._anima_apply_note_on_cc(port, note_msg)
+                    self._anima_maybe_efx(note_msg.channel & 0x0F)
 
                 primary = sent_ports[0]
                 self.last_chord_port = primary
@@ -3973,6 +4377,7 @@ class Duality:
             self._voodoo_maybe_auto()
             description = self._describe_sysex(msg)
             self._anima_observe_sysex(msg, description)
+            self._anima_observe_file_efx(msg, description)
 
             # Suppress pure noise
             if description in ("GS SysEx", "SysEx", "GM/Universal SysEx", "XG SysEx", "MT-32 SysEx"):
@@ -4548,8 +4953,18 @@ class Duality:
             self._clear_log()
         elif c == "l":
             self._toggle_format_lock()
+        elif c == "w":
+            if self._rec_on or self._rec_wanted:
+                self._rec_wanted = False
+                self._record_stop("hotkey W")
+            else:
+                if not self.record_dir:
+                    self.record_dir = "."
+                self._rec_wanted = True
+                self._record_start("hotkey W")
         elif c == "a":
             self.anima = not self.anima
+            self._anima_release_efx_lock("Anima toggle")
             if not self.anima:
                 # Park wheels we were driving so A/B compare is clean
                 for ch in range(16):
@@ -4613,6 +5028,7 @@ class Duality:
 
                         # Drain delayed outbound MIDI (no-op if sync disabled)
                         self._flush_send_queue()
+                        self._record_idle_check()
 
                         # Voodoo paced bank load / elastic catch-up
                         if self.voodoo_loading or self.voodoo_catchup:
@@ -4655,6 +5071,7 @@ class Duality:
                 for msg in self.inport:
                     self.process(msg)
                     self._flush_send_queue()
+                    self._record_idle_check()
                     if self.voodoo_loading or self.voodoo_catchup:
                         self._voodoo_tick()
                     if self.anima:
@@ -4670,6 +5087,8 @@ class Duality:
                 self.close()
 
     def close(self):
+        if getattr(self, "_rec_on", False):
+            self._record_stop("close")
         # Log last-ok ages so a wedged-but-silent out is visible in the session log
         try:
             now = time.monotonic()
@@ -4798,6 +5217,18 @@ def main():
         help=(
             "MIDI output port names. Optional format tag: Name:gs|xg|gm|gm2|mt32. "
             "Minimum 2 ports (or 1 with --alchemy). Example: --outs \"SC:gs\" \"MU:xg\""
+        ),
+    )
+    parser.add_argument(
+        "--record",
+        nargs="?",
+        const=".",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Record Duality input and each output as Standard MIDI Files "
+            "in DIR (default: current directory). Includes SysEx. "
+            "Hotkey W starts/stops a new take."
         ),
     )
     parser.add_argument(
@@ -5034,6 +5465,7 @@ def main():
             voodoo_bank=getattr(args, "voodoo_bank", "mtgm"),
             voodoo_layout=getattr(args, "voodoo_layout", "stripe"),
             anima=getattr(args, "anima", False),
+            record_dir=getattr(args, "record", None),
         )
         router.run()
     except ValueError as e:
