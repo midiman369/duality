@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.17.15"
+VERSION = "0.17.28"
 
 
 """
@@ -14,6 +14,7 @@ synchronized across all devices.
 Features
 --------
 • Anima (opt-in): GM-category CC phrasing + velocity humanize
+• Anima GS EFX: one insertion slot per :gs port; guitars pack 2/unit (OD1/OD2)
 • Load-balancing by utilization (fair with mixed poly limits) or pure round-robin
 • Chord preference (notes arriving close together stay on the same device)
 • Smart voice stealing (lowest velocity first, then oldest)
@@ -89,6 +90,9 @@ import argparse
 import signal
 import sys
 import time
+import random
+import math
+import random
 import threading
 from typing import List, Optional
 
@@ -361,7 +365,7 @@ GS_EFX_TYPES = {
     (0x04, 0x03): "Clean Gt Multi 1",  # #51
     (0x04, 0x04): "Clean Gt Multi 2",  # #52
     (0x04, 0x05): "Bass Multi",        # #53
-    (0x04, 0x06): "Rhodes Multi",      # #54
+    (0x04, 0x06): "EP Multi",      # #54
     (0x05, 0x00): "Keyboard Multi",    # #55
     (0x11, 0x00): "Cho/Delay",
     (0x11, 0x01): "FL/Delay",
@@ -804,25 +808,69 @@ STREAM_THIN_SEC = 0.008         # min gap per channel for pitch/AT/CC1
 # Strum (plucked / guitar)
 ANIMA_STRUM_COLLECT = 0.010     # gather window before a stroke
 ANIMA_STRUM_STEP = 0.0035       # seconds between strings
+ANIMA_STRUM_JITTER = 0.003      # ±ms on a whole stroke / 0–3ms per string
+ANIMA_BURST_IOI_LO = 0.070      # machine-gun train
+ANIMA_BURST_IOI_HI = 0.180
+ANIMA_BURST_HOLE = 0.280        # gap that ends a train
+ANIMA_BURST_PICKUP = (0.004, 0.012)
+ANIMA_BURST_RELEASE = (0.006, 0.014)
 ANIMA_STRUM_CATS = frozenset({"guitar"})
 
 # Phase 2.5 – one GS insertion EFX for the unit. Sticky per phrase.
 # Values are (type_msb, type_lsb, label) from GS_EFX_TYPES.
 ANIMA_EFX_GS = {
     "organ": [
-        (0x03, 0x00, "Rotary Multi"),  # SC-8850 #47
-    ],
-    "guitar_clean": [
-        (0x04, 0x03, "Clean Gt Multi 1"),
-        (0x01, 0x42, "Stereo Chorus"),
-        (0x01, 0x50, "Stereo Delay"),
-        (0x01, 0x40, "Hexa Chorus"),
+        (0x03, 0x00, "Rotary Multi"),
     ],
     "guitar_dist": [
-        (0x04, 0x00, "GTR Multi 1"),  # SC-8850 #48
+        (0x04, 0x00, "GTR Multi 1"),
+        (0x04, 0x01, "GTR Multi 2"),
+        (0x04, 0x02, "GTR Multi 3"),
     ],
-    "bass": [
+    "guitar_mute": [
+        (0x11, 0x08, "PH/Auto Wah"),
+        (0x02, 0x0A, "Enh→Delay"),
+        (0x04, 0x04, "C.Gt Multi 2"),
+    ],
+    "guitar_clean": [
+        (0x04, 0x03, "C.Gt Multi 1"),
+        (0x11, 0x02, "Cho/Flanger"),
+        (0x02, 0x0A, "Enh→Delay"),
+        (0x04, 0x04, "C.Gt Multi 2"),  # ~25% of seed rolls
+    ],
+    "guitar_acoustic": [
+        (0x01, 0x02, "Enhancer"),
+        (0x02, 0x08, "Enh→Chorus"),
+        (0x02, 0x0A, "Enh→Delay"),
+        (0x04, 0x03, "C.Gt Multi 1"),
+    ],
+    "plucked": [
+        (0x01, 0x02, "Enhancer"),
+        (0x02, 0x08, "Enh→Chorus"),
+        (0x02, 0x0A, "Enh→Delay"),
+    ],
+    "ep_rhodes": [
+        (0x05, 0x00, "Keyboard Multi"),
+        (0x04, 0x06, "EP Multi"),
+        (0x01, 0x41, "Tremolo Chorus"),
+        (0x01, 0x20, "Phaser"),
+    ],
+    "ep_dx": [
+        (0x04, 0x06, "EP Multi"),
+        (0x01, 0x41, "Tremolo Chorus"),
+        (0x01, 0x20, "Phaser"),
+    ],
+    "keys_pluck": [
+        (0x05, 0x00, "Keyboard Multi"),
+        (0x01, 0x20, "Phaser"),
+        (0x04, 0x06, "EP Multi"),
+    ],
+    "bass_electric": [
         (0x04, 0x05, "Bass Multi"),
+    ],
+    "bass_wide": [
+        (0x01, 0x42, "Stereo Chorus"),
+        (0x01, 0x43, "Space-D"),
     ],
     "strings": [
         (0x01, 0x42, "Stereo Chorus"),
@@ -832,19 +880,49 @@ ANIMA_EFX_GS = {
     "pad": [
         (0x01, 0x43, "Space-D"),
         (0x01, 0x42, "Stereo Chorus"),
+        (0x01, 0x44, "3D Chorus"),
     ],
-    "piano": [
-        (0x05, 0x00, "Keyboard Multi"),
-        (0x04, 0x06, "Rhodes Multi"),
+    "piano_acoustic": [
+        (0x01, 0x00, "Stereo-EQ"),
+        (0x01, 0x44, "3D Chorus"),
+        (0x01, 0x43, "Space-D"),
     ],
 }
 ANIMA_EFX_PRIORITY = (
-    "guitar_dist", "guitar_clean", "organ", "bass", "strings", "pad", "piano",
+    "guitar_dist", "guitar_mute", "guitar_clean", "guitar_acoustic",
+    "organ", "plucked", "ep_rhodes", "ep_dx", "keys_pluck",
+    "bass_electric", "strings", "pad", "bass_wide", "piano_acoustic",
 )
 ANIMA_FILE_EFX_HOLD = 1e9   # file-owned EFX lasts until GS Reset / format clear
-ANIMA_EFX_IDLE_SEC = 4.0    # keep current EFX this long after hero goes quiet
-ANIMA_EFX_HOLD_SEC = 0.80   # family stays "sounding" this long after last note
+ANIMA_EFX_IDLE_SEC = 15.0   # keep current EFX this long after hero goes quiet
+ANIMA_EFX_HOLD_SEC = 5.0    # family stays "sounding" this long after last note
 ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX *type* changes (priority upgrade exempt)
+# Dual-guitar parallel split (SC-8850 #59 OD1/OD2)
+ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB = 0x11, 0x03
+ANIMA_SPLIT_LABEL = "OD1/OD2"
+ANIMA_SPLIT_PAN_LO = 8    # CC10 ≤ this counts as already-left
+ANIMA_SPLIT_PAN_HI = 119  # CC10 ≥ this counts as already-right
+ANIMA_EFX_CTRL_CC = 16    # 8850 EFX C.Src1 → CC16 after one SysEx bind
+ANIMA_WAH_LFO_HZ = 0.55
+ANIMA_ROTARY_HOLD_SEC = 0.60
+ANIMA_EFX_DRIVE_03 = frozenset({
+    (0x01, 0x10), (0x01, 0x11),
+    (0x02, 0x00), (0x02, 0x01), (0x02, 0x02), (0x02, 0x03),
+    (0x02, 0x04), (0x02, 0x05), (0x02, 0x06), (0x02, 0x07),
+})
+ANIMA_EFX_WAH = frozenset({
+    (0x04, 0x02),  # GTR Multi 3
+    (0x04, 0x04),  # C.Gt Multi 2
+    (0x01, 0x21),  # Auto Wah
+    (0x11, 0x06),  # OD/Auto Wah
+    (0x11, 0x08),  # PH/Auto Wah
+})
+ANIMA_EFX_ROTARY = frozenset({
+    (0x03, 0x00),  # Rotary Multi
+    (0x01, 0x22),  # Rotary
+    (0x11, 0x04),  # OD/Rotary
+    (0x11, 0x07),  # PH/Rotary
+})
 ANIMA_HETFIELD_PC = frozenset(range(29, 31))  # OD / Distortion – down only
 
 
@@ -970,6 +1048,7 @@ class Duality:
         voodoo_bank: str = "mtgm",
         voodoo_layout: str = "stripe",
         anima: bool = False,
+        anima_efx_stable: bool = False,
         record_dir: str | None = None,
     ):
         # Alchemy / Voodoo / Anima may run with a single output.
@@ -1027,6 +1106,7 @@ class Duality:
         self.scpop_forced = bool(scpop)
         # Anima Phase 1 – CC phrasing + velocity humanize
         self.anima = bool(anima)
+        self.anima_efx_stable = bool(anima_efx_stable)
         self.record_dir = record_dir
         self._rec_on = False
         self._rec_wanted = False
@@ -1055,6 +1135,13 @@ class Duality:
         self._anima_efx_sound_t = {}
         self._anima_efx_switch_t = 0.0
         self._anima_efx_pending = None  # (fam, since)
+        self._anima_split_on = False
+        self._anima_split_saved_pan = {}  # ch -> original CC10
+        self._anima_slots = [{} for _ in range(self.n_ports)]
+        self._anima_ch_port = {}  # channel -> GS port that owns its EFX
+        self._anima_efx_on = [[False] * 16 for _ in range(self.n_ports)]
+        self._anima_efx_seed = None
+        self._anima_efx_pick = {}  # fam -> (msb, lsb, label)
         self._anima_ports = [[] for _ in range(16)]
         self._anima_cc1_cur = [0] * 16
         self._anima_cc1_tgt = [0] * 16
@@ -1068,6 +1155,9 @@ class Duality:
         self._anima_strum_dir = [1] * 16     # 1 = down (low→high)
         self._anima_strum_n = [0] * 16       # completed strokes per ch
         self._anima_strum_q = []             # (when, port, msg)
+        self._anima_strum_last_t = [0.0] * 16
+        self._anima_strum_burst = [0] * 16
+        self._anima_strum_off_hold = [0.0] * 16
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
         # Per-channel bank select state (for Alchemy PC mapping)
         self.bank_msb = [0] * 16
@@ -1480,6 +1570,7 @@ class Duality:
         prev = self.detected_format or "none"
         was_locked = self.format_locked
         self._anima_release_efx_lock("format clear")
+        self._anima_reset_efx_seed()
         self.detected_format = None
         self.format_pulse_time = 0.0
         self.format_locked = False
@@ -3548,6 +3639,10 @@ class Duality:
         self._anima_efx_hero = None
         self._anima_efx_label = ""
         self._gs_efx_parts_on = [False] * 16
+        self._anima_slots = [{} for _ in range(self.n_ports)]
+        self._anima_ch_port = {}
+        self._anima_efx_on = [[False] * 16 for _ in range(self.n_ports)]
+        self._anima_split_restore()
         if had and reason:
             self._anima_feedback("efx", f"EFX lock cleared ({reason})", status=True)
     def _anima_observe_file_efx(self, msg: mido.Message, description: str) -> None:
@@ -3558,6 +3653,7 @@ class Duality:
         d = (description or "").lower()
         if "gs reset" in d or d.startswith("xg system on") or "gm system on" in d:
             self._anima_release_efx_lock("reset")
+            self._anima_reset_efx_seed()
             return
         if d.startswith("gs efx") or "insertion" in d or "xg variation" in d:
             if "thru" in d:
@@ -3566,12 +3662,36 @@ class Duality:
             self._anima_feedback("efx-skip", f"file owns EFX ({description})", status=True)
 
     def _anima_efx_family(self, ch: int) -> str | None:
-        cat = self._anima_category(ch)
-        if cat == "guitar":
-            prog = self._anima_prog[ch & 0x0F]
-            return "guitar_dist" if 28 <= prog <= 31 else "guitar_clean"
-        if cat in ANIMA_EFX_GS:
-            return cat
+        """Map a channel's current GM program to an Anima GS insertion family."""
+        p = int(self._anima_prog[ch & 0x0F]) & 0x7F
+        if p <= 2:
+            return "piano_acoustic"
+        if p == 4:
+            return "ep_rhodes"
+        if p == 5:
+            return "ep_dx"
+        if p in (6, 7):
+            return "keys_pluck"
+        if 16 <= p <= 23:
+            return "organ"
+        if p in (24, 25):
+            return "guitar_acoustic"
+        if p in (26, 27):
+            return "guitar_clean"
+        if p == 28:
+            return "guitar_mute"
+        if 29 <= p <= 31:
+            return "guitar_dist"
+        if p in (32, 33, 34, 36, 37):
+            return "bass_electric"
+        if p in (35, 38, 39):
+            return "bass_wide"
+        if 40 <= p <= 47:
+            return "strings"
+        if 88 <= p <= 95:
+            return "pad"
+        if p == 15 or 104 <= p <= 107:
+            return "plucked"
         return None
 
     def _anima_gs_ports(self) -> list[int]:
@@ -3587,6 +3707,472 @@ class Duality:
                 ports.append(i)
         return ports
 
+
+    @staticmethod
+    def _anima_pcs_compatible(union: set) -> bool:
+        """True if a pitch-class set is still 'one guitar part' (double/power/triad)."""
+        pcs = {int(p) % 12 for p in union}
+        n = len(pcs)
+        if n <= 1:
+            return True
+        if n == 2:
+            a, b = sorted(pcs)
+            iv = min((b - a) % 12, (a - b) % 12)
+            return iv in (3, 4, 5, 7)
+        if n == 3:
+            for r in range(12):
+                rel = frozenset((p - r) % 12 for p in pcs)
+                if rel in ({0, 4, 7}, {0, 3, 7}, {0, 3, 6}, {0, 4, 8}):
+                    return True
+            return False
+        return False
+
+    def _anima_guitar_dist_chs(self) -> list:
+        return sorted({
+            k[0] for k in self.active
+            if k[0] != 9 and self._anima_efx_family(k[0]) == "guitar_dist"
+        })
+
+    def _anima_channel_pcs(self, ch: int) -> set:
+        return {k[1] % 12 for k in self.active if k[0] == ch}
+
+    def _anima_guitar_conflict(self) -> bool:
+        chs = self._anima_guitar_dist_chs()
+        if len(chs) < 2:
+            return False
+        sets = [self._anima_channel_pcs(c) for c in chs]
+        sets = [s for s in sets if s]
+        if len(sets) < 2:
+            return False
+        if all(s == sets[0] for s in sets):
+            return False
+        union = set().union(*sets)
+        return not self._anima_pcs_compatible(union)
+
+    def _anima_split_restore(self) -> None:
+        """Put back any CC10 we wrote for OD1/OD2."""
+        saved = getattr(self, "_anima_split_saved_pan", None) or {}
+        self._anima_split_on = False
+        if not saved:
+            self._anima_split_saved_pan = {}
+            return
+        ports = self._anima_gs_ports()
+        for ch, val in saved.items():
+            self.pan[ch] = val
+            if ports and val is not None:
+                self._anima_send_cc(ports, ch, 10, int(val) & 0x7F)
+        self._anima_split_saved_pan = {}
+
+    def _anima_apply_od_split(self, chs: list) -> None:
+        """Type OD1/OD2, hard-split engine pans, optional part pans."""
+        ports = self._anima_gs_ports()
+        if not ports:
+            return
+        now = time.monotonic()
+        msgs = [
+            self._gs_dt1([0x40, 0x03, 0x00], [ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB]),
+            self._gs_dt1([0x40, 0x03, 0x03], [0x00]),  # OD1 = Overdrive
+            self._gs_dt1([0x40, 0x03, 0x08], [0x01]),  # OD2 = Distortion
+            self._gs_dt1([0x40, 0x03, 0x12], [0x00]),  # OD1 out pan L
+            self._gs_dt1([0x40, 0x03, 0x14], [0x7F]),  # OD2 out pan R
+        ]
+        self._anima_efx_ours = True
+        for i in ports:
+            for m in msgs:
+                self._safe_out_send(i, m)
+        # Part pans: leave opposite halves; hard-pan a centered pair.
+        pans = []
+        for c in chs:
+            v = self.pan[c]
+            pans.append(64 if v is None else int(v))
+        leftish = [c for c, v in zip(chs, pans) if v <= ANIMA_SPLIT_PAN_LO]
+        rightish = [c for c, v in zip(chs, pans) if v >= ANIMA_SPLIT_PAN_HI]
+        need_write = not leftish or not rightish
+        if need_write and len(chs) >= 2:
+            a, b = chs[0], chs[1]
+            if a not in self._anima_split_saved_pan:
+                self._anima_split_saved_pan[a] = self.pan[a] if self.pan[a] is not None else 64
+            if b not in self._anima_split_saved_pan:
+                self._anima_split_saved_pan[b] = self.pan[b] if self.pan[b] is not None else 64
+            self.pan[a] = 0
+            self.pan[b] = 127
+            self._anima_send_cc(ports, a, 10, 0)
+            self._anima_send_cc(ports, b, 10, 127)
+        self._anima_split_on = True
+        self._anima_efx_sent = (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
+        self._anima_efx_key = "guitar_dist"
+        self._anima_efx_label = ANIMA_SPLIT_LABEL
+        self._anima_efx_switch_t = now
+        hero = chs[0]
+        self._anima_efx_assign_family("guitar_dist", hero)
+        self._anima_efx_bind_and_seed(ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
+        pair = "+".join(f"ch{c+1}" for c in chs[:4])
+        self._anima_feedback(
+            "efx",
+            f"{pair} guitar_dist → GS {ANIMA_SPLIT_LABEL} (pan split)",
+            status=True,
+        )
+
+    def _anima_maybe_guitar_split(self) -> None:
+        if self._anima_efx_key != "guitar_dist":
+            return
+        if self._anima_split_on:
+            return
+        if not self._anima_guitar_conflict():
+            return
+        now = time.monotonic()
+        if self._anima_efx_switch_t and (now - self._anima_efx_switch_t) < ANIMA_EFX_SWITCH_SEC:
+            return
+        chs = self._anima_guitar_dist_chs()
+        if len(chs) < 2:
+            return
+        self._anima_apply_od_split(chs)
+
+
+    def _anima_reset_efx_seed(self) -> None:
+        self._anima_efx_seed = None
+        self._anima_efx_pick = {}
+
+    def _anima_ensure_efx_seed(self) -> int:
+        if self._anima_efx_seed is None:
+            snap = tuple(int(x) & 0x7F for x in self._anima_prog)
+            # Per-launch salt so the same SMF can draw a different row next run,
+            # still stable for the whole song.
+            if self.anima_efx_stable:
+                # Same PC snapshot → same palette row, every launch.
+                self._anima_efx_seed = hash(snap) & 0xFFFF
+            else:
+                if not getattr(self, "_anima_efx_launch", None):
+                    self._anima_efx_launch = random.randrange(1, 0x10000)
+                self._anima_efx_seed = (hash(snap) ^ self._anima_efx_launch) & 0xFFFF
+        return self._anima_efx_seed
+
+    def _anima_palette_pick(self, fam: str):
+        """One seeded row per family for this stream."""
+        if fam in self._anima_efx_pick:
+            return self._anima_efx_pick[fam]
+        pal = ANIMA_EFX_GS.get(fam) or []
+        if not pal:
+            return None
+        seed = self._anima_ensure_efx_seed()
+        pick = pal[seed % len(pal)]
+        self._anima_efx_pick[fam] = pick
+        return pick
+
+
+    def _anima_efx_bind_and_seed(self, msb: int, lsb: int, ports=None) -> None:
+        """One-shot: bind CC16 to EFX Ctrl1, seed drive, set rotary/wah base."""
+        ports = list(ports) if ports is not None else self._anima_gs_ports()
+        if not ports:
+            return
+        seed = self._anima_ensure_efx_seed()
+        msgs = [
+            self._gs_dt1([0x40, 0x03, 0x1B], [ANIMA_EFX_CTRL_CC]),  # C.Src1 = CC16
+            self._gs_dt1([0x40, 0x03, 0x1C], [0x7F]),               # C.Dep1 = +100%
+        ]
+        key = (msb, lsb)
+        if key in ANIMA_EFX_DRIVE_03:
+            drive = 40 + (seed % 51)  # 40–90
+            msgs.append(self._gs_dt1([0x40, 0x03, 0x03], [drive]))
+        if key in ANIMA_EFX_WAH:
+            msgs.append(self._gs_dt1([0x40, 0x03, 0x04], [0x40]))  # Wah Man center
+        self._anima_efx_ours = True
+        for i in ports:
+            for m in msgs:
+                self._safe_out_send(i, m)
+        self._anima_efx_lfo_ph = 0.0
+        self._anima_efx_cc16 = -1
+        self._anima_rot_flipped = False
+        self._anima_rot_fast = bool(seed & 1)
+        if key in ANIMA_EFX_ROTARY:
+            hero = self._anima_efx_hero if self._anima_efx_hero is not None else 0
+            self._anima_send_cc(ports, hero, ANIMA_EFX_CTRL_CC, 127 if self._anima_rot_fast else 0)
+
+    def _anima_efx_param_tick(self, dt: float) -> None:
+        """CC16 wah LFO / rotary slow-fast while the insertion type supports it."""
+        sent = self._anima_efx_sent
+        if not sent or not self.anima:
+            return
+        ports = [
+            i for i, sl in enumerate(self._anima_slots)
+            if sl.get("typ") == sent
+        ] or self._anima_gs_ports()
+        if not ports:
+            return
+        hero = self._anima_efx_hero if self._anima_efx_hero is not None else 0
+        now = time.monotonic()
+        if sent in ANIMA_EFX_WAH:
+            live = any(
+                k[0] != 9 and self._anima_efx_family(k[0]) == self._anima_efx_key
+                for k in self.active
+            )
+            if not live:
+                return
+            self._anima_efx_lfo_ph += dt * ANIMA_WAH_LFO_HZ * 6.28318530718
+            val = int(64 + 48 * math.sin(self._anima_efx_lfo_ph))
+            val = max(0, min(127, val))
+            self._anima_send_cc(ports, hero, ANIMA_EFX_CTRL_CC, val)
+            return
+        if sent in ANIMA_EFX_ROTARY:
+            longest = 0.0
+            for key, info in self.active.items():
+                ch = key[0]
+                if ch == 9:
+                    continue
+                if self._anima_efx_family(ch) not in ("organ",):
+                    # still allow rotary types on whatever family owns the slot
+                    if self._anima_efx_family(ch) != self._anima_efx_key:
+                        continue
+                t0 = info.get("time") or 0.0
+                if t0:
+                    longest = max(longest, now - t0)
+            want_flip = longest >= ANIMA_ROTARY_HOLD_SEC
+            if want_flip and not self._anima_rot_flipped:
+                self._anima_rot_flipped = True
+                self._anima_send_cc(
+                    ports, hero, ANIMA_EFX_CTRL_CC,
+                    0 if self._anima_rot_fast else 127,
+                )
+            elif not want_flip and self._anima_rot_flipped:
+                self._anima_rot_flipped = False
+                self._anima_send_cc(
+                    ports, hero, ANIMA_EFX_CTRL_CC,
+                    127 if self._anima_rot_fast else 0,
+                )
+
+
+    def _anima_chs_conflict(self, chs: list) -> bool:
+        sets = [self._anima_channel_pcs(c) for c in chs]
+        sets = [s for s in sets if s]
+        if len(sets) < 2:
+            return False
+        if all(s == sets[0] for s in sets):
+            return False
+        union = set().union(*sets)
+        return not self._anima_pcs_compatible(union)
+
+    def _anima_build_plan(self, extra_ch: int | None = None) -> list:
+        """One insertion slot per GS port. Guitars pack 2-per-unit (OD1/OD2 if they clash)."""
+        gs = self._anima_gs_ports()
+        if not gs:
+            return []
+        now = time.monotonic()
+        fam_chs: dict = {}
+
+        def _add(c: int) -> None:
+            if c == 9:
+                return
+            fam = self._anima_efx_family(c)
+            if not fam:
+                return
+            fam_chs.setdefault(fam, [])
+            if c not in fam_chs[fam]:
+                fam_chs[fam].append(c)
+            self._anima_efx_sound_t[fam] = now
+
+        for key in self.active:
+            _add(key[0])
+        if extra_ch is not None:
+            _add(extra_ch)
+        # While a family is inside HOLD, keep every channel that still
+        # classifies as that family — not only when the family is absent.
+        for fam, ts in list(self._anima_efx_sound_t.items()):
+            if now - ts >= ANIMA_EFX_HOLD_SEC:
+                continue
+            for c in range(16):
+                if self._anima_efx_family(c) == fam:
+                    fam_chs.setdefault(fam, [])
+                    if c not in fam_chs[fam]:
+                        fam_chs[fam].append(c)
+        # Sticky: channels already on a slot stay in that family while PC matches.
+        for slot in self._anima_slots:
+            fam = slot.get("fam")
+            if not fam:
+                continue
+            for c in slot.get("chs") or []:
+                if self._anima_efx_family(c) == fam:
+                    fam_chs.setdefault(fam, [])
+                    if c not in fam_chs[fam]:
+                        fam_chs[fam].append(c)
+        # Idle may keep a family, but never steal channels that already
+        # reclassified (clean → dist) or that a higher family owns.
+        used = {c for chs in fam_chs.values() for c in chs}
+        for slot in self._anima_slots:
+            fam = slot.get("fam")
+            if not fam or fam in fam_chs:
+                continue
+            ts = self._anima_efx_sound_t.get(fam, 0.0)
+            if not ts or (now - ts) >= ANIMA_EFX_IDLE_SEC:
+                continue
+            keep = [
+                c for c in (slot.get("chs") or [])
+                if self._anima_efx_family(c) == fam and c not in used
+            ]
+            if keep:
+                fam_chs[fam] = keep
+                used.update(keep)
+
+        plan = []
+        gi = 0
+
+        def _take():
+            nonlocal gi
+            if gi >= len(gs):
+                return None
+            p = gs[gi]
+            gi += 1
+            return p
+
+        for fam in ANIMA_EFX_PRIORITY:
+            if fam not in fam_chs:
+                continue
+            chs = sorted(fam_chs[fam])
+            if fam == "guitar_dist":
+                rest = list(chs)
+                while rest:
+                    port = _take()
+                    if port is None:
+                        break
+                    prev = self._anima_slots[port] if port < len(self._anima_slots) else {}
+                    if prev.get("split") and prev.get("fam") == fam:
+                        # Stay OD1/OD2 on this unit until PCs leave dist.
+                        chs = sorted(set(prev.get("chs") or []) | set(rest[:2]))
+                        plan.append({
+                            "port": port, "fam": fam, "chs": chs[:2] or list(rest[:1]),
+                            "split": True,
+                        })
+                        rest = rest[2:] if len(rest) >= 2 else []
+                    elif len(rest) >= 2:
+                        pair, rest = rest[:2], rest[2:]
+                        plan.append({
+                            "port": port, "fam": fam, "chs": pair,
+                            "split": self._anima_chs_conflict(pair),
+                        })
+                    else:
+                        plan.append({
+                            "port": port, "fam": fam, "chs": rest[:],
+                            "split": False,
+                        })
+                        rest = []
+            else:
+                port = _take()
+                if port is None:
+                    break
+                plan.append({
+                    "port": port, "fam": fam, "chs": chs, "split": False,
+                })
+        return plan
+
+    def _anima_clear_slot(self, port: int) -> None:
+        ports = [port]
+        for c in range(16):
+            if not self._anima_efx_on[port][c]:
+                continue
+            off = self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x00])
+            self._anima_efx_ours = True
+            self._safe_out_send(port, off)
+            self._anima_efx_on[port][c] = False
+        self._anima_slots[port] = {}
+
+    def _anima_commit_plan(self, plan: list) -> None:
+        gs = self._anima_gs_ports()
+        keep = {item["port"] for item in plan}
+        for p in gs:
+            if p not in keep and self._anima_slots[p].get("fam"):
+                self._anima_clear_slot(p)
+        self._anima_ch_port = {}
+        for item in plan:
+            self._anima_commit_slot(item)
+            for c in item["chs"]:
+                self._anima_ch_port[c] = item["port"]
+        if plan:
+            self._anima_efx_key = plan[0]["fam"]
+            self._anima_efx_hero = plan[0]["chs"][0] if plan[0]["chs"] else None
+        else:
+            self._anima_efx_key = None
+            self._anima_efx_hero = None
+
+    def _anima_commit_slot(self, item: dict) -> None:
+        port = item["port"]
+        fam = item["fam"]
+        chs = list(item["chs"])
+        split = bool(item.get("split"))
+        old = self._anima_slots[port]
+        if (
+            old.get("fam") == fam
+            and set(old.get("chs") or []) == set(chs)
+            and old.get("split") == split
+        ):
+            return
+        # Same family, type already sent — do not flap GTR Multi ↔ OD1/OD2
+        # inside the switch window unless we are latching split ON.
+        last_t = old.get("t") or 0.0
+        if (
+            old.get("fam") == fam
+            and old.get("typ")
+            and (now := time.monotonic()) - last_t < ANIMA_EFX_SWITCH_SEC
+            and not (split and not old.get("split"))
+        ):
+            self._anima_slots[port]["chs"] = chs
+            return
+        if old.get("split") and fam == "guitar_dist":
+            split = True
+        if split:
+            already = (
+                old.get("split")
+                and old.get("typ") == (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
+            )
+            if not already:
+                saved_gs = self._anima_gs_ports
+                self._anima_gs_ports = lambda: [port]  # type: ignore
+                try:
+                    self._anima_apply_od_split(chs)
+                finally:
+                    self._anima_gs_ports = saved_gs
+            self._anima_slots[port] = {
+                "fam": fam, "chs": chs, "split": True,
+                "typ": (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB), "t": time.monotonic(),
+            }
+            for c in range(16):
+                want = c in chs
+                if want == self._anima_efx_on[port][c]:
+                    continue
+                val = 0x01 if want else 0x00
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    port,
+                    self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
+                )
+                self._anima_efx_on[port][c] = want
+            return
+        pick = self._anima_palette_pick(fam)
+        if not pick:
+            return
+        msb, lsb, label = pick
+        typ = (msb, lsb)
+        if old.get("typ") != typ:
+            self._anima_efx_ours = True
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb]))
+            self._anima_efx_sent = typ
+            self._anima_efx_label = label
+            self._anima_efx_hero = chs[0] if chs else None
+            self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} → GS {label}", status=True)
+        for c in range(16):
+            want = c in chs
+            if want == self._anima_efx_on[port][c]:
+                continue
+            val = 0x01 if want else 0x00
+            self._anima_efx_ours = True
+            self._safe_out_send(
+                port,
+                self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
+            )
+            self._anima_efx_on[port][c] = want
+        if old.get("split") and not split:
+            self._anima_split_restore()
+        self._anima_slots[port] = {"fam": fam, "chs": chs, "split": False, "typ": typ, "t": time.monotonic()}
+
     def _anima_maybe_efx(self, ch: int) -> None:
         if not self.anima or ch == 9:
             return
@@ -3596,6 +4182,10 @@ class Duality:
         now = time.monotonic()
         if self._anima_file_efx_t and now - self._anima_file_efx_t < ANIMA_FILE_EFX_HOLD:
             return
+        plan = self._anima_build_plan(extra_ch=ch)
+        self._anima_commit_plan(plan)
+        return
+        # legacy single-slot path kept below as dead code for reference
         # First priority family that currently has notes (short hold on gaps).
         sounding = {}
         for key in self.active:
@@ -3611,6 +4201,12 @@ class Duality:
             if fam not in sounding and now - ts < ANIMA_EFX_HOLD_SEC:
                 sounding[fam] = self._anima_efx_hero if self._anima_efx_key == fam else next(
                     (c for c in range(16) if self._anima_efx_family(c) == fam), 0)
+        # Keep the current insertion family on the list through IDLE_SEC so
+        # bass/pads cannot steal the slot on a short guitar rest.
+        if self._anima_efx_key:
+            ts = self._anima_efx_sound_t.get(self._anima_efx_key, 0.0)
+            if ts and (now - ts) < ANIMA_EFX_IDLE_SEC and self._anima_efx_key not in sounding:
+                sounding[self._anima_efx_key] = self._anima_efx_hero or 0
         fam = None
         hero = ch
         for cand in ANIMA_EFX_PRIORITY:
@@ -3618,11 +4214,16 @@ class Duality:
                 fam = cand
                 hero = sounding[cand]
                 break
+        if self._anima_split_on and "guitar_dist" not in sounding:
+            self._anima_split_restore()
         if not fam:
             return
-        # Same family: keep the current type/parts. Do not resend.
+        # Same family: keep the current type/parts. Do not resend
+        # (except guitar_dist may upgrade to OD1/OD2 mid-family).
         if self._anima_efx_key == fam:
             self._anima_efx_pending = None
+            if fam == "guitar_dist":
+                self._anima_maybe_guitar_split()
             return
         # Want a different family. Current family still holding notes?
         cur_still_up = bool(
@@ -3639,10 +4240,9 @@ class Duality:
                 return
         else:
             self._anima_efx_pending = None
-        palette = ANIMA_EFX_GS.get(fam) or []
-        if not palette:
+        pick = self._anima_palette_pick(fam)
+        if not pick:
             return
-        pick = palette[0]  # stable type per family (no rotating Multi 2)
         msb, lsb, label = pick
         if self._anima_efx_sent == (msb, lsb):
             self._anima_efx_key = fam
@@ -3653,6 +4253,8 @@ class Duality:
             return
         self._anima_efx_ours = True
         self._anima_efx_pending = None
+        if self._anima_split_on:
+            self._anima_split_restore()
         msg = self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb])
         for i in ports:
             self._safe_out_send(i, msg)
@@ -3660,7 +4262,9 @@ class Duality:
         self._anima_efx_key = fam
         self._anima_efx_label = label
         self._anima_efx_switch_t = now
+        self._anima_efx_hero = hero
         self._anima_efx_assign_part(hero)
+        self._anima_efx_bind_and_seed(msb, lsb)
         self._anima_feedback(
             "efx",
             f"ch{hero + 1} {fam} → GS {label}",
@@ -3840,6 +4444,8 @@ class Duality:
             self.mod_time[ch] = now
         elif control == 11:
             self._anima_cc_sent[ch] = (last1, value)
+        elif control == ANIMA_EFX_CTRL_CC:
+            self._anima_efx_cc16 = value
 
     def _anima_step(self, cur: int, tgt: int, rate: float, dt: float) -> int:
         if cur == tgt or dt <= 0:
@@ -3905,9 +4511,28 @@ class Duality:
         items.sort(key=lambda it: it[0].note)
         if buf["dir"] < 0:
             items.reverse()
-        t = now
+        last = self._anima_strum_last_t[ch]
+        ioi = (now - last) if last else 999.0
+        burst = self._anima_strum_burst[ch]
+        pickup = 0.0
+        release = 0.0
+        if last and ioi > ANIMA_BURST_HOLE and len(items) >= 2:
+            # First stroke after a hole – land a hair late
+            pickup = random.uniform(*ANIMA_BURST_PICKUP)
+            burst = 1
+        elif ANIMA_BURST_IOI_LO <= ioi <= ANIMA_BURST_IOI_HI and len(items) >= 2:
+            burst += 1
+            pickup = random.uniform(-ANIMA_STRUM_JITTER, ANIMA_STRUM_JITTER)
+            release = random.uniform(*ANIMA_BURST_RELEASE)
+        else:
+            burst = 1 if len(items) >= 2 else 0
+        self._anima_strum_burst[ch] = burst
+        self._anima_strum_last_t[ch] = now
+        self._anima_strum_off_hold[ch] = release
+        t0 = now + pickup + random.uniform(-ANIMA_STRUM_JITTER, ANIMA_STRUM_JITTER)
         for i, (note_msg, ports) in enumerate(items):
-            when = t + (i * ANIMA_STRUM_STEP)
+            string_j = random.uniform(0.0, ANIMA_STRUM_JITTER)
+            when = t0 + (i * ANIMA_STRUM_STEP) + string_j
             for p in ports:
                 self._anima_strum_q.append((when, p, note_msg))
         self._anima_strum_n[ch] += 1
@@ -3952,6 +4577,7 @@ class Duality:
         if dt > 0.08:
             dt = 0.08
         self._anima_ramp_t = now
+        self._anima_efx_param_tick(dt)
 
         # --- arm mod targets for notes held long enough ---
         for key, info in list(self.active.items()):
@@ -4228,9 +4854,9 @@ class Duality:
         if msg.type in ("note_on", "note_off"):
             key = (msg.channel, msg.note)
             is_note_on = msg.type == "note_on" and msg.velocity > 0
+            now = time.monotonic()
 
             if is_note_on:
-                now = time.monotonic()
                 is_chord = (now - self.last_note_time) < self.chord_window
                 self.last_note_time = now
                 self.last_activity_time = now
@@ -4282,7 +4908,14 @@ class Duality:
                     self.last_chord_port = port
                     targets = [port]
                 else:
-                    port = self._choose_port(is_chord)
+                    pin = self._anima_ch_port.get(msg.channel & 0x0F) if self.anima else None
+                    if pin is None and self.anima:
+                        self._anima_maybe_efx(msg.channel & 0x0F)
+                        pin = self._anima_ch_port.get(msg.channel & 0x0F)
+                    if pin is not None and pin in eligible:
+                        port = pin
+                    else:
+                        port = self._choose_port(is_chord)
                     if port is None:
                         self.drop_count += 1
                         return
@@ -4344,8 +4977,13 @@ class Duality:
                 info = self.active.pop(key, None)
                 if info is not None:
                     ports = info.get("ports") or [info["port"]]
+                    ch_off = msg.channel & 0x0F
+                    hold = self._anima_strum_off_hold[ch_off] if self.anima else 0.0
                     for port in ports:
-                        self._send_routed(port, msg)
+                        if hold > 0:
+                            self._anima_strum_q.append((now + hold, port, msg))
+                        else:
+                            self._send_routed(port, msg)
                         self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
                     if self.anima:
                         self._anima_mod_on.discard(key)
@@ -5240,6 +5878,15 @@ def main():
         ),
     )
     parser.add_argument(
+        "--anima-efx-stable",
+        action="store_true",
+        help=(
+            "Anima GS EFX: pick palette rows only from the current program "
+            "snapshot so the same song always draws the same insertion. "
+            "Default is a per-launch roll (still frozen for the rest of the song)."
+        ),
+    )
+    parser.add_argument(
         "--voodoo",
         action="store_true",
         help=(
@@ -5465,6 +6112,7 @@ def main():
             voodoo_bank=getattr(args, "voodoo_bank", "mtgm"),
             voodoo_layout=getattr(args, "voodoo_layout", "stripe"),
             anima=getattr(args, "anima", False),
+            anima_efx_stable=getattr(args, "anima_efx_stable", False),
             record_dir=getattr(args, "record", None),
         )
         router.run()
