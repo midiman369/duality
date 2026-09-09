@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.17.28"
+VERSION = "0.17.31"
 
 
 """
@@ -813,7 +813,7 @@ ANIMA_BURST_IOI_LO = 0.070      # machine-gun train
 ANIMA_BURST_IOI_HI = 0.180
 ANIMA_BURST_HOLE = 0.280        # gap that ends a train
 ANIMA_BURST_PICKUP = (0.004, 0.012)
-ANIMA_BURST_RELEASE = (0.006, 0.014)
+ANIMA_BURST_RELEASE = (0.0, 0.0)     # off-hold raced new ons; keep mutes tight
 ANIMA_STRUM_CATS = frozenset({"guitar"})
 
 # Phase 2.5 – one GS insertion EFX for the unit. Sticky per phrase.
@@ -894,6 +894,7 @@ ANIMA_EFX_PRIORITY = (
     "bass_electric", "strings", "pad", "bass_wide", "piano_acoustic",
 )
 ANIMA_FILE_EFX_HOLD = 1e9   # file-owned EFX lasts until GS Reset / format clear
+ANIMA_SESSION_IDLE_SEC = 30.0  # quiet MIDI → drop Anima EFX/slot state
 ANIMA_EFX_IDLE_SEC = 15.0   # keep current EFX this long after hero goes quiet
 ANIMA_EFX_HOLD_SEC = 5.0    # family stays "sounding" this long after last note
 ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX *type* changes (priority upgrade exempt)
@@ -1341,7 +1342,7 @@ class Duality:
         console.print(
             "[green]Ready.[/] Notes will be distributed. Ctrl+C to stop + panic.\n"
             "  Hotkeys: [bold]F[/]=clear  [bold]L[/]=lock format  [bold]G[/]=GM/GM2  [bold]R[/]=GS  "
-            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]C[/]=clear log  [bold]Q[/]=quit"
+            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]C[/]=clear log  [bold]X[/]=reset  [bold]Q[/]=quit"
         )
         # --voodoo: seed MT-32 format (so L can lock) then begin paced GM load
         if self.voodoo_requested:
@@ -3630,6 +3631,111 @@ class Duality:
 
 
 
+    def _anima_hold_retrigger(self, port: int, chs: list) -> list:
+        """Gate held voices around an EFX switch without double-striking.
+
+        Cancel any strum-queued ons first. Only send an off if that note
+        already left the port. Caller sends SysEx, then _anima_hold_resume.
+        """
+        held = []
+        want = set(chs)
+        for ch in want:
+            buf = self._anima_strum_buf[ch]
+            if buf:
+                self._anima_strum_buf[ch] = None
+        keep_q = []
+        for when, p, msg in self._anima_strum_q:
+            if (
+                p == port
+                and msg.type == "note_on"
+                and (msg.channel & 0x0F) in want
+                and msg.velocity > 0
+            ):
+                continue
+            keep_q.append((when, p, msg))
+        self._anima_strum_q = keep_q
+        for key, info in list(self.active.items()):
+            ch, note = key[0], key[1]
+            if ch not in want:
+                continue
+            ports = info.get("ports") or [info["port"]]
+            if port not in ports:
+                continue
+            vel = int(info.get("velocity") or 64)
+            # Note may only live in the (now cleared) strum queue — no off.
+            if info.get("strum_pending"):
+                held.append((ch, note, vel))
+                info["strum_pending"] = False
+                continue
+            self._safe_out_send(
+                port, mido.Message("note_off", channel=ch, note=note, velocity=0)
+            )
+            held.append((ch, note, vel))
+        return held
+
+    def _anima_hold_resume(self, port: int, held: list) -> None:
+        for ch, note, vel in held:
+            self._safe_out_send(
+                port, mido.Message("note_on", channel=ch, note=note, velocity=max(1, vel))
+            )
+
+    def _anima_reset_session(self, reason: str = "idle") -> None:
+        """Clear Anima EFX/slot/strum state. Does not touch format lock."""
+        self._anima_release_efx_lock(reason)
+        self._anima_efx_pick = {}
+        self._anima_efx_seed = None
+        self._anima_efx_sound_t = {}
+        self._anima_ch_port = {}
+        self._anima_strum_q = []
+        self._anima_strum_buf = [None] * 16
+        self._anima_session_idle_done = True
+        self._set_status(f"Anima reset ({reason})", duration=2.5)
+
+    def _check_anima_session_idle(self) -> None:
+        if not self.anima:
+            return
+        if time.monotonic() - self.last_midi_time < ANIMA_SESSION_IDLE_SEC:
+            self._anima_session_idle_done = False
+            return
+        if getattr(self, "_anima_session_idle_done", False):
+            return
+        if not (self._anima_efx_key or any(self._anima_slots) or self._anima_file_efx_t):
+            self._anima_session_idle_done = True
+            return
+        self._anima_reset_session("30s idle")
+
+    def _send_format_resets(self, reason: str = "hotkey X") -> None:
+        """GM / GS / XG / MT-32 reset on each out from its tags. Format lock stays."""
+        gm = mido.Message("sysex", data=[0x7E, 0x7F, 0x09, 0x01])
+        gs = self._gs_dt1([0x40, 0x00, 0x7F], [0x00])
+        xg = mido.Message("sysex", data=[0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00])
+        # MT-32 all-parameters reset (7F 00 00 01 00)
+        mt_body = [0x7F, 0x00, 0x00, 0x01, 0x00]
+        mt_ck = _roland_checksum(mt_body)
+        mt = mido.Message("sysex", data=[0x41, 0x10, 0x16, 0x12, *mt_body, mt_ck])
+        sent = []
+        for i, tags in enumerate(self.out_formats):
+            names = {str(x).lower() for x in tags}
+            msgs = []
+            if names & {"gs", "sc", "sc-8850", "sc8850"}:
+                msgs = [gm, gs]
+                kind = "GS"
+            elif names & {"xg"}:
+                msgs = [gm, xg]
+                kind = "XG"
+            elif names & {"mt32", "mt-32", "mt", "cm"}:
+                msgs = [mt]
+                kind = "MT-32"
+            else:
+                msgs = [gm]
+                kind = "GM"
+            for m in msgs:
+                self._safe_out_send(i, m)
+            sent.append(f"{kind}:P{i + 1}")
+        self.panic(reason=reason)
+        self._anima_reset_session(reason)
+        self._set_status(f"Reset {', '.join(sent)} ({reason})", duration=3.0)
+
     def _anima_release_efx_lock(self, reason: str = "") -> None:
         """Drop file-owned EFX ban so Anima can pick again (test / format clear)."""
         had = bool(self._anima_file_efx_t) or bool(self._anima_efx_key)
@@ -4123,12 +4229,14 @@ class Duality:
                 and old.get("typ") == (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
             )
             if not already:
+                held = self._anima_hold_retrigger(port, chs)
                 saved_gs = self._anima_gs_ports
                 self._anima_gs_ports = lambda: [port]  # type: ignore
                 try:
                     self._anima_apply_od_split(chs)
                 finally:
                     self._anima_gs_ports = saved_gs
+                self._anima_hold_resume(port, held)
             self._anima_slots[port] = {
                 "fam": fam, "chs": chs, "split": True,
                 "typ": (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB), "t": time.monotonic(),
@@ -4151,8 +4259,10 @@ class Duality:
         msb, lsb, label = pick
         typ = (msb, lsb)
         if old.get("typ") != typ:
+            held = self._anima_hold_retrigger(port, chs)
             self._anima_efx_ours = True
             self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb]))
+            self._anima_hold_resume(port, held)
             self._anima_efx_sent = typ
             self._anima_efx_label = label
             self._anima_efx_hero = chs[0] if chs else None
@@ -4556,9 +4666,41 @@ class Duality:
         for when, port, msg in self._anima_strum_q:
             if when <= now:
                 self._send_routed(port, msg)
+                if msg.type == "note_on" and msg.velocity > 0:
+                    info = self.active.get((msg.channel & 0x0F, msg.note))
+                    if info:
+                        info["strum_pending"] = False
             else:
                 keep.append((when, port, msg))
         self._anima_strum_q = keep
+
+    def _anima_strum_cancel(self, ch: int, note: int) -> bool:
+        """Drop queued/buffered note-ons for this key. True if an on never left."""
+        dropped = False
+        buf = self._anima_strum_buf[ch]
+        if buf and buf.get("items"):
+            keep = []
+            for note_msg, ports in buf["items"]:
+                if note_msg.note == note:
+                    dropped = True
+                else:
+                    keep.append((note_msg, ports))
+            buf["items"] = keep
+            if not keep:
+                self._anima_strum_buf[ch] = None
+        keep_q = []
+        for when, port, msg in self._anima_strum_q:
+            if (
+                msg.type == "note_on"
+                and (msg.channel & 0x0F) == ch
+                and msg.note == note
+                and msg.velocity > 0
+            ):
+                dropped = True
+                continue
+            keep_q.append((when, port, msg))
+        self._anima_strum_q = keep_q
+        return dropped
 
     def _anima_tick(self) -> None:
         """Hold-detect + joystick-style ramps for CC1 / CC11."""
@@ -4967,6 +5109,9 @@ class Duality:
                     "ports": sent_ports,
                     "time": now,
                     "velocity": note_msg.velocity,
+                    "strum_pending": bool(
+                        self.anima and self._anima_should_strum(note_msg.channel & 0x0F)
+                    ),
                 }
 
                 total_now = sum(self.voice_counts)
@@ -4978,12 +5123,21 @@ class Duality:
                 if info is not None:
                     ports = info.get("ports") or [info["port"]]
                     ch_off = msg.channel & 0x0F
-                    hold = self._anima_strum_off_hold[ch_off] if self.anima else 0.0
+                    # If the matching on is still in the strum queue, drop it
+                    # and do not send an off (the synth never saw the on).
+                    cancelled = False
+                    if self.anima:
+                        cancelled = self._anima_strum_cancel(ch_off, msg.note)
+                    hold = 0.0 if cancelled else (
+                        self._anima_strum_off_hold[ch_off] if self.anima else 0.0
+                    )
+                    if not cancelled:
+                        for port in ports:
+                            if hold > 0:
+                                self._anima_strum_q.append((now + hold, port, msg))
+                            else:
+                                self._send_routed(port, msg)
                     for port in ports:
-                        if hold > 0:
-                            self._anima_strum_q.append((now + hold, port, msg))
-                        else:
-                            self._send_routed(port, msg)
                         self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
                     if self.anima:
                         self._anima_mod_on.discard(key)
@@ -4995,8 +5149,16 @@ class Duality:
                         if not still:
                             self._anima_idle_t[ch] = time.monotonic()
                 else:
-                    for i in range(self.n_ports):
-                        self._send_routed(i, msg)
+                    # Unknown off — do not broadcast to every port (that
+                    # was leaving phantom offs on the unit that never
+                    # played the note). Cancel a queued on if present.
+                    ch_off = msg.channel & 0x0F
+                    if self.anima and self._anima_strum_cancel(ch_off, msg.note):
+                        pass
+                    else:
+                        pin = self._anima_ch_port.get(ch_off) if self.anima else None
+                        if pin is not None:
+                            self._send_routed(pin, msg)
 
                 # Only resync if the drift is significant
                 if abs(sum(self.voice_counts) - len(self.active)) > 1:
@@ -5587,6 +5749,8 @@ class Duality:
             # Toggle note assignment strategy (balance ↔ round-robin)
             self.mode = "rr" if self.mode == "balance" else "balance"
             self._set_status(f"Mode → {self.mode}", duration=2.5)
+        elif c == "x":
+            self._send_format_resets("hotkey X")
         elif c == "c":
             self._clear_log()
         elif c == "l":
@@ -5681,6 +5845,7 @@ class Duality:
 
                         # Format idle clear (60s with no MIDI)
                         self._check_format_idle()
+                        self._check_anima_session_idle()
 
                         # Hotkeys (format, mode, quit, …)
                         self._poll_hotkeys()
