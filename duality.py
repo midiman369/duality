@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.17.31"
+VERSION = "0.18.20"
 
 
 """
@@ -106,7 +106,7 @@ from rich.text import Text
 from rich.markup import escape
 
 try:
-    from voodoo_banks import (
+    from tables_voodoo import (
         mtgm_sysex,
         mtr_stnd_sysex,
         mtr_orch_sysex,
@@ -248,442 +248,53 @@ FORMAT_COMPAT = {
     "mt32": {"mt32"},
 }
 
-# ----------------------------------------------------------------------
-# GS recognition tables (Based on SC-8850 / GS Standard)
-# ----------------------------------------------------------------------
+from tables_gs import (
+    GS_REVERB_MACRO,
+    GS_CHORUS_MACRO,
+    GS_DELAY_MACRO,
+    GS_EFX_TYPES,
+    ANIMA_EFX_GS,
+    ANIMA_EFX_PRIORITY,
+    ANIMA_SPLIT_MSB,
+    ANIMA_SPLIT_LSB,
+    ANIMA_SPLIT_LABEL,
+    ANIMA_SPLIT_PAN_LO,
+    ANIMA_SPLIT_PAN_HI,
+    ANIMA_EFX_DRIVE_03,
+    ANIMA_EFX_WAH,
+    ANIMA_EFX_ROTARY,
+    ANIMA_HETFIELD_PC,
+    ANIMA_FILE_DIRT_TYPES,
+    ANIMA_FILE_DIRT_FAMS,
+    ANIMA_EFX_PAN_SLOT,
+)
+from tables_xg import (
+    XG_REVERB_TYPES,
+    XG_CHORUS_TYPES,
+    XG_VARIATION_TYPES,
+    XG_INSERTION_TYPES,
+    ALCHEMY_GS_REVERB_TO_XG,
+    ALCHEMY_XG_REVERB_TO_GS,
+    ALCHEMY_GS_CHORUS_TO_XG,
+    ALCHEMY_XG_CHORUS_TO_GS,
+    ALCHEMY_XG_VARIATION_DELAY_TO_GS,
+    ALCHEMY_XG_VARIATION_REVERB_TO_GS,
+    ALCHEMY_XG_INS_TO_GS_EFX,
+    ALCHEMY_GS_EFX_TO_XG_INS,
+    ALCHEMY_XG_VARIATION_TO_GS_EFX,
+)
+from tables_anima import (
+    MT32_REVERB_MODES,
+    _MT32_DEFAULT_CAT,
+    _gm_category,
+    _mt32_category,
+    ANIMA_BANK_SIGNATURES,
+    ANIMA_BANK_NAME_HINTS,
+    ANIMA_SIERRA_PC,
+    ANIMA_EXPR_CATS,
+    ANIMA_MOD_CATS,
+)
 
-GS_REVERB_MACRO = {
-    0: "Room 1",
-    1: "Room 2",
-    2: "Room 3",
-    3: "Hall 1",
-    4: "Hall 2",
-    5: "Plate",
-    6: "Delay",
-    7: "Panning Delay",
-}
-
-GS_CHORUS_MACRO = {
-    0: "Chorus 1",
-    1: "Chorus 2",
-    2: "Chorus 3",
-    3: "Chorus 4",
-    4: "Feedback Chorus",
-    5: "Flanger",
-    6: "Short Delay",
-    7: "Short Delay (FB)",
-}
-
-GS_DELAY_MACRO = {
-    0: "Delay 1",
-    1: "Delay 2",
-    2: "Delay 3",
-    3: "Delay 4",
-    4: "Pan Delay 1",
-    5: "Pan Delay 2",
-    6: "Pan Delay 3",
-    7: "Pan Delay 4",
-    8: "Delay → Reverb",
-    9: "Pan Repeat",
-}
-
-# Key = (MSB, LSB) from address 40 03 00
-GS_EFX_TYPES = {
-    (0x00, 0x00): "Thru",
-
-    # Filter
-    (0x01, 0x00): "Stereo-EQ",
-    (0x01, 0x01): "Spectrum",
-    (0x01, 0x02): "Enhancer",
-    (0x01, 0x03): "Humanizer",
-
-    # Distortion
-    (0x01, 0x10): "Overdrive",
-    (0x01, 0x11): "Distortion",
-
-    # Modulation
-    (0x01, 0x20): "Phaser",
-    (0x01, 0x21): "Auto Wah",
-    (0x01, 0x22): "Rotary",
-    (0x01, 0x23): "Stereo Flanger",
-    (0x01, 0x24): "Step Flanger",
-    (0x01, 0x25): "Tremolo",
-    (0x01, 0x26): "Auto Pan",
-
-    # Compressor
-    (0x01, 0x30): "Compressor",
-    (0x01, 0x31): "Limiter",
-
-    # Chorus
-    (0x01, 0x40): "Hexa Chorus",
-    (0x01, 0x41): "Tremolo Chorus",
-    (0x01, 0x42): "Stereo Chorus",
-    (0x01, 0x43): "Space-D",
-    (0x01, 0x44): "3D Chorus",
-
-    # Delay / Reverb
-    (0x01, 0x50): "Stereo Delay",
-    (0x01, 0x51): "Mod Delay",
-    (0x01, 0x52): "3 Tap Delay",
-    (0x01, 0x53): "4 Tap Delay",
-    (0x01, 0x54): "Time Ctrl Delay",
-    (0x01, 0x55): "Reverb",
-    (0x01, 0x56): "Gate Reverb",
-    (0x01, 0x57): "3D Delay",
-
-    # Pitch
-    (0x01, 0x60): "Pitch Shifter",
-    (0x01, 0x61): "2 Voice Pitch Shifter",
-
-    # Others / Lo-Fi
-    (0x01, 0x70): "Feedback Pitch Shifter",
-    (0x01, 0x71): "3D Auto",
-    (0x01, 0x72): "3D Manual",
-    (0x01, 0x73): "Lo-Fi 1",
-    (0x01, 0x74): "Lo-Fi 2",
-
-    # Series multi-effects
-    (0x02, 0x00): "OD → Chorus",
-    (0x02, 0x01): "OD → Flanger",
-    (0x02, 0x02): "OD → Delay",
-    (0x02, 0x03): "OD → Phaser",
-    (0x02, 0x04): "Dist → Chorus",
-    (0x02, 0x05): "Dist → Flanger",
-    (0x02, 0x06): "Dist → Delay",
-    (0x02, 0x07): "Dist → Phaser",
-    (0x02, 0x08): "Enh → Chorus",
-    (0x02, 0x09): "Enh → Flanger",
-    (0x02, 0x0A): "Enh → Delay",
-    (0x02, 0x0B): "Enh → Phaser",
-
-    # Higher multi / parallel
-    # SC-8850 Insertion list #47–55 (manual: 47 Rotary = 03 00, 48 GTR Multi 1 = 04 00)
-    (0x03, 0x00): "Rotary Multi",      # #47
-    (0x04, 0x00): "GTR Multi 1",       # #48
-    (0x04, 0x01): "GTR Multi 2",       # #49
-    (0x04, 0x02): "GTR Multi 3",       # #50
-    (0x04, 0x03): "Clean Gt Multi 1",  # #51
-    (0x04, 0x04): "Clean Gt Multi 2",  # #52
-    (0x04, 0x05): "Bass Multi",        # #53
-    (0x04, 0x06): "EP Multi",      # #54
-    (0x05, 0x00): "Keyboard Multi",    # #55
-    (0x11, 0x00): "Cho/Delay",
-    (0x11, 0x01): "FL/Delay",
-    (0x11, 0x02): "Cho/Flanger",
-    (0x11, 0x03): "OD1/OD2",
-    (0x11, 0x04): "OD/Rotary",
-    (0x11, 0x05): "OD/Phaser",
-    (0x11, 0x06): "OD/Auto Wah",
-    (0x11, 0x07): "PH/Rotary",
-    (0x11, 0x08): "PH/Auto Wah",
-}
-
-# ----------------------------------------------------------------------
-# MT-32 recognition tables (Based on Roland MT-32 and compatibles)
-# ----------------------------------------------------------------------
-MT32_REVERB_MODES = {
-    0: "Room",
-    1: "Hall",
-    2: "Plate",
-    3: "Tap Delay",
-}
-
-# ----------------------------------------------------------------------
-# XG recognition tables (Based on Yamaha MU128 / XG standard)
-# Key = (MSB, LSB)
-# ----------------------------------------------------------------------
-
-XG_REVERB_TYPES = {
-    (0x00, 0x00): "No Effect",
-    (0x01, 0x00): "Hall 1",
-    (0x01, 0x01): "Hall 2",
-    (0x02, 0x00): "Room 1",
-    (0x02, 0x01): "Room 2",
-    (0x02, 0x02): "Room 3",
-    (0x03, 0x00): "Stage 1",
-    (0x03, 0x01): "Stage 2",
-    (0x04, 0x00): "Plate",
-    (0x10, 0x00): "White Room",
-    (0x11, 0x00): "Tunnel",
-    (0x12, 0x00): "Canyon",
-    (0x13, 0x00): "Basement",
-}
-
-XG_CHORUS_TYPES = {
-    (0x00, 0x00): "No Effect",
-    (0x41, 0x00): "Chorus 1",
-    (0x41, 0x01): "Chorus 2",
-    (0x41, 0x02): "Chorus 3",
-    (0x41, 0x08): "Chorus 4",
-    (0x42, 0x00): "Celeste 1",
-    (0x42, 0x01): "Celeste 2",
-    (0x42, 0x02): "Celeste 3",
-    (0x42, 0x08): "Celeste 4",
-    (0x43, 0x00): "Flanger 1",
-    (0x43, 0x01): "Flanger 2",
-    (0x43, 0x08): "Flanger 3",
-    (0x44, 0x00): "Symphonic",
-    (0x57, 0x00): "Ensemble Detune",
-    (0x48, 0x00): "Phaser 1",
-}
-
-# Variation is the big flexible effect block (system or insertion mode)
-XG_VARIATION_TYPES = {
-    (0x00, 0x00): "No Effect",
-    (0x01, 0x00): "Hall 1",
-    (0x01, 0x01): "Hall 2",
-    (0x02, 0x00): "Room 1",
-    (0x02, 0x01): "Room 2",
-    (0x02, 0x02): "Room 3",
-    (0x03, 0x00): "Stage 1",
-    (0x03, 0x01): "Stage 2",
-    (0x04, 0x00): "Plate",
-    (0x05, 0x00): "Delay L,C,R",
-    (0x06, 0x00): "Delay L,R",
-    (0x07, 0x00): "Echo",
-    (0x08, 0x00): "Cross Delay",
-    (0x09, 0x00): "ER 1",
-    (0x09, 0x01): "ER 2",
-    (0x0A, 0x00): "Gate Reverb",
-    (0x0B, 0x00): "Reverse Gate",
-    (0x10, 0x00): "White Room",
-    (0x11, 0x00): "Tunnel",
-    (0x12, 0x00): "Canyon",
-    (0x13, 0x00): "Basement",
-    (0x14, 0x00): "Karaoke 1",
-    (0x14, 0x01): "Karaoke 2",
-    (0x14, 0x02): "Karaoke 3",
-    (0x41, 0x00): "Chorus 1",
-    (0x41, 0x01): "Chorus 2",
-    (0x41, 0x02): "Chorus 3",
-    (0x41, 0x08): "Chorus 4",
-    (0x42, 0x00): "Celeste 1",
-    (0x42, 0x01): "Celeste 2",
-    (0x42, 0x02): "Celeste 3",
-    (0x42, 0x08): "Celeste 4",
-    (0x43, 0x00): "Flanger 1",
-    (0x43, 0x01): "Flanger 2",
-    (0x43, 0x08): "Flanger 3",
-    (0x44, 0x00): "Symphonic",
-    (0x45, 0x00): "Rotary Speaker",
-    (0x46, 0x00): "Tremolo",
-    (0x47, 0x00): "Auto Pan",
-    (0x48, 0x00): "Phaser 1",
-    (0x48, 0x08): "Phaser 2",
-    (0x49, 0x00): "Distortion",
-    (0x49, 0x01): "Comp+Distortion",
-    (0x4A, 0x00): "Overdrive",
-    (0x4B, 0x00): "Amp Simulator",
-    (0x4C, 0x00): "3-Band EQ",
-    (0x4D, 0x00): "2-Band EQ",
-    (0x4E, 0x00): "Auto Wah",
-    (0x4E, 0x01): "Auto Wah+Dist",
-    (0x4E, 0x02): "Auto Wah+Overdrive",
-    (0x50, 0x00): "Pitch Change 1",
-    (0x50, 0x01): "Pitch Change 2",
-    (0x51, 0x00): "Harmonic Enhancer",
-    (0x52, 0x00): "Touch Wah 1",
-    (0x52, 0x01): "Touch Wah+Dist",
-    (0x52, 0x02): "Touch Wah+Overdrive",
-    (0x52, 0x08): "Touch Wah 2",
-    (0x53, 0x00): "Compressor",
-    (0x54, 0x00): "Noise Gate",
-    (0x55, 0x00): "Voice Cancel",
-    (0x56, 0x00): "2-Way Rotary Speaker",
-    (0x57, 0x00): "Ensemble Detune",
-    (0x58, 0x00): "Ambience",
-    (0x5D, 0x00): "Talking Modulator",
-    (0x5E, 0x00): "Lo-Fi",
-    (0x5F, 0x00): "Dist+Delay",
-    (0x5F, 0x01): "Overdrive+Delay",
-    (0x60, 0x00): "Comp+Dist+Delay",
-    (0x60, 0x01): "Comp+Overdrive+Delay",
-    (0x61, 0x00): "Wah+Dist+Delay",
-    (0x61, 0x01): "Wah+Overdrive+Delay",
-    (0x40, 0x00): "Thru",
-}
-
-# Insertion 1 / 2 use a subset of the same type codes
-XG_INSERTION_TYPES = {
-    (0x40, 0x00): "Thru",
-    (0x01, 0x00): "Hall 1",
-    (0x01, 0x01): "Hall 2",
-    (0x02, 0x00): "Room 1",
-    (0x02, 0x01): "Room 2",
-    (0x02, 0x02): "Room 3",
-    (0x03, 0x00): "Stage 1",
-    (0x03, 0x01): "Stage 2",
-    (0x04, 0x00): "Plate",
-    (0x05, 0x00): "Delay L,C,R",
-    (0x06, 0x00): "Delay L,R",
-    (0x07, 0x00): "Echo",
-    (0x08, 0x00): "Cross Delay",
-    (0x14, 0x00): "Karaoke 1",
-    (0x14, 0x01): "Karaoke 2",
-    (0x14, 0x02): "Karaoke 3",
-    (0x41, 0x00): "Chorus 1",
-    (0x41, 0x01): "Chorus 2",
-    (0x41, 0x02): "Chorus 3",
-    (0x41, 0x08): "Chorus 4",
-    (0x42, 0x00): "Celeste 1",
-    (0x42, 0x01): "Celeste 2",
-    (0x42, 0x02): "Celeste 3",
-    (0x42, 0x08): "Celeste 4",
-    (0x43, 0x00): "Flanger 1",
-    (0x43, 0x01): "Flanger 2",
-    (0x43, 0x08): "Flanger 3",
-    (0x44, 0x00): "Symphonic",
-    (0x45, 0x00): "Rotary Speaker",
-    (0x46, 0x00): "Tremolo",
-    (0x47, 0x00): "Auto Pan",
-    (0x48, 0x00): "Phaser 1",
-    (0x49, 0x00): "Distortion",
-    (0x4A, 0x00): "Overdrive",
-    (0x4B, 0x00): "Amp Simulator",
-    (0x4C, 0x00): "3-Band EQ",
-    (0x4D, 0x00): "2-Band EQ",
-    (0x4E, 0x00): "Auto Wah",
-    (0x51, 0x00): "Harmonic Enhancer",
-    (0x52, 0x00): "Touch Wah 1",
-    (0x52, 0x08): "Touch Wah 2",
-    (0x53, 0x00): "Compressor",
-    (0x54, 0x00): "Noise Gate",
-    (0x57, 0x00): "Ensemble Detune",
-}
-
-# ----------------------------------------------------------------------
-# Alchemy Phase 1b – best-effort GS ↔ XG maps (resets already in methods)
-# ----------------------------------------------------------------------
-# GS reverb macro (0–7) → XG reverb type (MSB, LSB)
-ALCHEMY_GS_REVERB_TO_XG = {
-    0: (0x02, 0x00),  # Room 1
-    1: (0x02, 0x01),  # Room 2
-    2: (0x02, 0x02),  # Room 3
-    3: (0x01, 0x00),  # Hall 1
-    4: (0x01, 0x01),  # Hall 2
-    5: (0x04, 0x00),  # Plate
-    6: (0x02, 0x00),  # Delay → Room 1 stand-in
-    7: (0x02, 0x01),  # Panning Delay → Room 2 stand-in
-}
-# XG reverb (MSB, LSB) → GS reverb macro
-ALCHEMY_XG_REVERB_TO_GS = {
-    (0x00, 0x00): 0,  # No Effect → Room 1
-    (0x01, 0x00): 3,  # Hall 1
-    (0x01, 0x01): 4,  # Hall 2
-    (0x02, 0x00): 0,  # Room 1
-    (0x02, 0x01): 1,  # Room 2
-    (0x02, 0x02): 2,  # Room 3
-    (0x03, 0x00): 3,  # Stage 1 → Hall 1
-    (0x03, 0x01): 4,  # Stage 2 → Hall 2
-    (0x04, 0x00): 5,  # Plate
-}
-# GS chorus macro → XG chorus type
-ALCHEMY_GS_CHORUS_TO_XG = {
-    0: (0x41, 0x00),  # Chorus 1
-    1: (0x41, 0x01),  # Chorus 2
-    2: (0x41, 0x02),  # Chorus 3
-    3: (0x41, 0x08),  # Chorus 4
-    4: (0x41, 0x01),  # Feedback → Chorus 2
-    5: (0x43, 0x00),  # Flanger 1
-    6: (0x41, 0x00),  # Short Delay → Chorus 1
-    7: (0x41, 0x01),  # Short Delay FB → Chorus 2
-}
-ALCHEMY_XG_CHORUS_TO_GS = {
-    (0x00, 0x00): 0,
-    (0x41, 0x00): 0,
-    (0x41, 0x01): 1,
-    (0x41, 0x02): 2,
-    (0x41, 0x08): 3,
-    (0x42, 0x00): 1,  # Celeste → Chorus 2
-    (0x42, 0x01): 2,
-    (0x43, 0x00): 5,  # Flanger
-    (0x43, 0x01): 5,
-    (0x43, 0x08): 5,
-    (0x44, 0x00): 3,  # Symphonic → Chorus 4
-}
-
-# XG Variation types that are delay-like → GS Delay macro (prefer short: 0 = Delay 1)
-# Values are GS delay macro index (see GS_DELAY_MACRO)
-# True delay-family XG Variation → GS Delay macro (short: 0 = Delay 1)
-ALCHEMY_XG_VARIATION_DELAY_TO_GS = {
-    (0x05, 0x00): 0,  # Delay L,C,R
-    (0x06, 0x00): 0,  # Delay L,R
-    (0x07, 0x00): 1,  # Echo → Delay 2
-    (0x08, 0x00): 0,  # Cross Delay
-}
-# Early reflection / short special reverb → GS Reverb Room (not long Delay)
-# GS reverb macro: 0=Room1, 1=Room2, 2=Room3
-ALCHEMY_XG_VARIATION_REVERB_TO_GS = {
-    (0x09, 0x00): 0,  # ER 1 → Room 1
-    (0x09, 0x01): 1,  # ER 2 → Room 2
-    (0x0A, 0x00): 0,  # Gate Reverb → Room 1
-    (0x0B, 0x00): 0,  # Reverse Gate → Room 1
-    (0x10, 0x00): 0,  # White Room → Room 1 (short reverb + slight pre-delay)
-    (0x11, 0x00): 1,  # Tunnel → Room 2
-    (0x12, 0x00): 2,  # Canyon → Room 3
-    (0x13, 0x00): 1,  # Basement → Room 2
-}
-# XG Insertion / amp-sim family → GS EFX type (MSB, LSB) at 40 03 00
-ALCHEMY_XG_INS_TO_GS_EFX = {
-    (0x49, 0x00): (0x01, 0x11),  # Distortion
-    (0x4A, 0x00): (0x01, 0x10),  # Overdrive
-    (0x4B, 0x00): (0x01, 0x10),  # Amp Simulator → Overdrive stand-in
-    (0x4E, 0x00): (0x01, 0x21),  # Auto Wah
-    (0x48, 0x00): (0x01, 0x20),  # Phaser 1
-}
-# Reverse: GS EFX type → XG Insertion 1 type
-ALCHEMY_GS_EFX_TO_XG_INS = {
-    # Core
-    (0x01, 0x10): (0x4A, 0x00),  # Overdrive
-    (0x01, 0x11): (0x49, 0x00),  # Distortion
-    (0x01, 0x20): (0x48, 0x00),  # Phaser
-    (0x01, 0x21): (0x4E, 0x00),  # Auto Wah
-    (0x01, 0x00): (0x4C, 0x00),  # Stereo-EQ → 3-Band EQ
-    (0x01, 0x01): (0x4C, 0x00),  # Spectrum
-    (0x01, 0x02): (0x51, 0x00),  # Enhancer
-    (0x01, 0x22): (0x45, 0x00),  # Rotary
-    (0x01, 0x23): (0x43, 0x00),  # Stereo Flanger
-    (0x01, 0x24): (0x43, 0x08),  # Step Flanger
-    (0x01, 0x25): (0x46, 0x00),  # Tremolo
-    (0x01, 0x26): (0x47, 0x00),  # Auto Pan
-    (0x01, 0x30): (0x53, 0x00),  # Compressor
-    (0x01, 0x40): (0x41, 0x00),  # Hexa Chorus
-    (0x01, 0x42): (0x41, 0x00),  # Stereo Chorus
-    (0x01, 0x50): (0x05, 0x00),  # Stereo Delay
-    (0x01, 0x51): (0x06, 0x00),  # Mod Delay
-    (0x01, 0x55): (0x02, 0x00),  # Reverb
-    (0x01, 0x56): (0x0A, 0x00),  # Gate Reverb
-    (0x01, 0x57): (0x08, 0x00),  # 3D Delay → Cross Delay stand-in
-    # Series multi → nearest single
-    (0x02, 0x00): (0x4A, 0x00),  # OD→Cho → Overdrive
-    (0x02, 0x02): (0x4A, 0x00),  # OD→Delay
-    (0x02, 0x04): (0x49, 0x00),  # Dist→Cho
-    (0x02, 0x06): (0x49, 0x00),  # Dist→Delay
-    (0x02, 0x0A): (0x05, 0x00),  # Enh→Delay → Delay
-    (0x04, 0x01): (0x4B, 0x00),  # Guitar Multi → Amp Sim
-    (0x04, 0x02): (0x4B, 0x00),
-    (0x04, 0x03): (0x4B, 0x00),
-    (0x04, 0x04): (0x4A, 0x00),  # Clean Gt Multi → Overdrive (milder)
-    (0x04, 0x05): (0x4B, 0x00),  # Bass Multi
-    (0x05, 0x00): (0x41, 0x00),  # Keyboard Multi → Chorus
-    (0x11, 0x00): (0x41, 0x00),  # Cho/Delay
-    (0x11, 0x01): (0x43, 0x00),  # FL/Delay
-    (0x11, 0x02): (0x43, 0x00),  # Cho/Flanger
-    (0x11, 0x03): (0x4A, 0x00),  # OD1/OD2
-    (0x11, 0x08): (0x4E, 0x00),  # PH/Auto Wah
-}
-# Space-like Variation → GS EFX (dual path: system reverb stays independent)
-# Only used when EFX slot is not owned by Insertion
-ALCHEMY_XG_VARIATION_TO_GS_EFX = {
-    (0x09, 0x00): (0x01, 0x55),  # ER 1 → EFX Reverb
-    (0x09, 0x01): (0x01, 0x55),  # ER 2
-    (0x0A, 0x00): (0x01, 0x56),  # Gate Reverb
-    (0x0B, 0x00): (0x01, 0x56),  # Reverse Gate
-    (0x10, 0x00): (0x01, 0x55),  # White Room
-    (0x11, 0x00): (0x01, 0x55),  # Tunnel
-    (0x12, 0x00): (0x01, 0x55),  # Canyon
-    (0x13, 0x00): (0x01, 0x55),  # Basement
-}
 
 def _roland_checksum(body: list[int]) -> int:
     return (128 - (sum(body) % 128)) % 128
@@ -817,212 +428,20 @@ ANIMA_BURST_RELEASE = (0.0, 0.0)     # off-hold raced new ons; keep mutes tight
 ANIMA_STRUM_CATS = frozenset({"guitar"})
 
 # Phase 2.5 – one GS insertion EFX for the unit. Sticky per phrase.
-# Values are (type_msb, type_lsb, label) from GS_EFX_TYPES.
-ANIMA_EFX_GS = {
-    "organ": [
-        (0x03, 0x00, "Rotary Multi"),
-    ],
-    "guitar_dist": [
-        (0x04, 0x00, "GTR Multi 1"),
-        (0x04, 0x01, "GTR Multi 2"),
-        (0x04, 0x02, "GTR Multi 3"),
-    ],
-    "guitar_mute": [
-        (0x11, 0x08, "PH/Auto Wah"),
-        (0x02, 0x0A, "Enh→Delay"),
-        (0x04, 0x04, "C.Gt Multi 2"),
-    ],
-    "guitar_clean": [
-        (0x04, 0x03, "C.Gt Multi 1"),
-        (0x11, 0x02, "Cho/Flanger"),
-        (0x02, 0x0A, "Enh→Delay"),
-        (0x04, 0x04, "C.Gt Multi 2"),  # ~25% of seed rolls
-    ],
-    "guitar_acoustic": [
-        (0x01, 0x02, "Enhancer"),
-        (0x02, 0x08, "Enh→Chorus"),
-        (0x02, 0x0A, "Enh→Delay"),
-        (0x04, 0x03, "C.Gt Multi 1"),
-    ],
-    "plucked": [
-        (0x01, 0x02, "Enhancer"),
-        (0x02, 0x08, "Enh→Chorus"),
-        (0x02, 0x0A, "Enh→Delay"),
-    ],
-    "ep_rhodes": [
-        (0x05, 0x00, "Keyboard Multi"),
-        (0x04, 0x06, "EP Multi"),
-        (0x01, 0x41, "Tremolo Chorus"),
-        (0x01, 0x20, "Phaser"),
-    ],
-    "ep_dx": [
-        (0x04, 0x06, "EP Multi"),
-        (0x01, 0x41, "Tremolo Chorus"),
-        (0x01, 0x20, "Phaser"),
-    ],
-    "keys_pluck": [
-        (0x05, 0x00, "Keyboard Multi"),
-        (0x01, 0x20, "Phaser"),
-        (0x04, 0x06, "EP Multi"),
-    ],
-    "bass_electric": [
-        (0x04, 0x05, "Bass Multi"),
-    ],
-    "bass_wide": [
-        (0x01, 0x42, "Stereo Chorus"),
-        (0x01, 0x43, "Space-D"),
-    ],
-    "strings": [
-        (0x01, 0x42, "Stereo Chorus"),
-        (0x01, 0x43, "Space-D"),
-        (0x01, 0x50, "Stereo Delay"),
-    ],
-    "pad": [
-        (0x01, 0x43, "Space-D"),
-        (0x01, 0x42, "Stereo Chorus"),
-        (0x01, 0x44, "3D Chorus"),
-    ],
-    "piano_acoustic": [
-        (0x01, 0x00, "Stereo-EQ"),
-        (0x01, 0x44, "3D Chorus"),
-        (0x01, 0x43, "Space-D"),
-    ],
-}
-ANIMA_EFX_PRIORITY = (
-    "guitar_dist", "guitar_mute", "guitar_clean", "guitar_acoustic",
-    "organ", "plucked", "ep_rhodes", "ep_dx", "keys_pluck",
-    "bass_electric", "strings", "pad", "bass_wide", "piano_acoustic",
-)
+
 ANIMA_FILE_EFX_HOLD = 1e9   # file-owned EFX lasts until GS Reset / format clear
 ANIMA_SESSION_IDLE_SEC = 30.0  # quiet MIDI → drop Anima EFX/slot state
+ANIMA_GAME_IDLE_SEC = 4.0      # --anima-game: shorter "new cue" silence
+ANIMA_GAME_PC_BURST = 3        # PCs in a window = song setup dump
+ANIMA_GAME_PC_WINDOW = 0.28
+ANIMA_GAME_PC_SETTLE = 0.12
+ANIMA_GAME_SNAP_DIFF = 3       # channels whose PC changed vs last cue
 ANIMA_EFX_IDLE_SEC = 15.0   # keep current EFX this long after hero goes quiet
 ANIMA_EFX_HOLD_SEC = 5.0    # family stays "sounding" this long after last note
 ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX *type* changes (priority upgrade exempt)
-# Dual-guitar parallel split (SC-8850 #59 OD1/OD2)
-ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB = 0x11, 0x03
-ANIMA_SPLIT_LABEL = "OD1/OD2"
-ANIMA_SPLIT_PAN_LO = 8    # CC10 ≤ this counts as already-left
-ANIMA_SPLIT_PAN_HI = 119  # CC10 ≥ this counts as already-right
 ANIMA_EFX_CTRL_CC = 16    # 8850 EFX C.Src1 → CC16 after one SysEx bind
 ANIMA_WAH_LFO_HZ = 0.55
 ANIMA_ROTARY_HOLD_SEC = 0.60
-ANIMA_EFX_DRIVE_03 = frozenset({
-    (0x01, 0x10), (0x01, 0x11),
-    (0x02, 0x00), (0x02, 0x01), (0x02, 0x02), (0x02, 0x03),
-    (0x02, 0x04), (0x02, 0x05), (0x02, 0x06), (0x02, 0x07),
-})
-ANIMA_EFX_WAH = frozenset({
-    (0x04, 0x02),  # GTR Multi 3
-    (0x04, 0x04),  # C.Gt Multi 2
-    (0x01, 0x21),  # Auto Wah
-    (0x11, 0x06),  # OD/Auto Wah
-    (0x11, 0x08),  # PH/Auto Wah
-})
-ANIMA_EFX_ROTARY = frozenset({
-    (0x03, 0x00),  # Rotary Multi
-    (0x01, 0x22),  # Rotary
-    (0x11, 0x04),  # OD/Rotary
-    (0x11, 0x07),  # PH/Rotary
-})
-ANIMA_HETFIELD_PC = frozenset(range(29, 31))  # OD / Distortion – down only
-
-
-def _gm_category(program: int) -> str:
-    """Map GM program 0–127 to a coarse articulation category."""
-    p = max(0, min(127, int(program)))
-    if p <= 7:
-        return "piano"
-    if p <= 15:
-        return "chromatic"
-    if p <= 23:
-        return "organ"
-    if p <= 31:
-        return "guitar"
-    if p <= 39:
-        return "bass"
-    if p <= 47:
-        return "strings"
-    if p <= 55:
-        return "ensemble"
-    if p <= 63:
-        return "brass"
-    if p <= 79:
-        return "wind"
-    if p <= 87:
-        return "lead"
-    if p <= 95:
-        return "pad"
-    if p <= 103:
-        return "fx"
-    if p <= 111:
-        return "ethnic"
-    if p <= 119:
-        return "percussive"
-    return "sfx"
-
-
-# Roland MT-32 factory timbre / default patch map (program 0–127).
-# Used when the stream is native MT-32 (not a Voodoo GM bank).
-_MT32_DEFAULT_CAT = [
-    # Preset A 0–63
-    "piano","piano","piano","piano","piano","piano","piano","piano",          # 0–7 pianos / honky
-    "organ","organ","organ","organ","organ","organ","organ","organ",          # 8–15 organs / accordion
-    "chromatic","chromatic","chromatic","chromatic","chromatic","chromatic","chromatic","chromatic",  # 16–23 harpsi/clavi/celesta
-    "brass","brass","brass","brass","bass","bass","bass","bass",              # 24–31 syn brass / syn bass
-    "pad","pad","ensemble","fx","pad","pad","chromatic","fx",                 # 32–39 Fantasy…Funny Vox
-    "fx","fx","wind","fx","lead","fx","chromatic","lead",                     # 40–47 Echo Bell…Square Wave
-    "strings","strings","strings","strings","strings","strings","strings","strings",  # 48–55 strings
-    "strings","strings","strings","guitar","guitar","guitar","guitar","ethnic",       # 56–63 bass-str / harp / gtr / sitar
-    # Preset B 64–127
-    "bass","bass","bass","bass","bass","bass","bass","bass",                  # 64–71 basses
-    "wind","wind","wind","wind","wind","wind","wind","wind",                  # 72–79 flute…sax2
-    "wind","wind","wind","wind","wind","wind","wind","wind",                  # 80–87 sax3…harmonica
-    "brass","brass","brass","brass","brass","brass","brass","ensemble",        # 88–95 Tpt…Tuba, Brs Sect 1
-    "ensemble","chromatic","chromatic","chromatic","ethnic","wind","wind","chromatic",  # 96–103 Brs2, Vibe1/2, Kalimba/Marimba, Koto, Sho, Shak, Tinkle
-    "percussive","percussive","percussive","percussive","percussive","percussive","ensemble","sfx",  # 104–111
-    "fx","fx","fx","sfx","sfx","sfx","sfx","sfx",                              # 112–119
-    "sfx","sfx","sfx","sfx","sfx","sfx","sfx","sfx",                          # 120–127
-]
-
-
-def _mt32_category(program: int) -> str:
-    p = max(0, min(127, int(program)))
-    return _MT32_DEFAULT_CAT[p]
-
-
-# Detect Sierra (and similar) custom MT-32 banks from the *stream*, not Voodoo load.
-# Match display text and distinctive timbre names that soundtrack MIDIs dump at start.
-ANIMA_BANK_SIGNATURES = (
-    # Title needles are unique. Do NOT use "Quest Studios" — every QS dump
-    # ends with that credit and would steal the bank.
-    (("leisure suit larry", "larry 3"),
-     "lsl3", "sfx", "Larry 3"),
-    (("space quest 4", "space quest iv"),
-     "sq4", "sfx", "Space Quest 4"),
-    (("king's quest 5", "king's quest v"),
-     "kq5", "sfx", "King's Quest 5"),
-)
-# Extra timbre names only used if no title has locked a bank yet
-ANIMA_BANK_NAME_HINTS = (
-    (("open box", "airlock2", "coolphone"), "lsl3", "sfx", "Larry 3"),
-    (("shipdoplr", "resosynth", "takeoff ms", "spaceguit"), "sq4", "sfx", "Space Quest 4"),
-    (("firedart", "lone wolf", "frogger", "whiporill"), "kq5", "sfx", "King's Quest 5"),
-)
-
-ANIMA_SIERRA_PC = {
-    "lsl3": {0: "P113", 1: "P114", 2: "P119", 3: "P113", 4: "P119", 5: "sfx", 6: "P124", 7: "P103", 8: "P51", 9: "P112", 10: "P84", 11: "P2", 12: "P108", 13: "P8", 14: "P63", 15: "P110", 16: "P107", 17: "P43", 18: "P32", 19: "sfx", 20: "P62", 21: "P78", 22: "P72", 23: "P44", 24: "P73", 25: "P75", 26: "P82", 27: "P62", 28: "P86", 29: "P105", 30: "P48", 31: "P50", 32: "P81", 33: "P62", 34: "P60", 35: "P95", 36: "P37", 37: "P68", 38: "P94", 39: "P64", 40: "P117", 41: "P7", 42: "P92", 43: "P70", 44: "P36", 45: "P90", 46: "P91", 47: "P34", 48: "P58", 49: "P109", 50: "P39", 51: "P7", 52: "P59", 53: "P95", 54: "P68", 55: "P3", 56: "P61", 57: "sfx", 58: "P89", 59: "P88", 60: "P59", 61: "P1", 62: "P97", 63: "P93", 64: "P50", 65: "P79", 66: "P47", 67: "P38", 68: "P122", 69: "P52", 70: "sfx", 71: "sfx", 72: "sfx", 73: "sfx", 74: "sfx", 75: "sfx", 76: "percussive", 77: "sfx", 78: "percussive", 79: "sfx", 80: "bass", 81: "sfx", 82: "sfx", 83: "sfx", 84: "sfx", 85: "sfx", 86: "sfx", 87: "sfx", 88: "sfx", 89: "sfx", 90: "sfx", 91: "sfx", 92: "sfx", 93: "P87", 94: "P104", 95: "P24", 96: "P96", 97: "P97", 98: "P98", 99: "P99", 100: "P100", 101: "P101", 102: "P102", 103: "P103", 104: "P104", 105: "P105", 106: "P106", 107: "P107", 108: "P108", 109: "P109", 110: "P110", 111: "P111", 112: "P112", 113: "P113", 114: "P114", 115: "P115", 116: "P116", 117: "P117", 118: "P118", 119: "P119", 120: "P120", 121: "P121", 122: "P122", 123: "P123", 124: "P124", 125: "P125", 126: "P126", 127: "P127"},
-    "sq4": {0: "sfx", 1: "percussive", 2: "sfx", 3: "piano", 4: "P49", 5: "P50", 6: "P51", 7: "P34", 8: "pad", 9: "P37", 10: "P41", 11: "P88", 12: "P25", 13: "P30", 14: "P31", 15: "P32", 16: "P7", 17: "P92", 18: "P72", 19: "P101", 20: "P102", 21: "P38", 22: "P112", 23: "P43", 24: "lead", 25: "P122", 26: "P8", 27: "P104", 28: "P69", 29: "ensemble", 30: "sfx", 31: "sfx", 32: "brass", 33: "P12", 34: "P78", 35: "sfx", 36: "P87", 37: "P62", 38: "P64", 39: "guitar", 40: "P57", 41: "sfx", 42: "sfx", 43: "P86", 44: "chromatic", 45: "pad", 46: "sfx", 47: "sfx", 48: "sfx", 49: "P0", 50: "sfx", 51: "sfx", 52: "sfx", 53: "sfx", 54: "sfx", 55: "sfx", 56: "sfx", 57: "sfx", 58: "sfx", 59: "sfx", 60: "sfx", 61: "sfx", 62: "sfx", 63: "sfx", 64: "sfx", 65: "sfx", 66: "sfx", 67: "sfx", 68: "sfx", 69: "sfx", 70: "sfx", 71: "sfx", 72: "sfx", 73: "sfx", 74: "sfx", 75: "guitar", 76: "sfx", 77: "sfx", 78: "sfx", 79: "sfx", 80: "sfx", 81: "ensemble", 82: "bass", 83: "sfx", 84: "sfx", 85: "sfx", 86: "sfx", 87: "pad", 88: "sfx", 89: "sfx", 90: "sfx", 91: "sfx", 92: "sfx", 93: "sfx", 94: "P0", 95: "P0", 96: "P96", 97: "P97", 98: "P98", 99: "P99", 100: "P100", 101: "P101", 102: "P102", 103: "P103", 104: "P104", 105: "P105", 106: "P106", 107: "P107", 108: "P108", 109: "P109", 110: "P110", 111: "P111", 112: "P112", 113: "P113", 114: "P114", 115: "P115", 116: "P116", 117: "P117", 118: "P118", 119: "P119", 120: "P120", 121: "P121", 122: "P122", 123: "P123", 124: "P124", 125: "P125", 126: "P126", 127: "P127"},
-    "kq5": {0: "P0", 1: "P0", 2: "P0", 3: "P0", 4: "P0", 5: "P59", 6: "strings", 7: "pad", 8: "brass", 9: "pad", 10: "wind", 11: "chromatic", 12: "brass", 13: "wind", 14: "strings", 15: "wind", 16: "strings", 17: "strings", 18: "P86", 19: "P85", 20: "P15", 21: "P112", 22: "P108", 23: "P89", 24: "P95", 25: "P56", 26: "P63", 27: "P57", 28: "wind", 29: "P49", 30: "P12", 31: "P0", 32: "P0", 33: "P0", 34: "P0", 35: "P0", 36: "P0", 37: "P0", 38: "P0", 39: "P0", 40: "P0", 41: "P0", 42: "P0", 43: "P0", 44: "P0", 45: "P0", 46: "P0", 47: "P0", 48: "sfx", 49: "sfx", 50: "sfx", 51: "sfx", 52: "sfx", 53: "sfx", 54: "sfx", 55: "sfx", 56: "sfx", 57: "sfx", 58: "sfx", 59: "sfx", 60: "sfx", 61: "P124", 62: "sfx", 63: "sfx", 64: "sfx", 65: "sfx", 66: "sfx", 67: "sfx", 68: "piano", 69: "sfx", 70: "sfx", 71: "sfx", 72: "sfx", 73: "sfx", 74: "sfx", 75: "sfx", 76: "sfx", 77: "sfx", 78: "sfx", 79: "sfx", 80: "sfx", 81: "sfx", 82: "sfx", 83: "sfx", 84: "sfx", 85: "sfx", 86: "sfx", 87: "sfx", 88: "sfx", 89: "sfx", 90: "sfx", 91: "sfx", 92: "sfx", 93: "chromatic", 94: "sfx", 95: "sfx", 96: "P96", 97: "P97", 98: "P98", 99: "P99", 100: "P100", 101: "P101", 102: "P102", 103: "P103", 104: "P104", 105: "P105", 106: "P106", 107: "P107", 108: "P108", 109: "P109", 110: "P110", 111: "P111", 112: "P112", 113: "P113", 114: "P114", 115: "P115", 116: "P116", 117: "P117", 118: "P118", 119: "P119", 120: "P120", 121: "P121", 122: "P122", 123: "P123", 124: "P124", 125: "P125", 126: "P126", 127: "P127"},
-}
-
-
-ANIMA_EXPR_CATS = frozenset(
-    {"strings", "ensemble", "brass", "wind", "pad", "lead", "organ", "fx"}
-)
-ANIMA_MOD_CATS = frozenset(
-    {"strings", "ensemble", "pad", "wind", "brass", "lead"}
-)
-
 
 class Duality:
     def __init__(
@@ -1050,13 +469,14 @@ class Duality:
         voodoo_layout: str = "stripe",
         anima: bool = False,
         anima_efx_stable: bool = False,
+        anima_game: bool = False,
         record_dir: str | None = None,
     ):
         # Alchemy / Voodoo / Anima may run with a single output.
         # Classic router still requires at least two ports.
-        min_ports = 1 if (alchemy or voodoo or anima) else 2
+        min_ports = 1 if (alchemy or voodoo or anima or anima_game) else 2
         if len(out_names) < min_ports:
-            extra = " with --alchemy/--voodoo/--anima." if (alchemy or voodoo or anima) else "."
+            extra = " with --alchemy/--voodoo/--anima." if (alchemy or voodoo or anima or anima_game) else "."
             raise ValueError(
                 f"At least {min_ports} output port(s) required{extra}"
             )
@@ -1106,8 +526,11 @@ class Duality:
         self.scpop_mode = bool(scpop)
         self.scpop_forced = bool(scpop)
         # Anima Phase 1 – CC phrasing + velocity humanize
-        self.anima = bool(anima)
+        self.anima_game = bool(anima_game)
+        self.anima = bool(anima) or self.anima_game
         self.anima_efx_stable = bool(anima_efx_stable)
+        self._anima_game_pc_t = []
+        self._anima_game_snap = None
         self.record_dir = record_dir
         self._rec_on = False
         self._rec_wanted = False
@@ -1128,6 +551,12 @@ class Duality:
         self._anima_stream_bank = None   # lsl3 / sq4 / kq5 from MIDI SysEx
         self._anima_stream_map = None    # gm | mt32 | sfx learned from stream
         self._anima_file_efx_t = 0.0
+        self._anima_file_efx_home = None   # GS port that keeps the file insert
+        self._anima_file_efx_type = None   # (msb, lsb) last file EFX type
+        self._anima_file_efx_parts = set() # parts the FILE turned On
+        self._anima_file_dirt = [False] * 16
+        self._anima_hetfield_roll = [False] * 16
+        self._anima_file_off_sent = set()
         self._anima_efx_ours = False
         self._anima_efx_hero = None     # channel owning the insertion slot
         self._anima_efx_key = None      # palette key currently applied
@@ -1140,9 +569,12 @@ class Duality:
         self._anima_split_saved_pan = {}  # ch -> original CC10
         self._anima_slots = [{} for _ in range(self.n_ports)]
         self._anima_ch_port = {}  # channel -> GS port that owns its EFX
+        self._anima_rhythm = [False] * 16
+        self._anima_rhythm[9] = True  # ch10 is always rhythm
+        self._last_key_ports = {}  # (ch,note) -> ports of last sounding voice
         self._anima_efx_on = [[False] * 16 for _ in range(self.n_ports)]
         self._anima_efx_seed = None
-        self._anima_efx_pick = {}  # fam -> (msb, lsb, label)
+        self._anima_efx_pick = {}  # (fam, port) -> (msb, lsb, label)
         self._anima_ports = [[] for _ in range(16)]
         self._anima_cc1_cur = [0] * 16
         self._anima_cc1_tgt = [0] * 16
@@ -1342,7 +774,7 @@ class Duality:
         console.print(
             "[green]Ready.[/] Notes will be distributed. Ctrl+C to stop + panic.\n"
             "  Hotkeys: [bold]F[/]=clear  [bold]L[/]=lock format  [bold]G[/]=GM/GM2  [bold]R[/]=GS  "
-            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]C[/]=clear log  [bold]X[/]=reset  [bold]Q[/]=quit"
+            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]A[/]=Anima/game  [bold]C[/]=log  [bold]X[/]=reset  [bold]Q[/]=quit"
         )
         # --voodoo: seed MT-32 format (so L can lock) then begin paced GM load
         if self.voodoo_requested:
@@ -1893,6 +1325,15 @@ class Duality:
                 val = data[7]
                 name = GS_DELAY_MACRO.get(val, f"Type {val}")
                 return f"GS Delay: {name}"
+
+            # Part USE FOR RHYTHM / drum map (40 1x 15)
+            if aa == 0x40 and cc == 0x15 and len(data) >= 8:
+                part = self._gs_mid_to_part(bb)
+                if part is not None:
+                    val = data[7]
+                    if val:
+                        return f"GS Rhythm map {val} → Part {part + 1}"
+                    return f"GS Rhythm off → Part {part + 1}"
 
             # EFX Type (address 40 03 00)
             if aa == 0x40 and bb == 0x03 and cc == 0x00 and len(data) >= 9:
@@ -3041,7 +2482,7 @@ class Duality:
     def _voodoo_begin(self, reason: str = "manual") -> None:
         """Start paced GM bank load to all :mt32 outs; queue live input."""
         if not _VOODOO_BANKS:
-            self._set_status("Voodoo unavailable (voodoo_banks.py missing)", duration=4.0)
+            self._set_status("Voodoo unavailable (tables_voodoo.py missing)", duration=4.0)
             return
         targets = self._mt32_port_indices()
         if not targets:
@@ -3504,12 +2945,16 @@ class Duality:
             fmt = getattr(self, "detected_format", None) or "-"
             self._anima_feedback(
                 "cat",
-                f"ch{ch + 1} PC{msg.program} bank {msb}/{lsb} → {cat} [{bank}|{fmt}]",
+                f"ch{ch + 1} PC{msg.program + 1} bank {msb}/{lsb} → {cat} [{bank}|{fmt}]",
                 status=True,
             )
+            if self.anima_game:
+                self._anima_game_note_pc()
 
     def _anima_category(self, ch: int) -> str:
         """Pick articulation family from the active tonemap."""
+        if self._anima_is_rhythm(ch):
+            return "sfx"
         prog = self._anima_prog[ch & 0x0F]
         voodoo_on = bool(
             getattr(self, "voodoo_active", False)
@@ -3682,10 +3127,11 @@ class Duality:
     def _anima_reset_session(self, reason: str = "idle") -> None:
         """Clear Anima EFX/slot/strum state. Does not touch format lock."""
         self._anima_release_efx_lock(reason)
-        self._anima_efx_pick = {}
-        self._anima_efx_seed = None
+        self._anima_reset_efx_seed()
         self._anima_efx_sound_t = {}
         self._anima_ch_port = {}
+        self._anima_rhythm = [False] * 16
+        self._anima_rhythm[9] = True
         self._anima_strum_q = []
         self._anima_strum_buf = [None] * 16
         self._anima_session_idle_done = True
@@ -3694,7 +3140,11 @@ class Duality:
     def _check_anima_session_idle(self) -> None:
         if not self.anima:
             return
-        if time.monotonic() - self.last_midi_time < ANIMA_SESSION_IDLE_SEC:
+        self._anima_game_poll()
+        idle_need = (
+            ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
+        )
+        if time.monotonic() - self.last_midi_time < idle_need:
             self._anima_session_idle_done = False
             return
         if getattr(self, "_anima_session_idle_done", False):
@@ -3740,6 +3190,12 @@ class Duality:
         """Drop file-owned EFX ban so Anima can pick again (test / format clear)."""
         had = bool(self._anima_file_efx_t) or bool(self._anima_efx_key)
         self._anima_file_efx_t = 0.0
+        self._anima_file_efx_home = None
+        self._anima_file_efx_type = None
+        self._anima_file_efx_parts = set()
+        self._anima_file_dirt = [False] * 16
+        self._anima_hetfield_roll = [False] * 16
+        self._anima_file_off_sent = set()
         self._anima_efx_key = None
         self._anima_efx_sent = None
         self._anima_efx_hero = None
@@ -3751,24 +3207,118 @@ class Duality:
         self._anima_split_restore()
         if had and reason:
             self._anima_feedback("efx", f"EFX lock cleared ({reason})", status=True)
+    def _anima_refresh_file_dirt(self) -> None:
+        """Clean/acoustic/mute PCs whose FILE insert is an OD/dist type."""
+        dirt_type = self._anima_file_efx_type in ANIMA_FILE_DIRT_TYPES
+        for ch in range(16):
+            fam = None
+            try:
+                if not self._anima_is_rhythm(ch):
+                    fam = self._anima_efx_family(ch)
+            except Exception:
+                fam = None
+            on = dirt_type and ch in self._anima_file_efx_parts and fam in ANIMA_FILE_DIRT_FAMS
+            self._anima_file_dirt[ch] = bool(on)
+            if on and not self._anima_hetfield_roll[ch]:
+                seed = self._anima_ensure_efx_seed()
+                self._anima_hetfield_roll[ch] = ((seed + ch * 17) % 10) < 7
+            if on:
+                self._anima_feedback(
+                    "dirt",
+                    f"ch{ch + 1} file-dirt ({'Hetfield' if self._anima_hetfield_roll[ch] else 'alt'})",
+                    status=True,
+                )
+
     def _anima_observe_file_efx(self, msg: mido.Message, description: str) -> None:
-        """If the FILE set EFX/insertion, do not steal the unit's one slot."""
+        """File EFX owns the home GS port only; other :gs units stay Anima."""
         if self._anima_efx_ours:
             self._anima_efx_ours = False
             return
-        d = (description or "").lower()
-        if "gs reset" in d or d.startswith("xg system on") or "gm system on" in d:
+        desc = (description or "").lower()
+        if "gs reset" in desc or desc.startswith("xg system on") or "gm system on" in desc:
             self._anima_release_efx_lock("reset")
             self._anima_reset_efx_seed()
             return
-        if d.startswith("gs efx") or "insertion" in d or "xg variation" in d:
-            if "thru" in d:
+        data = list(msg.data) if msg.type == "sysex" else []
+        gs = self._anima_gs_ports()
+        home = gs[0] if gs else None
+        changed = False
+        if len(data) >= 9 and data[0] == 0x41 and data[2] == 0x42 and data[3] == 0x12:
+            aa, bb, cc = data[4], data[5], data[6]
+            if aa == 0x40 and bb == 0x03 and cc == 0x00:
+                typ = (data[7] & 0x7F, data[8] & 0x7F)
+                if typ != (0x00, 0x00):
+                    self._anima_file_efx_type = typ
+                    self._anima_file_efx_t = time.monotonic()
+                    self._anima_file_efx_home = home
+                    changed = True
+            elif aa == 0x40 and cc == 0x22:
+                part = self._gs_mid_to_part(bb)
+                if part is not None:
+                    if data[7] == 0x01:
+                        self._anima_file_efx_parts.add(part)
+                    else:
+                        self._anima_file_efx_parts.discard(part)
+                    self._anima_file_efx_t = time.monotonic()
+                    self._anima_file_efx_home = home
+                    changed = True
+        elif desc.startswith("gs efx") or "insertion" in desc or "xg variation" in desc:
+            if "thru" in desc:
                 return
             self._anima_file_efx_t = time.monotonic()
-            self._anima_feedback("efx-skip", f"file owns EFX ({description})", status=True)
+            self._anima_file_efx_home = home
+            changed = True
+        if changed:
+            self._anima_refresh_file_dirt()
+            if home is not None:
+                for c in self._anima_file_efx_parts:
+                    self._anima_ch_port[c] = home
+            parts = ",".join(str(p + 1) for p in sorted(self._anima_file_efx_parts)) or "-"
+            self._anima_feedback(
+                "efx-file",
+                f"file EFX on P{(home or 0) + 1} parts {parts}",
+                status=True,
+            )
+
+    def _anima_observe_rhythm(self, msg: mido.Message) -> None:
+        """Track GS 'use for rhythm' so Anima never puts EFX on a drum part."""
+        if msg.type != "sysex":
+            return
+        data = list(msg.data)
+        if len(data) < 8:
+            return
+        if not (data[0] == 0x41 and data[2] == 0x42 and data[3] == 0x12):
+            return
+        aa, bb, cc = data[4], data[5], data[6]
+        if aa == 0x40 and bb == 0x00 and cc == 0x7F:
+            self._anima_rhythm = [False] * 16
+            self._anima_rhythm[9] = True
+            return
+        if aa == 0x40 and cc == 0x15:
+            part = self._gs_mid_to_part(bb)
+            if part is None:
+                return
+            on = bool(data[7])
+            if part == 9:
+                on = True
+            self._anima_rhythm[part] = on
+            if on:
+                self._anima_feedback(
+                    "rhythm",
+                    f"GS drums on ch{part + 1} — Anima EFX skipped",
+                    status=True,
+                )
+
+    def _anima_is_rhythm(self, ch: int) -> bool:
+        ch = ch & 0x0F
+        if ch == 9:
+            return True
+        return bool(self._anima_rhythm[ch])
 
     def _anima_efx_family(self, ch: int) -> str | None:
         """Map a channel's current GM program to an Anima GS insertion family."""
+        if self._anima_is_rhythm(ch):
+            return None
         p = int(self._anima_prog[ch & 0x0F]) & 0x7F
         if p <= 2:
             return "piano_acoustic"
@@ -3778,8 +3328,12 @@ class Duality:
             return "ep_dx"
         if p in (6, 7):
             return "keys_pluck"
-        if 16 <= p <= 23:
-            return "organ"
+        if p in (16, 17, 18):
+            return "organ_rotary"   # Drawbar / Percussive / Rock
+        if p == 22:
+            return "harmonica"
+        if 19 <= p <= 23:
+            return "organ_chorus"   # Church / Reed / Accordion
         if p in (24, 25):
             return "guitar_acoustic"
         if p in (26, 27):
@@ -3788,12 +3342,22 @@ class Duality:
             return "guitar_mute"
         if 29 <= p <= 31:
             return "guitar_dist"
-        if p in (32, 33, 34, 36, 37):
+        if p == 32:
+            return "bass_acoustic"   # upright — never Bass Multi
+        if p in (33, 34, 36, 37):
             return "bass_electric"
         if p in (35, 38, 39):
             return "bass_wide"
+        if 56 <= p <= 61:
+            return "orch_brass"      # GM 57–62 Trumpet … Brass Section
+        if p in (62, 63):
+            return "synth_brass"     # GM 63–64 Synth Brass 1 and 2
         if 40 <= p <= 47:
             return "strings"
+        if p in (74, 75, 76, 77, 78):
+            return "ethnic_wind"     # Pan Flute … Ocarina
+        if 80 <= p <= 87:
+            return "lead"            # Square / Saw / Charang / Voice / 5ths
         if 88 <= p <= 95:
             return "pad"
         if p == 15 or 104 <= p <= 107:
@@ -3935,9 +3499,42 @@ class Duality:
         self._anima_apply_od_split(chs)
 
 
+    def _anima_game_note_pc(self) -> None:
+        now = time.monotonic()
+        self._anima_game_pc_t.append(now)
+        cut = now - ANIMA_GAME_PC_WINDOW
+        self._anima_game_pc_t = [x for x in self._anima_game_pc_t if x >= cut]
+
+    def _anima_game_poll(self) -> None:
+        """After a PC dump settles, reroll EFX if the 16-program map moved."""
+        if not (self.anima and self.anima_game):
+            return
+        if self.anima_efx_stable:
+            return
+        if len(self._anima_game_pc_t) < ANIMA_GAME_PC_BURST:
+            return
+        now = time.monotonic()
+        if now - self._anima_game_pc_t[-1] < ANIMA_GAME_PC_SETTLE:
+            return
+        snap = tuple(int(x) & 0x7F for x in self._anima_prog)
+        prev = self._anima_game_snap
+        self._anima_game_pc_t = []
+        if prev is None:
+            self._anima_game_snap = snap
+            return
+        diff = sum(1 for a, b in zip(prev, snap) if a != b)
+        self._anima_game_snap = snap
+        if diff < ANIMA_GAME_SNAP_DIFF:
+            return
+        self._anima_reset_efx_seed()
+        self._anima_feedback("game", f"new cue ({diff} PCs) — EFX reroll", status=True)
+
     def _anima_reset_efx_seed(self) -> None:
         self._anima_efx_seed = None
         self._anima_efx_pick = {}
+        # New listen → new row, unless --anima-efx-stable asked for a fixed hash.
+        if not getattr(self, "anima_efx_stable", False):
+            self._anima_efx_launch = None
 
     def _anima_ensure_efx_seed(self) -> int:
         if self._anima_efx_seed is None:
@@ -3953,16 +3550,50 @@ class Duality:
                 self._anima_efx_seed = (hash(snap) ^ self._anima_efx_launch) & 0xFFFF
         return self._anima_efx_seed
 
-    def _anima_palette_pick(self, fam: str):
-        """One seeded row per family for this stream."""
-        if fam in self._anima_efx_pick:
-            return self._anima_efx_pick[fam]
+    def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None):
+        """Keep a player's type when they relocate; new player in same fam gets another row."""
         pal = ANIMA_EFX_GS.get(fam) or []
         if not pal:
             return None
+        chs_set = set(chs or [])
+
+        def _from_typ(typ):
+            if not typ:
+                return None
+            for row in pal:
+                if (row[0], row[1]) == tuple(typ)[:2]:
+                    return row
+            return (typ[0], typ[1], fam)
+
+        # Same channels already on a slot → keep that insert (relocation).
+        for slot in self._anima_slots:
+            if slot.get("fam") != fam:
+                continue
+            old_chs = set(slot.get("chs") or [])
+            if chs_set and (chs_set & old_chs) and slot.get("typ"):
+                kept = _from_typ(slot.get("typ"))
+                if kept:
+                    return kept
+        key = (fam, port)
+        if key in self._anima_efx_pick:
+            return self._anima_efx_pick[key]
         seed = self._anima_ensure_efx_seed()
-        pick = pal[seed % len(pal)]
-        self._anima_efx_pick[fam] = pick
+        mix = seed + (sum(ord(c) for c in fam) * 31) + (0 if port is None else (port + 1) * 97)
+        pick = pal[mix % len(pal)]
+        used = {
+            (v[0], v[1])
+            for k, v in self._anima_efx_pick.items()
+            if isinstance(k, tuple) and k[0] == fam and v
+        }
+        for slot in self._anima_slots:
+            if slot.get("fam") == fam and slot.get("typ"):
+                used.add(tuple(slot["typ"])[:2])
+        if (pick[0], pick[1]) in used and len(pal) > 1:
+            for alt in pal:
+                if (alt[0], alt[1]) not in used:
+                    pick = alt
+                    break
+        self._anima_efx_pick[key] = pick
         return pick
 
 
@@ -4059,14 +3690,17 @@ class Duality:
 
     def _anima_build_plan(self, extra_ch: int | None = None) -> list:
         """One insertion slot per GS port. Guitars pack 2-per-unit (OD1/OD2 if they clash)."""
-        gs = self._anima_gs_ports()
+        gs_all = self._anima_gs_ports()
+        home = self._anima_file_efx_home if self._anima_file_efx_t else None
+        reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
+        gs = [p for p in gs_all if p != home]
         if not gs:
             return []
         now = time.monotonic()
         fam_chs: dict = {}
 
         def _add(c: int) -> None:
-            if c == 9:
+            if c == 9 or c in reserved:
                 return
             fam = self._anima_efx_family(c)
             if not fam:
@@ -4182,8 +3816,12 @@ class Duality:
 
     def _anima_commit_plan(self, plan: list) -> None:
         gs = self._anima_gs_ports()
+        home = self._anima_file_efx_home if self._anima_file_efx_t else None
+        reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
         keep = {item["port"] for item in plan}
         for p in gs:
+            if p == home:
+                continue
             if p not in keep and self._anima_slots[p].get("fam"):
                 self._anima_clear_slot(p)
         self._anima_ch_port = {}
@@ -4191,12 +3829,51 @@ class Duality:
             self._anima_commit_slot(item)
             for c in item["chs"]:
                 self._anima_ch_port[c] = item["port"]
+        # Secondaries: EFX Off on parts the FILE turned on (home keeps them).
+        # Once per port — commit_plan runs on every note and was flooding Offs.
+        if home is not None and reserved:
+            key = (home, tuple(sorted(reserved)))
+            for p in gs:
+                if p == home:
+                    continue
+                if (p, key) in self._anima_file_off_sent:
+                    continue
+                for c in reserved:
+                    self._anima_efx_ours = True
+                    self._safe_out_send(
+                        p,
+                        self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x00]),
+                    )
+                    self._anima_efx_on[p][c] = False
+                self._anima_file_off_sent.add((p, key))
         if plan:
             self._anima_efx_key = plan[0]["fam"]
             self._anima_efx_hero = plan[0]["chs"][0] if plan[0]["chs"] else None
         else:
             self._anima_efx_key = None
             self._anima_efx_hero = None
+
+
+    def _anima_efx_apply_pan(self, port: int, typ: tuple, chs: list) -> None:
+        """For mono inserts that expose Pan, copy the hero channel's CC10."""
+        slot = ANIMA_EFX_PAN_SLOT.get(tuple(typ) if typ else None)
+        if not slot or not chs:
+            return
+        ch = chs[0]
+        pan = self.pan[ch] if self.pan[ch] is not None else 64
+        addr = 0x03 + (int(slot) - 1)  # P1 = 40 03 03
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [int(pan) & 0x7F]))
+
+
+    def _anima_efx_follow_pan(self, ch: int) -> None:
+        port = self._anima_ch_port.get(ch)
+        if port is None:
+            return
+        slot = self._anima_slots[port] if port < len(self._anima_slots) else {}
+        if ch not in (slot.get("chs") or []):
+            return
+        self._anima_efx_apply_pan(port, slot.get("typ"), slot.get("chs") or [ch])
 
     def _anima_commit_slot(self, item: dict) -> None:
         port = item["port"]
@@ -4253,7 +3930,7 @@ class Duality:
                 )
                 self._anima_efx_on[port][c] = want
             return
-        pick = self._anima_palette_pick(fam)
+        pick = self._anima_palette_pick(fam, port, chs)
         if not pick:
             return
         msb, lsb, label = pick
@@ -4267,6 +3944,7 @@ class Duality:
             self._anima_efx_label = label
             self._anima_efx_hero = chs[0] if chs else None
             self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_efx_apply_pan(port, typ, chs)
             self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} → GS {label}", status=True)
         for c in range(16):
             want = c in chs
@@ -4284,13 +3962,10 @@ class Duality:
         self._anima_slots[port] = {"fam": fam, "chs": chs, "split": False, "typ": typ, "t": time.monotonic()}
 
     def _anima_maybe_efx(self, ch: int) -> None:
-        if not self.anima or ch == 9:
+        if not self.anima or self._anima_is_rhythm(ch):
             return
         fmt = (getattr(self, "detected_format", None) or "").upper()
         if fmt not in ("GS", "SC", "SC-8850", "XG") and not self._anima_gs_ports():
-            return
-        now = time.monotonic()
-        if self._anima_file_efx_t and now - self._anima_file_efx_t < ANIMA_FILE_EFX_HOLD:
             return
         plan = self._anima_build_plan(extra_ch=ch)
         self._anima_commit_plan(plan)
@@ -4472,7 +4147,7 @@ class Duality:
         ports = self._anima_ports[ch]
         if port not in ports:
             ports.append(port)
-        if ch == 9:
+        if self._anima_is_rhythm(ch):
             return
         cat = self._anima_category(ch)
         if cat not in ANIMA_EXPR_CATS:
@@ -4566,7 +4241,7 @@ class Duality:
         return max(tgt, int(cur - max(1, delta)))
 
     def _anima_should_strum(self, ch: int) -> bool:
-        if ch == 9:
+        if self._anima_is_rhythm(ch):
             return False
         return self._anima_category(ch) in ANIMA_STRUM_CATS
 
@@ -4578,6 +4253,8 @@ class Duality:
         """
         pc = self._anima_prog[ch]
         if pc in ANIMA_HETFIELD_PC:
+            return "hetfield"
+        if self._anima_file_dirt[ch] and self._anima_hetfield_roll[ch]:
             return "hetfield"
         n = self._anima_strum_n[ch]
         # Every 8th stroke: stay in the same direction (double down or up)
@@ -5050,10 +4727,18 @@ class Duality:
                     self.last_chord_port = port
                     targets = [port]
                 else:
-                    pin = self._anima_ch_port.get(msg.channel & 0x0F) if self.anima else None
+                    ch_n = msg.channel & 0x0F
+                    if (
+                        self.anima
+                        and self._anima_file_efx_t
+                        and ch_n in self._anima_file_efx_parts
+                        and self._anima_file_efx_home is not None
+                    ):
+                        self._anima_ch_port[ch_n] = self._anima_file_efx_home
+                    pin = self._anima_ch_port.get(ch_n) if self.anima else None
                     if pin is None and self.anima:
-                        self._anima_maybe_efx(msg.channel & 0x0F)
-                        pin = self._anima_ch_port.get(msg.channel & 0x0F)
+                        self._anima_maybe_efx(ch_n)
+                        pin = self._anima_ch_port.get(ch_n)
                     if pin is not None and pin in eligible:
                         port = pin
                     else:
@@ -5063,6 +4748,25 @@ class Duality:
                         return
                     self.last_chord_port = port
                     targets = [port]
+
+                # Same key already down (drums often retrigger without an
+                # off). Release the old voice so the extra file-off is not
+                # the one that gets dropped.
+                if key in self.active:
+                    old = self.active.pop(key)
+                    old_ports = old.get("ports") or [old["port"]]
+                    off = mido.Message(
+                        "note_off",
+                        channel=msg.channel,
+                        note=msg.note,
+                        velocity=0,
+                    )
+                    for p in old_ports:
+                        self._send_routed(p, off)
+                        self.voice_counts[p] = max(0, self.voice_counts[p] - 1)
+                    self._last_key_ports[key] = old_ports
+                    if self.anima:
+                        self._anima_mod_on.discard(key)
 
                 # Anima Phase 1: velocity humanize before send
                 note_msg = msg
@@ -5113,6 +4817,7 @@ class Duality:
                         self.anima and self._anima_should_strum(note_msg.channel & 0x0F)
                     ),
                 }
+                self._last_key_ports[key] = sent_ports
 
                 total_now = sum(self.voice_counts)
                 if total_now > self.peak_voices:
@@ -5156,9 +4861,14 @@ class Duality:
                     if self.anima and self._anima_strum_cancel(ch_off, msg.note):
                         pass
                     else:
-                        pin = self._anima_ch_port.get(ch_off) if self.anima else None
-                        if pin is not None:
-                            self._send_routed(pin, msg)
+                        ports = self._last_key_ports.get(key)
+                        if ports:
+                            for p in ports:
+                                self._send_routed(p, msg)
+                        else:
+                            pin = self._anima_ch_port.get(ch_off) if self.anima else None
+                            if pin is not None:
+                                self._send_routed(pin, msg)
 
                 # Only resync if the drift is significant
                 if abs(sum(self.voice_counts) - len(self.active)) > 1:
@@ -5178,6 +4888,7 @@ class Duality:
             description = self._describe_sysex(msg)
             self._anima_observe_sysex(msg, description)
             self._anima_observe_file_efx(msg, description)
+            self._anima_observe_rhythm(msg)
 
             # Suppress pure noise
             if description in ("GS SysEx", "SysEx", "GM/Universal SysEx", "XG SysEx", "MT-32 SysEx"):
@@ -5236,6 +4947,8 @@ class Duality:
             elif msg.control == 10:    # Pan
                 self.pan[ch] = msg.value
                 self.pan_time[ch] = now
+                if self.anima:
+                    self._anima_efx_follow_pan(ch)
             elif msg.control == 1:     # Mod Wheel
                 self.mod[ch] = msg.value
                 self.mod_time[ch] = now
@@ -5765,7 +5478,15 @@ class Duality:
                 self._rec_wanted = True
                 self._record_start("hotkey W")
         elif c == "a":
-            self.anima = not self.anima
+            # off → normal → game → off
+            if not self.anima:
+                self.anima = True
+                self.anima_game = False
+            elif not self.anima_game:
+                self.anima_game = True
+            else:
+                self.anima = False
+                self.anima_game = False
             self._anima_release_efx_lock("Anima toggle")
             if not self.anima:
                 # Park wheels we were driving so A/B compare is clean
@@ -5782,8 +5503,9 @@ class Duality:
                 self._log_line("ANIMA off (hotkey A)")
             else:
                 self._anima_ramp_t = time.monotonic()
-                self._set_status("Anima ON", duration=2.5)
-                self._log_line("ANIMA on (hotkey A)")
+                mode = "game" if self.anima_game else "normal"
+                self._set_status(f"Anima ON ({mode})", duration=2.5)
+                self._log_line(f"ANIMA on {mode} (hotkey A)")
         elif c == "q":
             self._set_status("Quit requested – panicking and exiting…", duration=2.0)
             self.panic(reason="hotkey Q")
@@ -6043,6 +5765,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--anima-game",
+        action="store_true",
+        help=(
+            "Enable Anima in game mode: 4s idle reset (not 30s) and reroll "
+            "GS EFX when a burst of program changes looks like a new cue. "
+            "Implies --anima. Hotkey A cycles Anima off / normal / game. "
+            "Reroll skipped if --anima-efx-stable."
+        ),
+    )
+    parser.add_argument(
         "--anima-efx-stable",
         action="store_true",
         help=(
@@ -6278,6 +6010,7 @@ def main():
             voodoo_layout=getattr(args, "voodoo_layout", "stripe"),
             anima=getattr(args, "anima", False),
             anima_efx_stable=getattr(args, "anima_efx_stable", False),
+            anima_game=getattr(args, "anima_game", False),
             record_dir=getattr(args, "record", None),
         )
         router.run()
