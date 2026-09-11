@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.18.20"
+VERSION = "0.18.21"
 
 
 """
@@ -3315,11 +3315,39 @@ class Duality:
             return True
         return bool(self._anima_rhythm[ch])
 
+    def _anima_efx_from_cat(self, cat: str | None) -> str | None:
+        """Coarse phrasing category → insertion family (MT-32 / bank 127)."""
+        return {
+            "guitar": "guitar_clean",
+            "bass": "bass_wide",
+            "lead": "lead",
+            "strings": "strings",
+            "ensemble": "strings",
+            "pad": "pad",
+            "brass": "orch_brass",
+            "wind": "ethnic_wind",
+            "organ": "organ_chorus",
+            "piano": "piano_acoustic",
+            "harmonica": "harmonica",
+            "ethnic": "ethnic_wind",
+        }.get(cat or "")
+
     def _anima_efx_family(self, ch: int) -> str | None:
-        """Map a channel's current GM program to an Anima GS insertion family."""
+        """Map program (+ GS bank) to an Anima GS insertion family."""
         if self._anima_is_rhythm(ch):
             return None
-        p = int(self._anima_prog[ch & 0x0F]) & 0x7F
+        ch = ch & 0x0F
+        p = int(self._anima_prog[ch]) & 0x7F
+        try:
+            msb = int(self.bank_msb[ch]) & 0x7F
+        except Exception:
+            msb = 0
+        # GS bank 127 is the MT-32 / CM-32L map — GM PC 31 is Dist Gtr,
+        # MT-32 PC 31 is syn bass.
+        if msb == 127:
+            return self._anima_efx_from_cat(_mt32_category(p))
+        if msb == 126:
+            return self._anima_efx_from_cat(_gm_category(p))
         if p <= 2:
             return "piano_acoustic"
         if p == 4:
