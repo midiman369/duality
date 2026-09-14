@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.18.39"
+VERSION = "0.18.40"
 
 
 """
@@ -7,86 +7,95 @@ Duality – Intelligent Multi-Device MIDI Polyphony Router
 ---------------------------------------------------------
 Version {VERSION}
 
-Routes MIDI notes across two or more sound modules / synthesizers
+Routes MIDI notes across one or more sound modules / synthesizers
 to maximize effective polyphony while keeping non-note messages
 synchronized across all devices.
 
 Features
 --------
-• Anima (opt-in): GM-category CC phrasing + velocity humanize
-• Anima GS EFX: one insertion slot per :gs port; guitars pack 2/unit (OD1/OD2)
-• Load-balancing by utilization (fair with mixed poly limits) or pure round-robin
-• Chord preference (notes arriving close together stay on the same device)
-• Smart voice stealing (lowest velocity first, then oldest)
-• Independent polyphony limit per device
-• Full panic / All Notes Off handling
-• Live status panel with per-port meters, channel activity,
-  Volume / Pan / Mod Wheel / Pitch Bend, and activity counters
-• Rolling status history + input-format badge (GM / GM2 / GS / XG / MT-32; * = locked)
-• SysEx recognition & human-readable status for:
-    – GS: Reset, Reverb/Chorus/Delay macros, EFX/MFX types, part EFX on/off, display text
-    – XG: System On, Reverb/Chorus/Variation/Insertion types, display text
-    – MT-32: Display text, reverb mode/time/level, master volume/tune
-• Redundant controller filtering (keeps devices in sync while reducing traffic)
-• Arbitrary number of output ports (default 2; 1 allowed with --alchemy)
-• Output format tags = device capabilities (e.g. --outs "SC:gs+gm2") — not the input stream
-• Crucible: route by input/stream format (SysEx detect, --input-format, or hotkeys)
-• Unknown input format → GM-family ports only (pure MT-32 excluded until input is MT-32)
-• No spill-to-all when no port matches the current input format
-• Alchemy (BROKEN/EXPERIMENTAL): attempted GS↔XG SysEx/PC rewrite; --alchemy / --alchemy-all
-• Hybrid with Crucible: native affinity first, overflow+translate under poly pressure
-• Set input format (G/R/Y/M) vs lock input format (L); idle clear; F clears
-• Optional --strict-format-detection: Only actual SYSTEM ON or RESET SysEx messages set/switch input format.
-• GM→GM2 port affinity; optional --crucible-gm-wide for GS/XG
-• SCPOP / SC-ext detection (banner or bulk model-45; not LCD text) + optional --scpop
-• Per-port --sync-delay (ms); relative negatives normalized; 0 = fast path
-• Graceful handling and attempted reconnect of dropped or lost output ports.
-• Voodoo Phase V2: 2+ :mt32 outs get alternating 16-channel map
-  (melody affinity + load-balanced rhythm) with equal partial reserve
-• LA32 pan map for Voodoo / non-MT-32 streams (8 real positions, MT-32 & CM-32L tables)
-• Port health logging (open/close/send fail/reconnect) when --log is enabled.
-• Voodoo: Super-Munt-style GM bank load for MT-32 outs (Roland MT-TO-GM 1993).
-  --voodoo / M multi-press / auto when only :mt32 outs + non-MT-32 stream.
-  Paced SysEx + input queue with elastic catch-up; exit on MT-32 SysEx.
+Router
+  • Load-balance by utilization (fair with mixed --poly) or pure round-robin
+  • Chord preference; smart steal (low velocity, then oldest)
+  • Independent poly limit per device; panic / All Notes Off
+  • X = dialect resets + Anima session clear (does not clear format lock)
+
+Crucible (format-aware routing)
+  • Output tags = device capability (--outs "SC:gs+gm2") — not the input stream
+  • Input format from SysEx, --input-format, or hotkeys (G/R/Y/M; L lock; F clear)
+  • Affinity routing; unknown input → GM-family only (pure MT-32 excluded)
+  • No spill-to-all when nothing matches; --crucible-gm-wide adds gs/xg for GM
+  • --strict-format-detection: only System On / Reset SysEx may switch format
+  • SCPOP / SC-ext (model-45 or banner, not LCD text) + optional --scpop
+
+Voodoo (MT-32 GM)
+  • MT-TO-GM or KQ6 bank on :mt32/:mt/:cm — --voodoo / M while already MT-32
+  • Paced SysEx + queued input with elastic catch-up; exit on real MT-32 SysEx
+  • 1/2/3-unit maps; 4+ even units can use pairs (P); LA32 pan table
+
+Anima (opt-in)
+  • Velocity humanize, expr/mod ramps, guitar strum
+  • GS EFX: one insert per :gs port; OD1/OD2 guitar pack; file EFX stays put
+  • Foley: shared ch16 8850 SFX (CC0=CC00, CC32=0, PC 121/122)
+  • Seeded 8850 tone variations on capital 0/0 only — file bank always wins
+  • --anima-game / A cycle; single output allowed
+
+Record / log / panel
+  • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx)
+  • --log / --log-verbose; C clears; port health on session end
+  • Live meters, channel grid, Recent history, format badge, decoded SysEx
+
+Other
+  • Redundant CC filter; --sync-delay (negatives relative; 0 = fast path)
+  • Reconnect dropped outs by name (does not re-program the synth)
+  • Alchemy BROKEN/EXPERIMENTAL (--alchemy / --alchemy-all)
+  • Developed and tested on Windows. MIDI I/O via python-rtmidi
+    (WinMM / CoreMIDI / ALSA). Unix hotkeys = cbreak stdin (best-effort).
 
 Hotkeys (input/stream format — not output tags)
 -------
 F clear input format   L lock/unlock input format
 G GM↔GM2   R GS   Y XG   M MT-32 (again = Voodoo GM)
-A Anima on/off   B balance↔rr     C clear log file     Q quit (panic)
+V Voodoo bank   P Voodoo layout   A Anima off/normal/game
+B balance↔rr   X reset+Anima   W record   C clear log   Q quit
 
 Usage examples
 --------------
-# List available ports
+# List ports
 python duality.py --list
 
 # Two devices (classic)
 python duality.py --input "loopMIDI Port" --outs "MS40 A" "MS40 B"
 
-# Three devices with different polyphony limits
-python duality.py \
-  --input "loopMIDI Port" \
-  --outs "Module A" "Module B" "Module C" \
-  --poly 28 32 24
+# Mixed polyphony
+python duality.py --input "loopMIDI Port" \
+  --outs "Module A" "Module B" "Module C" --poly 28 32 24
 
 # Crucible + multi-capability tags
 python duality.py --input "loopMIDI Port" --crucible --crucible-gm-wide \
   --outs "SC A:gs+gm2" "SC B:gs+gm2" "MU:xg+gm2" "MUNT:mt32"
 
-# Sync delay (softsynth leads hardware by ~80 ms)
+# Four GS ports + Anima + record + log
+python duality.py --input duality \
+  --outs "SCVA:gs+gm2" "SCVA2:gs+gm2" "SCVA3:gs+gm2" "SCVA4:gs+gm2" \
+  --poly 32 32 32 32 --crucible --anima --log --record
+
+# Voodoo on two MT-32s
+python duality.py --input duality \
+  --outs "MIDIMate 1:mt32" "MIDIMate 2:mt32" \
+  --voodoo --voodoo-bank mtgm --sync-delay 0 80
+
+# Sync delay (softsynth ~80 ms ahead of hardware)
 python duality.py --input "..." --outs "SC:gs+mt32" "MUNT:mt32" --sync-delay 0 -80
 
-# Custom chord window + silent mode
-python duality.py --input "..." --outs "A" "B" --chord-ms 25 --no-status
+# Strict format detect + silent panel
+python duality.py --input "..." --outs "A:gs" "B:xg" \
+  --crucible --strict-format-detection --no-status
 
-# Strict format detection (ignore stray XG/GS parameter SysEx)
-python duality.py --input "..." --outs "A:gs" "B:xg" --crucible --strict-format-detection
-
-# Show version
 python duality.py --version
 """.format(VERSION=VERSION)
 
 import argparse
+import os
 import signal
 import sys
 import time
@@ -5898,22 +5907,61 @@ class Duality:
             self.close()
             sys.exit(0)
 
+    def _hotkey_tty_setup(self) -> None:
+        """Unix: cbreak so hotkeys do not wait for Enter. No-op on Windows / pipes."""
+        self._tty_old = None
+        self._tty_fd = None
+        if os.name == "nt":
+            return
+        try:
+            if not sys.stdin.isatty():
+                return
+            import termios
+            import tty
+            fd = sys.stdin.fileno()
+            self._tty_old = termios.tcgetattr(fd)
+            self._tty_fd = fd
+            tty.setcbreak(fd)
+        except Exception:
+            self._tty_old = None
+            self._tty_fd = None
+
+    def _hotkey_tty_restore(self) -> None:
+        old = getattr(self, "_tty_old", None)
+        fd = getattr(self, "_tty_fd", None)
+        if old is None or fd is None:
+            return
+        try:
+            import termios
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        except Exception:
+            pass
+        self._tty_old = None
+        self._tty_fd = None
+
     def _poll_hotkeys(self) -> None:
         """Non-blocking keyboard poll for format / control hotkeys."""
         try:
             import msvcrt  # Windows
             while msvcrt.kbhit():
                 ch = msvcrt.getwch()
-                self._handle_hotkey(ch)
-        except ImportError:
-            # Unix: best-effort non-blocking stdin (may not work under all terminals)
-            try:
-                import select
-                if select.select([sys.stdin], [], [], 0)[0]:
-                    ch = sys.stdin.read(1)
+                if ch:
                     self._handle_hotkey(ch)
-            except Exception:
-                pass
+            return
+        except ImportError:
+            pass
+        # Unix: cbreak stdin (see _hotkey_tty_setup)
+        try:
+            import select
+            if not sys.stdin.isatty():
+                return
+            while select.select([sys.stdin], [], [], 0)[0]:
+                ch = sys.stdin.read(1)
+                if not ch:
+                    break
+                self._handle_hotkey(ch)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     def run(self):
@@ -5924,6 +5972,7 @@ class Duality:
 
         signal.signal(signal.SIGINT, _signal_handler)
         signal.signal(signal.SIGTERM, _signal_handler)
+        self._hotkey_tty_setup()
 
         if self.show_status:
             with Live(self._make_status_panel(), console=console, refresh_per_second=10) as live:
@@ -5998,6 +6047,7 @@ class Duality:
                 self.close()
 
     def close(self):
+        self._hotkey_tty_restore()
         if getattr(self, "_rec_on", False):
             self._record_stop("close")
         # Log last-ok ages so a wedged-but-silent out is visible in the session log
