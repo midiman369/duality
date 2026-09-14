@@ -2,16 +2,24 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.10.11** (see `python duality.py --version`).
+Current development line: **v0.18.39** (`python duality.py --version`).
 
-Duality routes MIDI notes across two or more sound modules / synthesizers to maximize effective polyphony, while keeping non-note messages synchronized across all devices.
+Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
-It is designed for musicians and retro-computing enthusiasts who want to combine multiple hardware (and soft) MIDI modules and treat them as one higher-polyphony, format-aware instrument.
+| Layer | What it does |
+|-------|----------------|
+| **Router** | Load-balance or round-robin notes; chord grouping; voice steal |
+| **Crucible** | Send the stream only to outputs tagged for that MIDI dialect |
+| **Voodoo** | Super-Munt-style GM on real MT-32 / CM-32 hardware |
+| **Anima** | Humanize + GS insertion EFX + foley + 8850 tone variations |
+| **Alchemy** | Experimental GS↔XG rewrite — **broken; do not rely on it** |
 
-<!-- PLACEHOLDER: hero screenshot / short GIF of the live status panel (current UI) -->
+Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG, MT-32, Ketron/Solton, etc.).
+
+<!-- IMAGE NEEDED: hero — current live status panel, ~120-col terminal, 4 GS ports + history -->
 <!-- ![Duality live status](docs/images/status-hero.png) -->
 
-**Screenshots below are from earlier development builds** (layout and feature set have moved on; replacements welcome).
+**Screenshots below are from earlier development builds** (layout and feature set have moved on).
 
 <img width="1080" height="260" alt="Earlier build – status panel" src="https://github.com/user-attachments/assets/38f339ec-0894-41b3-b933-a882c6dec397" />
 
@@ -28,37 +36,51 @@ It is designed for musicians and retro-computing enthusiasts who want to combine
 - Chord preference (notes arriving close together stay on the same device when possible)
 - Smart voice stealing (lowest velocity first, then oldest)
 - Independent polyphony limit per device
-- Full panic / All Notes Off handling
+- Full panic / All Notes Off; **X** sends dialect resets to tagged outs and clears Anima locks
 
 ### Crucible (format-aware routing)
-- Optional **output** format tags (what each device can accept), including multi-capability tags (`gs+gm2`, `xg+gm2`, …)
-- **Input / stream format** (what the MIDI feed is): from strong SysEx, `--input-format`, or hotkeys — *not* the same as output tags
-- **Affinity** routing: notes and SysEx go to outputs compatible with the current **input** format
-- Unknown input format → GM-family ports only (**pure MT-32 excluded** until input format is MT-32)
-- No silent “send to all” when no port matches the current input format
-- Input `GM` → ports tagged `gm` / `gm2`; optional `--crucible-gm-wide` also reaches `gs` / `xg`
-- **Set** input format (G/R/Y/M) vs **lock** input format (L): lock blocks SysEx override and idle clear
-- SCPOP / SC-ext detection (Roland model 45 or banner) + optional `--scpop`
+- Optional **output** tags: what each device can accept (`gs`, `xg`, `gm`, `gm2`, `mt32`, plus `gs+gm2`, …)
+- **Input / stream format** (what the feed *is*): SysEx detect, `--input-format`, or hotkeys — not the same as output tags
+- Affinity: notes and SysEx go to compatible ports
+- Unknown input → GM-family ports only (**pure MT-32 excluded** until the stream is MT-32)
+- No silent “send to all” when nothing matches
+- `GM` → `gm` / `gm2`; `--crucible-gm-wide` also reaches `gs` / `xg`
+- **Set** format (G/R/Y/M) vs **lock** (L): lock blocks SysEx override and idle clear
+- `--strict-format-detection`: only System On / Reset SysEx may switch format
+- SCPOP / SC-ext (model-45 or banner — not LCD animation text) + optional `--scpop`
 
-### Sync delay
-- Per-port `--sync-delay` in milliseconds (align hardware vs softsynth latency)
-- Relative **negative** offsets supported (normalized so the earliest port is 0)
-- Clamped to ±500 ms; **all zeros = zero-cost fast path** (no queue)
+### Voodoo (MT-32 GM)
+- Roland **MT-TO-GM** (1993) or Sierra **KQ6** bank on `:mt32` / `:mt` / `:cm` outs
+- Paced SysEx + input queue with elastic catch-up (does not dump the buffer)
+- 1 / 2 / 3 unit maps; 4+ even units can use **pairs** (hotkey **P**)
+- LA32 pan table (8 real positions, center split L1 / C)
+- Auto when every out is MT-32 and the stream is not; exit on real MT-32 SysEx
+- `--voodoo` at launch seeds MT-32 format so you can **L**ock it
+
+### Anima (opt-in phrasing)
+- Velocity humanize, expression / mod ramps, guitar strum (including “Hetfield” down-pick on dirt tones)
+- **GS EFX**: one insertion per `:gs` port; guitars can pack two via OD1/OD2 + pan; file-driven EFX stays on its port
+- **Foley**: shared high channel (usually 16) for 8850 SFX (fret, cut, chord stroke, slap, breath, …)
+- **Tone variations**: seeded 8850 CC00 on capital bank 0/0 only; **file bank always wins**
+- Game mode (`--anima-game` / **A** cycle): shorter idle reset + PC-burst EFX reroll
+- Single output allowed when Anima is on
+
+### Record + log
+- `--record [DIR]` / hotkey **W**: IN + each OUT as type-1 SMF (conductor + Ch1–Ch16 + SysEx)
+- Idle ~10 s closes a take and the next MIDI opens a new file
+- `--log` / `--log-verbose`; **C** clears the log
 
 ### Live status panel
-- Per-port meters + peak hold, Total / Peak / Util
-- Channel activity, Volume / Pan / Mod / Pitch
-- Drops, Steals, Filtered counters
-- Rolling recent-status history
-- Format badge (optional lock star `*`), activity pulse, mode badges
-- Human-readable SysEx (GS / XG / MT-32 effects, resets, display text, …)
+- Per-port meters + VU-style peak hold, Total / Peak / Util
+- MIDI Channel / Voice Count / Vol / Pan / Mod / Pitch
+- Drops, Steals, Filtered; activity pulse
+- Rolling “Recent” history; format badge (`[GS]`, locked `[GS*]`)
+- Human-readable GS / XG / MT-32 SysEx (resets, EFX, display text, …)
 
 ### Other
-- Redundant controller filtering (sync without excess traffic)
-- Arbitrary number of output ports (default 2; 1 allowed with `--alchemy`)
-- **Alchemy** (**BROKEN/EXPERIMENTAL**): attempted GS↔XG SysEx/PC rewrite; allows a single output. Do not rely on conversion quality yet.
-- Graceful handling of dropped/lost **output** ports with automatic reconnect by name
-- Optional **`--log` / `--log-verbose`**: status, Alchemy, bank/PC, and **port health** (open/close/send fail/reconnect)
+- Redundant CC filtering (devices stay in sync with less traffic)
+- Per-port `--sync-delay` (negatives relative; all zeros = no queue)
+- Dropped output ports: stay up and reconnect by name (does **not** re-program the synth)
 - Cross-platform (Windows, macOS, Linux)
 
 ---
@@ -68,10 +90,6 @@ It is designed for musicians and retro-computing enthusiasts who want to combine
 - Python 3.8+
 - [mido](https://mido.readthedocs.io/) + [python-rtmidi](https://pypi.org/project/python-rtmidi/)
 - [rich](https://rich.readthedocs.io/)
-
-No extra packages are required for Crucible, SCPOP, or `--sync-delay`.
-
-#### Install dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -83,21 +101,31 @@ or:
 pip install mido[ports] python-rtmidi rich
 ```
 
+Repo layout (runtime):
+
+| File | Role |
+|------|------|
+| `duality.py` | Router, UI, Crucible, Anima, Voodoo, record |
+| `tables_gs.py` | GS EFX / macros / Anima insertion palettes |
+| `tables_xg.py` | XG types + Alchemy maps |
+| `tables_anima.py` | GM/MT-32/Sierra categories + 8850 tone palettes |
+| `tables_voodoo.py` / `voodoo_banks.py` | MT-TO-GM / KQ6 SysEx |
+
 ---
 
 ## Usage
 
-### List available MIDI ports
+### List ports
 ```bash
 python duality.py --list
 ```
 
-### Basic usage (two devices)
+### Two devices (classic)
 ```bash
 python duality.py --input "loopMIDI Port" --outs "MS40 A" "MS40 B"
 ```
 
-### Mixed polyphony limits
+### Mixed polyphony
 ```bash
 python duality.py \
   --input "loopMIDI Port" \
@@ -116,30 +144,44 @@ python duality.py --input "loopMIDI Port" --crucible --crucible-gm-wide \
     "MUNT:mt32"
 ```
 
-On Windows, quote each `Name:tag` argument so the shell does not split on `:`.
+On Windows, quote each `Name:tag` so the shell does not split on `:`.
 
-### Sync delay (e.g. softsynth leads hardware by ~80 ms)
+### Four GS ports + Anima + record + log
+```bash
+python duality.py --input duality \
+  --outs "SCVA:gs+gm2" "SCVA2:gs+gm2" "SCVA3:gs+gm2" "SCVA4:gs+gm2" \
+  --poly 32 32 32 32 --crucible --anima --log --record
+```
+
+### Voodoo on two MT-32s (hardware GM)
+```bash
+python duality.py --input duality \
+  --outs "MIDIMate 1:mt32" "MIDIMate 2:mt32" \
+  --voodoo --voodoo-bank mtgm --sync-delay 0 80
+```
+
+### Sync delay (softsynth ~80 ms ahead of hardware)
 ```bash
 python duality.py --input "loopMIDI Port" --crucible \
   --outs "SC PART A:gs+mt32" "MUNT:mt32" \
   --sync-delay 0 -80
 ```
+
 Negatives are relative: the most-negative port becomes 0 ms; others shift later.
 
-### SCPOP (pipe-organ SC files with no model-45 SysEx on the wire)
+### SCPOP without model-45 SysEx
 ```bash
 python duality.py --input "loopMIDI Port" --scpop --crucible \
   --outs "SC A:gs" "SC B:gs"
 ```
 
-### Silent mode / version
+### Silent / version
 ```bash
 python duality.py --input "..." --outs "A" "B" --chord-ms 25 --no-status
 python duality.py --version
 ```
 
-### Interactive mode
-If you omit `--outs`, Duality asks you to choose ports (2 by default; 1 with `--alchemy`).
+Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchemy` or `--anima`).
 
 ---
 
@@ -147,44 +189,55 @@ If you omit `--outs`, Duality asks you to choose ports (2 by default; 1 with `--
 
 | Option | Description |
 |--------|-------------|
-| `--input` | MIDI input port name (or partial match) |
-| `--outs` | Output ports: `Name` or `Name:tag` or `Name:tag+tag` (`gs`, `xg`, `gm`, `gm2`, `mt32`) |
-| `--poly` | Polyphony limit(s): one value for all, or one per port |
-| `--sync-delay` | Per-port delay in ms (one or per port). Negatives = relative. ±500 max. Default 0 |
-| `--mode` | `balance` (default, utilization-based) or `rr` (round-robin) |
-| `--chord-ms` | Chord detection window in ms (default 30) |
-| `--crucible` | Enable format-aware routing |
+| `--input` | MIDI input port (partial name ok) |
+| `--outs` | `Name` or `Name:tag` or `Name:tag+tag` (`gs`, `xg`, `gm`, `gm2`, `mt32`, `mt`, `cm`) |
+| `--poly` | One limit for all, or one per port |
+| `--sync-delay` | Per-port delay in ms. Negatives = relative. ±500 max. `0` = fast path |
+| `--mode` | `balance` (default) or `rr` |
+| `--chord-ms` | Chord window in ms (default 30) |
+| `--crucible` | Format-aware routing |
 | `--crucible-notes` | `affinity` (default) or `all` |
-| `--crucible-gm-wide` | GM/GM2 streams also match `gs` and `xg` ports |
+| `--crucible-gm-wide` | GM/GM2 also matches `gs` and `xg` |
 | `--input-format` | Assume `gm` / `gm2` / `gs` / `xg` / `mt32` until SysEx says otherwise |
+| `--strict-format-detection` | Only System On / Reset SysEx may switch format |
 | `--scpop` | Force SCPOP note broadcast to format-matched ports |
-| `--strict-format-detection` | Only actual SYSTEM ON or RESET SysEx messages set/switch input format. (default: any family SysEx) |
-| `--alchemy` | Alchemy (**BROKEN/EXPERIMENTAL**): attempt GS↔XG rewrite; allows single output |
-| `--alchemy-all` | Alchemy fan-out to all GS/XG-capable outs (implies `--alchemy`) |
-| `--log [PATH]` | Append status / Alchemy / bank-PC / port health to a log (default: `duality.log`) |
-| `--log-verbose [PATH]` | Verbose log (all CCs, pitch, etc.). Optional path; implies logging. Wins over `--log` if both given |
-| `--no-status` | Disable the live status panel |
-| `--list` | List MIDI ports and exit |
-| `--version` | Show version |
+| `--anima` | Phrasing + GS EFX + foley + tone variations |
+| `--anima-game` | Anima game mode (implies `--anima`) |
+| `--anima-efx-stable` | Same song → same EFX hash (no per-launch roll) |
+| `--voodoo` | Load GM bank on MT-32 outs at start |
+| `--voodoo-bank` | `mtgm` (default) or `kq6` |
+| `--voodoo-layout` | `stripe` (default) or `pairs` |
+| `--alchemy` | **BROKEN/EXPERIMENTAL** GS↔XG rewrite; allows one output |
+| `--alchemy-all` | Alchemy fan-out to all GS/XG outs (implies `--alchemy`) |
+| `--record [DIR]` | Write IN/OUT SMFs (default dir `.`). Hotkey **W** |
+| `--log [PATH]` | Status / bank / port health (default `duality.log`) |
+| `--log-verbose [PATH]` | All CCs etc. Wins if both log flags are set |
+| `--no-status` | No live panel |
+| `--list` | List ports and exit |
+| `--version` | Version |
 | `-h, --help` | Help |
 
 ---
 
-## Hotkeys (while running)
+## Hotkeys
 
-Format keys set the **input / stream format** (how Duality interprets the MIDI feed for Crucible affinity).  
-They do **not** change `--outs` tags — those still describe each **output** device’s capabilities.
+Format keys set the **input / stream format** for Crucible. They do **not** change `--outs` tags.
 
 | Key | Action |
 |-----|--------|
 | **F** | Clear input format (and unlock) |
-| **L** | Lock / unlock current **input** format (blocks SysEx override & idle clear) |
-| **G** | Set input format GM; press again for GM2 |
-| **R** | Set input format GS |
-| **Y** | Set input format XG |
-| **M** | Set input format MT-32 |
-| **B** | Toggle balance ↔ round-robin |
-| **C** | Clear log file (when `--log` / `--log-verbose` is active) |
+| **L** | Lock / unlock input format |
+| **G** | Input GM; again → GM2 |
+| **R** | Input GS |
+| **Y** | Input XG |
+| **M** | Input MT-32; again while MT-32 → Voodoo on/off |
+| **V** | Cycle Voodoo bank (`mtgm` / `kq6`) |
+| **P** | Voodoo layout stripe ↔ pairs (4+ even MT-32 units) |
+| **A** | Anima off → normal → game → off |
+| **B** | Balance ↔ round-robin |
+| **X** | Panic + dialect resets + Anima session reset (not format lock) |
+| **W** | Start / stop recording |
+| **C** | Clear log file |
 | **Q** | Panic and quit |
 | **Ctrl+C** | Panic and quit |
 
@@ -192,62 +245,97 @@ They do **not** change `--outs` tags — those still describe each **output** de
 
 ## Status panel
 
-<!-- PLACEHOLDER: current full-panel screenshot -->
+<!-- IMAGE NEEDED: current full panel (header + meters + channel grid + Recent) -->
 <!-- ![Status panel](docs/images/status-panel.png) -->
 
-<!-- PLACEHOLDER: short GIF – format badge / Crucible routing in action -->
+<!-- IMAGE NEEDED: short GIF — format badge / Crucible jumping GS vs XG -->
 <!-- ![Crucible demo](docs/images/crucible-demo.gif) -->
 
-While running, Duality can show:
+<!-- IMAGE NEEDED: Anima — EFX + foley lines in Recent, Cut/Stroke on ch16 -->
+<!-- ![Anima foley](docs/images/anima-foley.png) -->
 
-- Per-port activity meters and peak markers  
-- Total / Peak voices and utilisation  
-- Drops, Steals, Filtered  
-- Per-channel voices, Volume, Pan, Mod, Pitch  
-- Chord / last activity, status message + rolling history  
-- Format badge (`[GS]`, locked `[GS*]`) , Crucible / Alchemy / SCPOP badges  
-- Activity pulse and human-readable SysEx lines  
+While running:
+
+- Per-port meters and peak markers
+- Total / Peak / Util; Drops, Steals, Filtered
+- Per-channel voices, Volume, Pan, Mod, Pitch
+- Last chord, last activity, status + rolling history
+- Format badge (`[GS]`, `[GS*]`), Crucible / Voodoo / Anima / SCPOP
+- Activity pulse and decoded SysEx
 
 **Older panel capture** (prior UI generation):
 
 <img width="1086" height="269" alt="Earlier build – panel detail" src="https://github.com/user-attachments/assets/767d3c82-0850-48d3-b060-7df83c8da3c7" />
 
-Wide terminals (≥ ~118 columns) get the side history panel automatically.
+Wide terminals (≥ ~118 columns) get the side **Recent** panel automatically.
 
 ---
 
-## Tips
+## Anima notes
 
-- Set `--poly` to each module’s **real** available polyphony (multi-voice patches consume more than one).
-- Utilization-based **balance** stays fair when limits differ (e.g. 32 vs 96); equal limits are not required.
-- Use a virtual loopback (loopMIDI, IAC, etc.) so a DAW/sequencer feeds Duality.
-- Prefer **one** `mt32` destination when comparing MT-32 maps; balancing across SC + MUNT splits notes across different latencies.
-- Use `--sync-delay` to align a fast softsynth with slower USB hardware; leave at 0 when unused.
-- Tag multi-standard modules explicitly (`gs+gm2`) so GM2 set/lock does not “match nothing” and drop notes.
-- If a softsynth or hardware port disappears (app quit, player stop), Duality stays up and **retries reconnect** to the same port name. It does **not** re-send banks, programs, or mode resets — re-establish tone maps with your file/player as usual after a device restart.
+Anima is off unless `--anima` / `--anima-game` or hotkey **A**.
 
-### Duality looks active but my synth is not responding / I don’t hear anything
+**GS EFX** — one insert per tagged GS unit. Priority roughly: dirty guitar → clean/acoustic guitar → lead / shakuhachi → organ → bass → … File-programmed EFX stays on that port; Anima may use *other* units for extra inserts. OD1/OD2 can split two dirt guitars by pan when they are hard-left / hard-right.
 
-WinMM + loopMIDI port ownership is fragile. Try this order:
+**Foley** — one shared SFX channel per GS synth (usually 16). 8850 programming is **CC0 = variation (the list “CC00” column), CC32 = 0, PC 121 or 122**. Gesture after a short hold: fret / cut / chord stroke / steel slide; bass slap vs slide; wind click vs breath; brass noise. Phrase gap keeps it from firing every pick. Cut Noise is velocity-boosted. Families take turns on the same lane.
 
-1. Quit Duality cleanly (**Q** or Ctrl+C).
-2. Quit the player (e.g. Windows Media Player) if it was open.
-3. Restart the softsynths (or power-cycle hardware) so they re-open their **input** ends of the loopMIDI cables.
-4. Start Duality again, then the player.
+**Tone variations** — if the file sends capital bank `0/0`, Anima may pick another 8850 CC00 for that PC (seeded, sticky until PC / **X** / idle). Palettes are mostly **000 or 008** (plus **001** on Clean Gt and Fingered Bass). If the file already set CC0 or CC32, Duality does not touch it. Capitals always emit CC0=0 so a previous 1024/2048 bank cannot stick (many editors show bank = CC0 × 128).
 
-Preferred cold-start order: **loopMIDI → softsynths → Duality → player**.
+**Game mode** — shorter idle reset and EFX reroll on a burst of program changes (DOS-era cue changes).
 
-With `--log`, check lines prefixed `PORT` (open/close, send failures, reconnects). At session end, each out logs **last successful send** age — useful when the UI is busy but a device stays silent.
+<!-- IMAGE NEEDED: 88emu / SC-8850 part screen showing 8850 map + Gt.Cut Noise -->
+<!-- ![8850 foley map](docs/images/foley-8850-map.png) -->
+
+---
+
+## Voodoo notes
+
+Think “Super Munt GM,” but on hardware. `--voodoo` or **M** while the input format is already MT-32.
+
+- Init is paced on purpose (MT-32 buffer). Several units in parallel still share the host MIDI interface, so wall-clock time grows with unit count.
+- Incoming MIDI is queued during load, then caught up with a speed ceiling — not dumped.
+- Real MT-32 SysEx in the stream drops Voodoo and returns to normal MT-32 routing.
+
+---
+
+## Recordings
+
+`--record` or **W** writes:
+
+- `IN-<input>-<format>-<timestamp>.mid`
+- `OUT-<port>-<tags>-<timestamp>.mid` per output
+
+Type-1 SMF: tempo track, **Ch1–Ch16**, plus a SysEx track. Includes Duality’s own bank/PC/EFX/foley, so an OUT file is “what the synth heard.”
 
 ---
 
 ## Alchemy (BROKEN / EXPERIMENTAL)
 
-`--alchemy` enables the Alchemy path (including a **single** output). Duality may attempt best-effort **GS ↔ XG** SysEx and program/bank rewrites toward tagged outs.
+`--alchemy` / `--alchemy-all` may rewrite GS↔XG SysEx and some PCs. Mapping is incomplete and effect translation is unreliable. Same-dialect traffic (XG → `:xg`) should pass through. Use Crucible + Anima + Voodoo instead unless you are debugging conversion.
 
-This path is **broken / experimental**: mapping is incomplete, effect translation is unreliable, and results vary by file and device. Same-dialect traffic (e.g. XG → `:xg`) should pass through unchanged. Crucible routing and the rest of Duality work independently of conversion quality.
+---
 
-`--alchemy-all` fans out to all GS/XG-capable outs (implies `--alchemy`).
+## Tips
+
+- Set `--poly` to each module’s **real** voices (multi-osc patches cost more than 1).
+- **Balance** stays fair when limits differ (32 vs 96).
+- Feed Duality from a loopback (loopMIDI, IAC, …).
+- Tag multi-standard modules (`gs+gm2`) so a GM2 lock does not match nothing.
+- `--sync-delay` for USB vs softsynth skew; leave `0` when unused.
+- After a synth restart, Duality reconnects the port but does **not** re-send banks — play a reset or hit **X**.
+
+### Duality looks active but my synth is silent
+
+WinMM + loopMIDI ownership is fragile. Try:
+
+1. Quit Duality (**Q** or Ctrl+C).
+2. Quit the player if it was open.
+3. Restart softsynths (or power-cycle hardware) so they re-open the **input** side of the cable.
+4. Start Duality, then the player.
+
+Cold start: **loopMIDI → softsynths → Duality → player**.
+
+With `--log`, watch `PORT` lines. Session end logs last successful send age per out.
 
 ---
 
