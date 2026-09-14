@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.18.39** (`python duality.py --version`).
+Current development line: **v0.18.40** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -81,7 +81,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 - Redundant CC filtering (devices stay in sync with less traffic)
 - Per-port `--sync-delay` (negatives relative; all zeros = no queue)
 - Dropped output ports: stay up and reconnect by name (does **not** re-program the synth)
-- Cross-platform (Windows, macOS, Linux)
+- **Developed and tested on Windows.** MIDI I/O is portable via python-rtmidi (WinMM / CoreMIDI / ALSA). Mac and Linux should run; they are not part of the regular test pass. Please file issues if you try them.
 
 ---
 
@@ -110,6 +110,17 @@ Repo layout (runtime):
 | `tables_xg.py` | XG types + Alchemy maps |
 | `tables_anima.py` | GM/MT-32/Sierra categories + 8850 tone palettes |
 | `tables_voodoo.py` / `voodoo_banks.py` | MT-TO-GM / KQ6 SysEx |
+
+### Platforms
+
+| | Windows | macOS | Linux |
+|--|---------|-------|-------|
+| Tested by the author | Yes | No | No |
+| MIDI backend | WinMM | CoreMIDI | ALSA |
+| Typical loopback | loopMIDI | IAC Driver | `snd-virmidi` / JACK |
+| Hotkeys | `msvcrt` | cbreak stdin | cbreak stdin |
+
+Unix hotkeys need a real TTY. Ctrl+C always panics.
 
 ---
 
@@ -319,7 +330,7 @@ Type-1 SMF: tempo track, **Ch1–Ch16**, plus a SysEx track. Includes Duality’
 
 - Set `--poly` to each module’s **real** voices (multi-osc patches cost more than 1).
 - **Balance** stays fair when limits differ (32 vs 96).
-- Feed Duality from a loopback (loopMIDI, IAC, …).
+- Feed Duality from a loopback (loopMIDI, IAC, ALSA virtual ports).
 - Tag multi-standard modules (`gs+gm2`) so a GM2 lock does not match nothing.
 - `--sync-delay` for USB vs softsynth skew; leave `0` when unused.
 - After a synth restart, Duality reconnects the port but does **not** re-send banks — play a reset or hit **X**.
