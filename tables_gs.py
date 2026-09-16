@@ -225,6 +225,8 @@ ANIMA_EFX_GS = {
     "bass_wide": [
         (0x01, 0x42, "Stereo Chorus"),
         (0x01, 0x43, "Space-D"),
+        (0x01, 0x02, "Enhancer"),
+        (0x02, 0x08, "Enh→Chorus"),
     ],
     "orch_brass": [
         (0x01, 0x02, "Enhancer"),
