@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.18.40** (`python duality.py --version`).
+Current development line: **v0.18.62** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -11,7 +11,7 @@ Duality routes MIDI notes across one or more sound modules so you can treat seve
 | **Router** | Load-balance or round-robin notes; chord grouping; voice steal |
 | **Crucible** | Send the stream only to outputs tagged for that MIDI dialect |
 | **Voodoo** | Super-Munt-style GM on real MT-32 / CM-32 hardware |
-| **Anima** | Humanize + GS insertion EFX + foley + 8850 tone variations |
+| **Anima** | Humanize + GS EFX + foley + 8850 / CM-64 tone colors (GM files on GS hardware) |
 | **Alchemy** | Experimental GS↔XG rewrite — **broken; do not rely on it** |
 
 Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG, MT-32, Ketron/Solton, etc.).
@@ -61,8 +61,10 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 - Velocity humanize, expression / mod ramps, guitar strum (including “Hetfield” down-pick on dirt tones)
 - **GS EFX**: one insertion per `:gs` port; guitars can pack two via OD1/OD2 + pan; file-driven EFX stays on its port
 - **Foley**: shared high channel (usually 16) for 8850 SFX (fret, cut, chord stroke, slap, breath, …)
-- **Tone variations**: seeded 8850 CC00 on capital bank 0/0 only; **file bank always wins**
-- Game mode (`--anima-game` / **A** cycle): shorter idle reset + PC-burst EFX reroll
+- **Tone colors**: seeded 8850 CC00 (same PC) plus family-matched **CM-64 PCM/LA** (banks 126/127, SC-55 map)
+- File **GM/GM2 On** on `:gs` ports becomes **GS Reset** so the Canvas leaves GM-lock and honors those banks
+- 4-char hex **seed** on the badge; `--anima-seed` / **S** lock a keeper across **X**
+- Game mode (`--anima-game` / **A** cycle): short idle + new seed on a real PC burst
 - Single output allowed when Anima is on
 
 ### Record + log
@@ -108,7 +110,8 @@ Repo layout (runtime):
 | `duality.py` | Router, UI, Crucible, Anima, Voodoo, record |
 | `tables_gs.py` | GS EFX / macros / Anima insertion palettes |
 | `tables_xg.py` | XG types + Alchemy maps |
-| `tables_anima.py` | GM/MT-32/Sierra categories + 8850 tone palettes |
+| `tables_anima.py` | GM / MT-32 / Sierra categories |
+| `tables_8850.py` | SC-8850 CC00 + map + CM-64 variation tables |
 | `tables_voodoo.py` / `voodoo_banks.py` | MT-TO-GM / KQ6 SysEx |
 
 ### Platforms
@@ -157,11 +160,11 @@ python duality.py --input "loopMIDI Port" --crucible --crucible-gm-wide \
 
 On Windows, quote each `Name:tag` so the shell does not split on `:`.
 
-### Four GS ports + Anima + record + log
+### Four GS ports + Anima (GM soundtrack on Canvas hardware)
 ```bash
 python duality.py --input duality \
   --outs "SCVA:gs+gm2" "SCVA2:gs+gm2" "SCVA3:gs+gm2" "SCVA4:gs+gm2" \
-  --poly 32 32 32 32 --crucible --anima --log --record
+  --poly 32 32 32 32 --crucible --crucible-gm-wide --anima-game --log --record
 ```
 
 ### Voodoo on two MT-32s (hardware GM)
@@ -212,9 +215,10 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | `--input-format` | Assume `gm` / `gm2` / `gs` / `xg` / `mt32` until SysEx says otherwise |
 | `--strict-format-detection` | Only System On / Reset SysEx may switch format |
 | `--scpop` | Force SCPOP note broadcast to format-matched ports |
-| `--anima` | Phrasing + GS EFX + foley + tone variations |
-| `--anima-game` | Anima game mode (implies `--anima`) |
-| `--anima-efx-stable` | Same song → same EFX hash (no per-launch roll) |
+| `--anima` | Phrasing + GS EFX + foley + 8850 / CM-64 tone colors |
+| `--anima-game` | Game mode (implies `--anima`): 4 s idle + cue reroll |
+| `--anima-seed [HEX]` | Lock seed (`4A2F`, `0x4A2F`, or decimal). Bare flag locks first roll |
+| `--anima-efx-stable` | Deprecated alias for bare `--anima-seed` |
 | `--voodoo` | Load GM bank on MT-32 outs at start |
 | `--voodoo-bank` | `mtgm` (default) or `kq6` |
 | `--voodoo-layout` | `stripe` (default) or `pairs` |
@@ -245,6 +249,7 @@ Format keys set the **input / stream format** for Crucible. They do **not** chan
 | **V** | Cycle Voodoo bank (`mtgm` / `kq6`) |
 | **P** | Voodoo layout stripe ↔ pairs (4+ even MT-32 units) |
 | **A** | Anima off → normal → game → off |
+| **S** | Lock / unlock Anima seed (X keeps colors while locked) |
 | **B** | Balance ↔ round-robin |
 | **X** | Panic + dialect resets + Anima session reset (not format lock) |
 | **W** | Start / stop recording |
@@ -284,15 +289,26 @@ Wide terminals (≥ ~118 columns) get the side **Recent** panel automatically.
 
 ## Anima notes
 
-Anima is off unless `--anima` / `--anima-game` or hotkey **A**.
+Anima is off unless `--anima` / `--anima-game` or hotkey **A**. It is the musician between the file and the hardware: touch, colors, and inserts — not a rewrite of the sequence.
+
+**GM files on a Sound Canvas.** A file **GM System On** locks an 8850/SCVA into GM mode, which **ignores** CC00, CC32, and CM-64 banks. With Anima on, Duality turns that message into a **GS Reset** on `:gs` / `:sc` ports (and **XG System On** on `:xg` ports) so variations actually sound. That is why a capital-only GM soundtrack can use the 8850 map and the CM-64 LA organs / horns.
+
+**Tone colors.** If the file leaves bank `0/0` (or lands back on a GM capital), Anima may pick:
+
+- another **8850 CC00** of the **same PC** (map 1–4), or
+- a family-matched **CM-64 PCM (126) / LA (127)** tone on the SC-55 map (`CC32=1`).
+
+Family is tracked so a later PC stays in brass / organ / strings / …. A *real* file variation (non-zero CC00 that is not “back to capital”) wins and Anima steps off that part. Live slots are held across a scene `CC0=0` pad so a GM reset dump does not wipe a CM horn back to Bowed Glass.
+
+**Seeds.** The badge shows a 4-char hex. Same seed → same colors. `--anima-seed 4A2F` or hotkey **S** locks it; **X** then repeats the take. Game mode rolls a new seed on a burst of program changes (new cue) unless the seed is locked.
 
 **GS EFX** — one insert per tagged GS unit. Priority roughly: dirty guitar → clean/acoustic guitar → lead / shakuhachi → organ → bass → … File-programmed EFX stays on that port; Anima may use *other* units for extra inserts. OD1/OD2 can split two dirt guitars by pan when they are hard-left / hard-right.
 
-**Foley** — one shared SFX channel per GS synth (usually 16). 8850 programming is **CC0 = variation (the list “CC00” column), CC32 = 0, PC 121 or 122**. Gesture after a short hold: fret / cut / chord stroke / steel slide; bass slap vs slide; wind click vs breath; brass noise. Phrase gap keeps it from firing every pick. Cut Noise is velocity-boosted. Families take turns on the same lane.
+Bass split: Finger / Picked may use **Bass Multi** (mono OD chain). Slap, fretless, synth bass, and upright stay **wide** (chorus / Space-D / enhancer).
 
-**Tone variations** — if the file sends capital bank `0/0`, Anima may pick another 8850 CC00 for that PC (seeded, sticky until PC / **X** / idle). Palettes are mostly **000 or 008** (plus **001** on Clean Gt and Fingered Bass). If the file already set CC0 or CC32, Duality does not touch it. Capitals always emit CC0=0 so a previous 1024/2048 bank cannot stick (many editors show bank = CC0 × 128).
+**Foley** — one shared SFX channel per GS synth (usually 16), overflowed to another out if the hero is full. 8850 programming stays on the **default map**. Gesture after a short hold: fret / cut / chord stroke / steel slide; bass slap vs slide; wind click vs breath. Families take turns on the same lane.
 
-**Game mode** — shorter idle reset and EFX reroll on a burst of program changes (DOS-era cue changes).
+**Game mode** — 4 s idle reset and a new seed + EFX roll on a real PC burst (DOS / soundtrack cue changes).
 
 <!-- IMAGE NEEDED: 88emu / SC-8850 part screen showing 8850 map + Gt.Cut Noise -->
 <!-- ![8850 foley map](docs/images/foley-8850-map.png) -->
