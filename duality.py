@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.18.40"
+VERSION = "0.18.62"
 
 
 """
@@ -304,6 +304,7 @@ from tables_anima import (
     ANIMA_MOD_CATS,
     ANIMA_TONE_VARS,
 )
+from tables_8850 import anima_cm_to_gm, anima_tone_slots
 
 
 def _roland_checksum(body: list[int]) -> int:
@@ -442,6 +443,7 @@ ANIMA_FOLEY_GAP = 1.35          # phrase-level, not every riff note
 ANIMA_FOLEY_JUMP = 4
 ANIMA_FOLEY_SLIDE = 7
 ANIMA_FOLEY_IDLE = 8.0
+ANIMA_FOLEY_DRUM_GATE = 0.14  # skip foley this close to a ch10 hit
 # SC-8850 Inst. List ~p.184 SFX: PC 121/122 + GS variations (CC32)
 # (pc 0-based, bankLSB, keys)
 ANIMA_FOLEY_SPEC = {
@@ -506,6 +508,7 @@ class Duality:
         voodoo_layout: str = "stripe",
         anima: bool = False,
         anima_efx_stable: bool = False,
+        anima_seed: int | None = None,
         anima_game: bool = False,
         record_dir: str | None = None,
     ):
@@ -566,6 +569,18 @@ class Duality:
         self.anima_game = bool(anima_game)
         self.anima = bool(anima) or self.anima_game
         self.anima_efx_stable = bool(anima_efx_stable)
+        # --anima-seed N → lock that value. --anima-seed (no N) or old
+        # --anima-efx-stable → lock the first rolled seed.
+        self._anima_efx_launch = None
+        if anima_seed is not None and int(anima_seed) >= 0:
+            self._anima_efx_seed = int(anima_seed) & 0xFFFF
+            self._anima_seed_locked = True
+        elif anima_efx_stable or anima_seed == -1:
+            self._anima_efx_seed = None
+            self._anima_seed_locked = True
+        else:
+            self._anima_efx_seed = None
+            self._anima_seed_locked = False
         self._anima_game_pc_t = []
         self._anima_game_snap = None
         self.record_dir = record_dir
@@ -578,6 +593,10 @@ class Duality:
         self._rec_stamp = ""
         self._anima_prog = [0] * 16
         self._anima_tone_cc0 = [None] * 16
+        self._anima_tone_slot = [None] * 16
+        self._anima_cm64 = [False] * 16
+        self._file_used_ch = [False] * 16
+        self._file_pc = [0] * 16
         self._anima_last_note = [-1] * 16
         self._anima_last_vel = [-1] * 16
         self._anima_last_on = [0.0] * 16
@@ -612,7 +631,6 @@ class Duality:
         self._anima_rhythm[9] = True  # ch10 is always rhythm
         self._last_key_ports = {}  # (ch,note) -> ports of last sounding voice
         self._anima_efx_on = [[False] * 16 for _ in range(self.n_ports)]
-        self._anima_efx_seed = None
         self._anima_efx_pick = {}  # (fam, port) -> (msb, lsb, label)
         self._anima_ports = [[] for _ in range(16)]
         self._anima_cc1_cur = [0] * 16
@@ -633,6 +651,7 @@ class Duality:
         self._anima_foley_ch = [None] * self.n_ports   # reserved noise channel
         self._anima_foley_armed = [False] * self.n_ports
         self._anima_foley_last = 0.0
+        self._anima_drum_last = 0.0
         self._anima_foley_pitch = [-1] * 16
         self._anima_foley_n = 0
         self._anima_foley_pend = None
@@ -819,7 +838,8 @@ class Duality:
         console.print(
             "[green]Ready.[/] Notes will be distributed. Ctrl+C to stop + panic.\n"
             "  Hotkeys: [bold]F[/]=clear  [bold]L[/]=lock format  [bold]G[/]=GM/GM2  [bold]R[/]=GS  "
-            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]A[/]=Anima/game  [bold]C[/]=log  [bold]X[/]=reset  [bold]Q[/]=quit"
+            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]A[/]=Anima/game  "
+            "[bold]S[/]=seed lock  [bold]C[/]=log  [bold]X[/]=reset  [bold]Q[/]=quit"
         )
         # --voodoo: seed MT-32 format (so L can lock) then begin paced GM load
         if self.voodoo_requested:
@@ -2994,18 +3014,76 @@ class Duality:
             return True
         return bool(tags & {"gs", "sc", "gm", "gm2"})
 
-    def _anima_tone_pick(self, ch: int, pc: int) -> int:
-        pal = ANIMA_TONE_VARS.get(pc & 0x7F)
-        if not pal:
-            return 0
-        cached = self._anima_tone_cc0[ch]
+    def _anima_cm64_restore_pc(self, msg: mido.Message) -> None:
+        """File CC0/CC32 after a CM-64 remap: put the original GM PC back."""
+        if not self.anima or msg.type != "control_change":
+            return
+        ch = msg.channel & 0x0F
+        if not self._anima_cm64[ch]:
+            return
+        pc = int(self._file_pc[ch]) & 0x7F
+        self._anima_cm64[ch] = False
+        self._anima_tone_slot[ch] = None
+        cc32 = int(self.bank_lsb[ch]) & 0x7F
+        if cc32 == 0:
+            cc32 = 4
+        # Replay bank+PC on GS outs so the part leaves 126/127.
+        for i in range(self.n_ports):
+            if not self._anima_port_8850(i):
+                continue
+            self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=int(self.bank_msb[ch]) & 0x7F))
+            self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+            self._send_routed(i, mido.Message("program_change", channel=ch, program=pc))
+        self._anima_feedback(
+            "tone",
+            f"CM64 revert ch{ch + 1} → GM PC{pc + 1} map{cc32}",
+            status=True,
+        )
+
+    def _anima_gs_map_home(self, reason: str = "") -> None:
+        """GS Reset does not clear tone map. Force CC32=4 on GS parts."""
+        for i in range(self.n_ports):
+            if not self._anima_port_8850(i):
+                continue
+            for ch in range(16):
+                if getattr(self, "_anima_cm64", [False]*16)[ch]:
+                    continue
+                try:
+                    self._send_routed(
+                        i, mido.Message("control_change", channel=ch, control=32, value=4)
+                    )
+                except Exception:
+                    break
+        if reason:
+            self._log_line(f"ANIMA map home CC32=4 ({reason})")
+
+    def _anima_tone_pick(self, ch: int, pc: int):
+        """Return (cc00, cc32, pc) or None for capital-as-written."""
+        cached = self._anima_tone_slot[ch]
         if cached is not None:
-            return int(cached)
-        seed = self._anima_ensure_efx_seed()
-        mix = (seed + (ch + 1) * 17 + (pc + 1) * 31) & 0xFFFF
-        var = int(pal[mix % len(pal)])
-        self._anima_tone_cc0[ch] = var
-        return var
+            return cached
+        slots = anima_tone_slots(pc)
+        if not slots:
+            slot = (0, 4, pc & 0x7F)
+        else:
+            seed = self._anima_ensure_efx_seed()
+            mix = (seed + (ch + 1) * 17 + (pc + 1) * 31) & 0xFFFF
+            same = [s for s in slots if s[0] not in (126, 127) and s[2] == (pc & 0x7F)]
+            cm = [s for s in slots if s[0] in (126, 127)]
+            varied = [s for s in same if s[0] != 0]
+            # Official CM-64 PCM/LA (CC00 126/127, SC-55 map) ~1 in 4.
+            if cm and (mix % 4 == 0):
+                slot = cm[(mix // 4) % len(cm)]
+            elif varied and (mix % 3 != 0):
+                slot = varied[mix % len(varied)]
+            elif same:
+                slot = same[mix % len(same)]
+            else:
+                slot = (0, 4, pc & 0x7F)
+        self._anima_tone_slot[ch] = slot
+        self._anima_tone_cc0[ch] = slot[0]
+        self._anima_cm64[ch] = (slot[0] in (126, 127)) or (slot[2] != (pc & 0x7F))
+        return slot
 
     def _anima_on_pc(self, msg: mido.Message) -> None:
         if msg.type != "program_change":
@@ -3013,6 +3091,10 @@ class Duality:
         ch = msg.channel & 0x0F
         self._anima_prog[ch] = msg.program & 0x7F
         self._anima_tone_cc0[ch] = None
+        self._anima_tone_slot[ch] = None
+        self._anima_cm64[ch] = False
+        self._file_used_ch[ch] = True
+        self._file_pc[ch] = msg.program & 0x7F
         # File reclaimed a channel we had borrowed for fret noise.
         for i, fch in enumerate(getattr(self, "_anima_foley_ch", []) or []):
             if fch == ch and (msg.program & 0x7F) not in (120, 121):
@@ -3033,12 +3115,27 @@ class Duality:
             )
             if self.anima_game:
                 self._anima_game_note_pc()
+            # Load insertion type now so the first note is not under a DSP swap.
+            self._anima_maybe_efx(ch)
+
+    def _anima_cat_pc(self, ch: int) -> int:
+        """GM capital this part is *for*, even if we are sounding a CM-64 PC."""
+        ch = ch & 0x0F
+        if self._anima_cm64[ch] and self._file_used_ch[ch]:
+            return int(self._file_pc[ch]) & 0x7F
+        msb = int(self.bank_msb[ch]) & 0x7F
+        prog = int(self._anima_prog[ch]) & 0x7F
+        if msb in (126, 127):
+            gm = anima_cm_to_gm(msb, prog)
+            if gm is not None:
+                return gm
+        return prog
 
     def _anima_category(self, ch: int) -> str:
         """Pick articulation family from the active tonemap."""
         if self._anima_is_rhythm(ch):
             return "sfx"
-        prog = self._anima_prog[ch & 0x0F]
+        prog = self._anima_cat_pc(ch)
         voodoo_on = bool(
             getattr(self, "voodoo_active", False)
             or getattr(self, "voodoo_loading", False)
@@ -3222,7 +3319,14 @@ class Duality:
         self._anima_foley_patch = None
         self._anima_foley_pitch = [-1] * 16
         self._anima_tone_cc0 = [None] * 16
+        self._anima_tone_slot = [None] * 16
+        self._anima_cm64 = [False] * 16
+        self.bank_msb = [0] * 16
+        self.bank_lsb = [0] * 16
+        self._anima_gs_map_home("session")
         self._anima_session_idle_done = True
+        # Do not send new PCs here — that was audible "X changes patches".
+        # Next file PC / prime picks from the new seed.
         self._set_status(f"Anima reset ({reason})", duration=2.5)
 
     def _check_anima_session_idle(self) -> None:
@@ -3240,7 +3344,8 @@ class Duality:
         if not (self._anima_efx_key or any(self._anima_slots) or self._anima_file_efx_t):
             self._anima_session_idle_done = True
             return
-        self._anima_reset_session("30s idle")
+        label = f"{int(idle_need)}s idle"
+        self._anima_reset_session(label)
 
     def _send_format_resets(self, reason: str = "hotkey X") -> None:
         """GM / GS / XG / MT-32 reset on each out from its tags. Format lock stays."""
@@ -3495,10 +3600,10 @@ class Duality:
             return "guitar_dist"
         if p == 32:
             return "bass_acoustic"   # upright — never Bass Multi
-        if p in (33, 34, 36, 37):
-            return "bass_electric"
-        if p in (35, 38, 39):
-            return "bass_wide"
+        if p in (33, 34):
+            return "bass_electric"   # finger / picked — Bass Multi ok
+        if p in (35, 36, 37, 38, 39):
+            return "bass_wide"       # fretless / slap / synth — stay stereo
         if 56 <= p <= 61:
             return "orch_brass"      # GM 57–62 Trumpet … Brass Section
         if p in (62, 63):
@@ -3678,28 +3783,73 @@ class Duality:
         if diff < ANIMA_GAME_SNAP_DIFF:
             return
         self._anima_reset_efx_seed()
-        self._anima_feedback("game", f"new cue ({diff} PCs) — EFX reroll", status=True)
+        self._anima_tone_cc0 = [None] * 16
+        self._anima_tone_slot = [None] * 16
+        self._anima_cm64 = [False] * 16
+        self._anima_feedback("game", f"new cue ({diff} PCs) — EFX/tone reroll", status=True)
+
+    def _anima_reroll_tones(self) -> None:
+        """Re-pick and send variation slots for programs we already learned."""
+        if not self.anima:
+            return
+        for ch in range(16):
+            if self._anima_is_rhythm(ch):
+                continue
+            if not (self._file_used_ch[ch] or int(self._anima_prog[ch]) != 0):
+                continue
+            pc = int(self._file_pc[ch] if self._file_used_ch[ch] else self._anima_prog[ch]) & 0x7F
+            slot = self._anima_tone_pick(ch, pc)
+            if not slot:
+                continue
+            cc0, cc32, pc_out = slot
+            for i in range(self.n_ports):
+                if not self._anima_port_8850(i):
+                    continue
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                if cc0 in (126, 127):
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                self._send_routed(i, mido.Message("program_change", channel=ch, program=pc_out))
+            self._anima_feedback(
+                "tone",
+                f"reroll ch{ch + 1} GM{pc + 1} → CC00={cc0:03d} map{cc32} PC{pc_out + 1}",
+                status=True,
+            )
 
     def _anima_reset_efx_seed(self) -> None:
+        if getattr(self, "_anima_seed_locked", False):
+            self._anima_efx_pick = {}
+            return
         self._anima_efx_seed = None
         self._anima_efx_pick = {}
-        # New listen → new row, unless --anima-efx-stable asked for a fixed hash.
-        if not getattr(self, "anima_efx_stable", False):
-            self._anima_efx_launch = None
+        self._anima_efx_launch = None
+        if self.anima:
+            self._anima_ensure_efx_seed()
 
     def _anima_ensure_efx_seed(self) -> int:
-        if self._anima_efx_seed is None:
-            snap = tuple(int(x) & 0x7F for x in self._anima_prog)
-            # Per-launch salt so the same SMF can draw a different row next run,
-            # still stable for the whole song.
-            if self.anima_efx_stable:
-                # Same PC snapshot → same palette row, every launch.
-                self._anima_efx_seed = hash(snap) & 0xFFFF
-            else:
-                if not getattr(self, "_anima_efx_launch", None):
-                    self._anima_efx_launch = random.randrange(1, 0x10000)
-                self._anima_efx_seed = (hash(snap) ^ self._anima_efx_launch) & 0xFFFF
+        if self._anima_efx_seed is not None:
+            return int(self._anima_efx_seed) & 0xFFFF
+        if not getattr(self, "_anima_efx_launch", None):
+            self._anima_efx_launch = random.randrange(1, 0x10000)
+        snap = tuple(int(x) & 0x7F for x in self._anima_prog)
+        self._anima_efx_seed = (hash(snap) ^ self._anima_efx_launch) & 0xFFFF
+        self._log_line(f"ANIMA seed {self._anima_efx_seed:04X}")
         return self._anima_efx_seed
+
+    def _anima_toggle_seed_lock(self) -> None:
+        if not self.anima:
+            self._set_status("Anima off — seed lock ignored", duration=2.0)
+            return
+        self._anima_ensure_efx_seed()
+        self._anima_seed_locked = not bool(self._anima_seed_locked)
+        seed = int(self._anima_efx_seed) & 0xFFFF
+        if self._anima_seed_locked:
+            self._log_line(f"ANIMA seed LOCK {seed:04X}")
+            self._set_status(f"Anima seed LOCK {seed:04X} — X will keep it", duration=4.0)
+        else:
+            self._log_line(f"ANIMA seed unlock {seed:04X}")
+            self._set_status(f"Anima seed unlock {seed:04X} — X/idle will reroll", duration=3.0)
 
     def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None):
         """Keep a player's type when they relocate; new player in same fam gets another row."""
@@ -3871,6 +4021,8 @@ class Duality:
             if now - ts >= ANIMA_EFX_HOLD_SEC:
                 continue
             for c in range(16):
+                if not (self._file_used_ch[c] or self._anima_ch_has_notes(c)):
+                    continue
                 if self._anima_efx_family(c) == fam:
                     fam_chs.setdefault(fam, [])
                     if c not in fam_chs[fam]:
@@ -3953,6 +4105,26 @@ class Duality:
                     "port": port, "fam": fam, "chs": chs, "split": False,
                 })
         return plan
+
+    def _anima_ch_has_notes(self, ch: int) -> bool:
+        ch = ch & 0x0F
+        return any(k[0] == ch for k in self.active)
+
+    def _anima_efx_part_release(self, ch: int) -> None:
+        """EFX Off on a part that is no longer sounding. Type stays reserved."""
+        ch = ch & 0x0F
+        if self._anima_ch_has_notes(ch):
+            return
+        for port in range(self.n_ports):
+            ons = self._anima_efx_on[port] if port < len(self._anima_efx_on) else None
+            if not ons or not ons[ch]:
+                continue
+            self._anima_efx_ours = True
+            self._safe_out_send(
+                port,
+                self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x00]),
+            )
+            ons[ch] = False
 
     def _anima_clear_slot(self, port: int) -> None:
         ports = [port]
@@ -4037,6 +4209,18 @@ class Duality:
             and set(old.get("chs") or []) == set(chs)
             and old.get("split") == split
         ):
+            # Type already loaded (often at PC). Still match part On to notes.
+            for c in range(16):
+                want = c in chs
+                if want == self._anima_efx_on[port][c]:
+                    continue
+                val = 0x01 if want else 0x00
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    port,
+                    self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
+                )
+                self._anima_efx_on[port][c] = want
             return
         # Same family, type already sent — do not flap GTR Multi ↔ OD1/OD2
         # inside the switch window unless we are latching split ON.
@@ -4087,10 +4271,29 @@ class Duality:
         msb, lsb, label = pick
         typ = (msb, lsb)
         if old.get("typ") != typ:
-            held = self._anima_hold_retrigger(port, chs)
+            busy = any(k[0] in chs for k in self.active)
+            if busy and old.get("typ"):
+                # Keep current algorithm; swap when these parts go idle.
+                self._anima_slots[port] = {
+                    "fam": fam, "chs": chs, "split": False,
+                    "typ": old.get("typ"), "t": old.get("t") or time.monotonic(),
+                    "pending": (msb, lsb, label),
+                }
+                self._anima_feedback(
+                    "efx",
+                    f"P{port + 1} defer {label} (notes playing)",
+                    status=False,
+                )
+                return
+            if not busy:
+                # Quiet: no hold/retrigger click.
+                held = []
+            else:
+                held = self._anima_hold_retrigger(port, chs)
             self._anima_efx_ours = True
             self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb]))
-            self._anima_hold_resume(port, held)
+            if held:
+                self._anima_hold_resume(port, held)
             self._anima_efx_sent = typ
             self._anima_efx_label = label
             self._anima_efx_hero = chs[0] if chs else None
@@ -4113,7 +4316,34 @@ class Duality:
         self._anima_slots[port] = {"fam": fam, "chs": chs, "split": False, "typ": typ, "t": time.monotonic()}
 
 
+    def _anima_efx_flush_pending(self, ch: int) -> None:
+        """Apply a deferred EFX type once that part has no sounding notes."""
+        if any(k[0] == ch for k in self.active):
+            return
+        for port, slot in enumerate(self._anima_slots):
+            pend = slot.get("pending")
+            if not pend or ch not in (slot.get("chs") or []):
+                continue
+            if any(k[0] in (slot.get("chs") or []) for k in self.active):
+                continue
+            msb, lsb, label = pend
+            self._anima_efx_ours = True
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb]))
+            slot["typ"] = (msb, lsb)
+            slot["pending"] = None
+            slot["t"] = time.monotonic()
+            self._anima_efx_sent = (msb, lsb)
+            self._anima_efx_label = label
+            self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_efx_apply_pan(port, (msb, lsb), slot.get("chs") or [ch])
+            self._anima_feedback(
+                "efx",
+                f"P{port + 1} apply deferred GS {label}",
+                status=True,
+            )
+
     def _anima_foley_spec(self, ch: int):
+
         fam = self._anima_efx_family(ch)
         if fam in ANIMA_FOLEY_SPEC:
             return ANIMA_FOLEY_SPEC[fam]
@@ -4138,6 +4368,10 @@ class Duality:
             if c == avoid or c == 9 or self._anima_is_rhythm(c):
                 continue
             if any(k[0] == c for k in self.active):
+                continue
+            if self._file_used_ch[c]:
+                continue
+            if any(c in (s.get("chs") or []) for s in self._anima_slots):
                 continue
             prog = int(self._anima_prog[c]) if hasattr(self, "_anima_prog") else 0
             if prog not in (0, 120, 121) and self._anima_efx_family(c):
@@ -4173,11 +4407,10 @@ class Duality:
         last = getattr(self, "_anima_foley_patch", None)
         if last == (port, fch, key) and self._anima_foley_armed[port]:
             return
-        # SC-8850 instrument list "CC00" column = Bank MSB (CC0).
-        # CC32 stays 0. (CC32=N is GS-generic and 88emu treats it as a map switch.)
+        # SFX live on the 8850 map: CC0=variation, CC32=4, PC 121/122.
         var = lsb & 0x7F
         self._safe_out_send(port, mido.Message("control_change", channel=fch, control=0, value=var))
-        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=32, value=0))
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=32, value=4))
         self._safe_out_send(port, mido.Message("program_change", channel=fch, program=pc & 0x7F))
         self._anima_foley_armed[port] = True
         self._anima_foley_patch = (port, fch, key)
@@ -4246,14 +4479,30 @@ class Duality:
         elif fam.startswith("bass") or cat == "bass":
             lsb, keys = (5, (48, 50)) if jump >= ANIMA_FOLEY_SLIDE else (2, (36, 38))
         elif cat == "wind" or fam == "ethnic_wind":
-            lsb, keys = (3, (60, 62)) if jump >= 12 else (1, (72, 74))
+            # Breath / whistle — Fl.Key Click (122/1) reads as a snare
+            lsb, keys = (3, (60, 62)) if jump >= 12 else (0, (60, 64))
         elif cat == "brass" or fam in ("orch_brass", "synth_brass"):
             pc = 121
             lsb, keys = (9, (60, 64)) if (self._anima_prog[ch] & 0x7F) in (56, 57) else (8, (60, 64))
+        # Key click / brass-noise one-shots sit on C4–C5 and flam the kit.
+        if now - getattr(self, "_anima_drum_last", 0.0) < ANIMA_FOLEY_DRUM_GATE:
+            return
+        if pc == 121 and lsb in (1, 8, 9):
+            if now - getattr(self, "_anima_drum_last", 0.0) < 2.0:
+                return
         dest = self._anima_foley_dest(hero, eligible)
         if dest is None:
             return
         fch = self._anima_foley_arm(dest, ch)
+        if fch is None:
+            # File owns the high channels on this unit — next GS out.
+            for p2 in (eligible or list(range(self.n_ports))):
+                if p2 == dest or not self._anima_port_8850(p2):
+                    continue
+                fch = self._anima_foley_arm(p2, ch)
+                if fch is not None:
+                    dest = p2
+                    break
         if fch is None:
             return
         self._anima_foley_program(dest, fch, pc, lsb)
@@ -5153,6 +5402,8 @@ class Duality:
                     for port in sent_ports:
                         self._anima_apply_note_on_cc(port, note_msg)
                     self._anima_maybe_efx(note_msg.channel & 0x0F)
+                    if (note_msg.channel & 0x0F) == 9:
+                        self._anima_drum_last = time.monotonic()
                     self._anima_maybe_foley(
                         note_msg.channel & 0x0F,
                         note_msg.note,
@@ -5209,6 +5460,7 @@ class Duality:
                         still = any(k[0] == ch for k in self.active)
                         if not still:
                             self._anima_idle_t[ch] = time.monotonic()
+                            self._anima_efx_flush_pending(ch)
                 else:
                     # Unknown off — do not broadcast to every port (that
                     # was leaving phantom offs on the unit that never
@@ -5242,6 +5494,8 @@ class Duality:
             self._detect_format(msg)
             self._voodoo_maybe_auto()
             description = self._describe_sysex(msg)
+            if description == "GS Reset" or (description and description.startswith("GS Reset")):
+                self._anima_gs_map_home("GS Reset")
             self._anima_observe_sysex(msg, description)
             self._anima_observe_file_efx(msg, description)
             self._anima_observe_rhythm(msg)
@@ -5286,8 +5540,44 @@ class Duality:
                     targets = [home]
                 elif kind == "part":
                     targets = [home]
+            data = list(msg.data)
+            gm_on = (
+                self.anima
+                and len(data) >= 4
+                and data[0] == 0x7E
+                and data[2] == 0x09
+                and data[3] in (0x01, 0x03)
+            )
+            gs_reset = self._gs_dt1([0x40, 0x00, 0x7F], [0x00]) if gm_on else None
+            xg_on = (
+                mido.Message("sysex", data=[0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00])
+                if gm_on else None
+            )
+            n_gs = n_xg = 0
             for i in targets:
-                self._send_routed(i, msg)
+                tags = {str(x).lower() for x in self.out_formats[i]}
+                if gm_on and tags & {"gs", "sc", "sc-8850", "sc8850"}:
+                    self._send_routed(i, gs_reset)
+                    n_gs += 1
+                elif gm_on and tags & {"xg"}:
+                    self._send_routed(i, xg_on)
+                    n_xg += 1
+                else:
+                    self._send_routed(i, msg)
+            if n_gs:
+                self._anima_gs_map_home("GM On → GS Reset")
+                self._anima_feedback(
+                    "tone",
+                    f"GM On → GS Reset ({n_gs} port(s))",
+                    status=True,
+                )
+            if n_xg:
+                self._anima_feedback(
+                    "tone",
+                    f"GM On → XG On ({n_xg} port(s))",
+                    status=True,
+                )
+
             return
 
         # Track common controllers per channel + timestamp
@@ -5295,8 +5585,10 @@ class Duality:
         if msg.type == "control_change":
             if msg.control == 0:
                 self.bank_msb[msg.channel] = msg.value
+                self._anima_cm64_restore_pc(msg)
             elif msg.control == 32:
                 self.bank_lsb[msg.channel] = msg.value
+                self._anima_cm64_restore_pc(msg)
 
         # Input-side log for patch path (OUT lines still show per-port result)
         if self._log_file is not None and msg.type in (
@@ -5366,7 +5658,33 @@ class Duality:
             ch = msg.channel & 0x0F
             msb = int(self.bank_msb[ch]) & 0x7F
             lsb = int(self.bank_lsb[ch]) & 0x7F
-            file_banked = (msb != 0 or lsb != 0)
+            file_banked = (msb != 0)  # CC0=0 is capital — Anima may still roll
+        # GM scene pads often send CC0=0 without a new PC. Forwarding that
+        # wipes the 8850 variation Anima just chose. Hold the slot.
+        if (
+            self.anima
+            and msg.type == "control_change"
+            and msg.control in (0, 32)
+            and msg.value == 0
+        ):
+            ch = msg.channel & 0x0F
+            slot = self._anima_tone_slot[ch]
+            if slot and slot[0] != 0 and not self._anima_is_rhythm(ch):
+                for i in targets:
+                    if not self._should_send(i, msg):
+                        continue
+                    if not self._anima_port_8850(i):
+                        self._send_routed(i, msg)
+                        continue
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=slot[1]))
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=slot[0]))
+                self._anima_feedback(
+                    "tone",
+                    f"hold ch{ch + 1} CC00={slot[0]:03d} (file CC0=0 ignored)",
+                    status=False,
+                )
+                return
+
         for i in targets:
             if not self._should_send(i, msg):
                 continue
@@ -5377,18 +5695,30 @@ class Duality:
                 and not self._anima_is_rhythm(msg.channel)
                 and self._anima_port_8850(i)
             ):
-                var = self._anima_tone_pick(msg.channel & 0x0F, msg.program)
                 ch = msg.channel & 0x0F
-                # Always emit bank, including 0/0, so a prior 008/016 cannot stick.
-                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=var))
-                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=0))
-                self._send_routed(i, mido.Message("program_change", channel=ch, program=msg.program))
+                cc0, cc32, pc_out = self._anima_tone_pick(ch, msg.program)
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                self._send_routed(i, mido.Message("program_change", channel=ch, program=pc_out))
                 self._anima_feedback(
                     "tone",
-                    f"tone ch{ch + 1} PC{msg.program + 1} CC00={var:03d}",
+                    f"tone ch{ch + 1} GM{msg.program + 1} → CC00={cc0:03d} map{cc32} PC{pc_out + 1}",
                     status=True,
                 )
                 continue
+            if (
+                self.anima
+                and msg.type == "program_change"
+                and file_banked
+                and not self._anima_is_rhythm(msg.channel)
+                and self._anima_port_8850(i)
+            ):
+                # File chose a bank. If it omitted map, pin 8850 so a leftover
+                # CC32=1/2/3 cannot stick after GS Reset.
+                ch = msg.channel & 0x0F
+                lsb = int(self.bank_lsb[ch]) & 0x7F
+                if lsb == 0:
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=4))
             self._send_routed(i, msg)
 
     def _is_panic(self, msg: mido.Message) -> bool:
@@ -5699,7 +6029,13 @@ class Duality:
         else:
             badge_scpop = " " * 8  # len(" [SCPOP]")
         if self.anima:
-            badge_anima = " [bold magenta][Anima][/]"
+            seed = self._anima_ensure_efx_seed() if self._anima_efx_seed is None else self._anima_efx_seed
+            if seed is None:
+                badge_anima = " [bold magenta][Anima][/]"
+            elif self._anima_seed_locked:
+                badge_anima = f" [bold magenta][Anima {seed:04X}*][/]"
+            else:
+                badge_anima = f" [bold magenta][Anima {seed:04X}][/]"
         else:
             badge_anima = ""
         if self.voodoo_loading:
@@ -5863,6 +6199,8 @@ class Duality:
             self._clear_log()
         elif c == "l":
             self._toggle_format_lock()
+        elif c == "s":
+            self._anima_toggle_seed_lock()
         elif c == "w":
             if self._rec_on or self._rec_wanted:
                 self._rec_wanted = False
@@ -6207,17 +6545,37 @@ def main():
             "Enable Anima in game mode: 4s idle reset (not 30s) and reroll "
             "GS EFX when a burst of program changes looks like a new cue. "
             "Implies --anima. Hotkey A cycles Anima off / normal / game. "
-            "Reroll skipped if --anima-efx-stable."
+            "Reroll skipped while the Anima seed is locked (S / --anima-seed)."
+        ),
+    )
+    def _parse_anima_seed(s: str):
+        s = str(s).strip()
+        if s.lower().startswith("0x"):
+            return int(s, 16) & 0xFFFF
+        try:
+            return int(s, 10) & 0xFFFF
+        except ValueError:
+            return int(s, 16) & 0xFFFF
+
+    parser.add_argument(
+        "--anima-seed",
+        nargs="?",
+        const=-1,
+        default=None,
+        type=_parse_anima_seed,
+        metavar="4A2F",
+        help=(
+            "Anima seed (same value as the badge). "
+            "Bare --anima-seed locks the first rolled seed. "
+            "--anima-seed 4A2F  or  0x4A2F  or  19119  locks that seed "
+            "(X will not reroll). Hotkey S toggles lock. "
+            "Badge shows 4 hex digits, * when locked."
         ),
     )
     parser.add_argument(
         "--anima-efx-stable",
         action="store_true",
-        help=(
-            "Anima GS EFX: pick palette rows only from the current program "
-            "snapshot so the same song always draws the same insertion. "
-            "Default is a per-launch roll (still frozen for the rest of the song)."
-        ),
+        help="Deprecated alias for bare --anima-seed (lock first roll).",
     )
     parser.add_argument(
         "--voodoo",
@@ -6446,6 +6804,7 @@ def main():
             voodoo_layout=getattr(args, "voodoo_layout", "stripe"),
             anima=getattr(args, "anima", False),
             anima_efx_stable=getattr(args, "anima_efx_stable", False),
+            anima_seed=getattr(args, "anima_seed", None),
             anima_game=getattr(args, "anima_game", False),
             record_dir=getattr(args, "record", None),
         )
