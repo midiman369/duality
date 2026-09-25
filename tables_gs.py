@@ -258,10 +258,10 @@ ANIMA_EFX_GS = {
         (0x01, 0x50, "Stereo Delay"),
         (0x11, 0x00, "Cho/Delay"),
     ],
-    "strings": [
+    "strings": [               # sustained: no delay (feedback piled up the ONESTOP ending)
         (0x01, 0x42, "Stereo Chorus"),
         (0x01, 0x43, "Space-D"),
-        (0x01, 0x50, "Stereo Delay"),
+        (0x01, 0x44, "3D Chorus"),
     ],
     "pad": [
         (0x01, 0x43, "Space-D"),
@@ -282,7 +282,7 @@ ANIMA_EFX_GS = {
     "fx": [                    # Rain / soundtrack / crystal / atmosphere
         (0x01, 0x43, "Space-D"),
         (0x01, 0x44, "3D Chorus"),
-        (0x01, 0x50, "Stereo Delay"),
+        (0x01, 0x40, "Hexa Chorus"),  # FX 1-8 are mostly pads; no delay
         (0x01, 0x42, "Stereo Chorus"),
     ],
 }

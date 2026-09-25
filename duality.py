@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.005"
+VERSION = "0.19.006"
 
 
 """
@@ -602,6 +602,7 @@ ANIMA_EFX_BURST_SEC = 0.25  # PC dump is placed once after this much PC silence 
 ANIMA_EFX_PC_GRACE_SEC = 12.0  # mid-song PC claim: lower families leave it alone this long while unheard
 ANIMA_EFX_PAN_OFF = 20        # |CC10-64| beyond this = a placed guitar (keep a pan-capable dirt type)
 ANIMA_EFX_BIG_BURST = 4       # this many PC channels in one burst = song setup (short DUMP grace)
+ANIMA_HARM_TOP = 96          # no chord-tone harmony ghost above C7
 ANIMA_EFX_WET_SEC = 0.15      # after a type/Part On change, that part's notes use another box this long
 ANIMA_EFX_CTRL_CC = 16    # 8850 EFX C.Src1 → CC16 after one SysEx bind
 ANIMA_WAH_LFO_HZ = 0.55
@@ -2032,6 +2033,14 @@ class Duality:
 
         try:
             self.outs[port].send(msg)
+            if getattr(msg, "type", "") == "control_change" and msg.control == 1:
+                # Per-unit CC1 as sent. Anima mod swells go only to live ports,
+                # so one unit can keep a stale wheel the others already reset.
+                shadow = getattr(self, "_cc1_port", None)
+                if shadow is None:
+                    shadow = self._cc1_port = [[0] * 16 for _ in range(self.n_ports)]
+                if port < len(shadow):
+                    shadow[port][msg.channel & 0x0F] = int(msg.value)
             self._out_last_ok[port] = time.monotonic()
             self._out_fail_logged[port] = False
             if getattr(self, "_anima_efx_ours", False) and getattr(msg, "type", "") == "sysex":
@@ -3670,6 +3679,9 @@ class Duality:
         self._anima_mod_on = {k for k in self._anima_mod_on if k[0] != ch}
         self._anima_mod_ch[ch] = False
         if self.anima:
+            # New instrument starts with a resting wheel on every unit; the
+            # file re-sends CC1 after the PC if it wants one.
+            self._anima_mod_clear(ch)
             self._anima_expr_phrase[ch] = False
             self._anima_expr_shape[ch] = None
             self._anima_expr_peak[ch] = ANIMA_EXPR_DEFAULT
@@ -6230,6 +6242,8 @@ class Duality:
                     if p != hero and self._anima_ghost_poly_ok(p):
                         dest = p
                         break
+            if dest is not None and iv and note + iv > ANIMA_HARM_TOP:
+                iv = 0   # ONESTOP end: n92→104 string ghosts stacked shrill
             if dest is not None and iv:
                 hnote = note + iv
                 occupied = (
@@ -6929,6 +6943,25 @@ class Duality:
             ports = list(self._anima_ports[ch])
         return ports
 
+    def _anima_mod_clear(self, ch: int) -> None:
+        """CC1=0 on every unit that still holds a raised wheel for this channel.
+
+        ONESTOP: ch6's brass swell left CC1=25 on P2; ch6 then became a
+        piano there and played with heavy vibrato. Same for a file lead's
+        wheel carried into a mallet PC.
+        """
+        ch = ch & 0x0F
+        shadow = getattr(self, "_cc1_port", None) or []
+        msg = mido.Message("control_change", channel=ch, control=1, value=0)
+        for p, vals in enumerate(shadow):
+            if vals[ch] > 0:
+                self._safe_out_send(p, msg)
+        self._anima_cc1_cur[ch] = 0
+        self._anima_cc1_tgt[ch] = 0
+        _l1, l11 = self._anima_cc_sent[ch]
+        self._anima_cc_sent[ch] = (0, l11)
+        self.mod[ch] = 0
+
     def _anima_send_cc(self, ports, ch: int, control: int, value: int) -> None:
         """Send a CC only to live ports, quantized, with a small per-port gap.
 
@@ -7299,6 +7332,7 @@ class Duality:
                     if nxt == tgt:
                         if tgt == 0:
                             self._anima_mod_ch[ch] = False
+                            self._anima_mod_clear(ch)   # units the ramp skipped
                             self._anima_feedback("mod-rest", f"ch{ch + 1} CC1=0", status=False)
                         else:
                             self._anima_feedback("mod", f"ch{ch + 1} CC1={nxt}", status=False)
