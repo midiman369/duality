@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.007"
+VERSION = "0.19.008"
 
 
 """
@@ -2040,7 +2040,24 @@ class Duality:
 
         try:
             self.outs[port].send(msg)
-            if getattr(msg, "type", "") == "control_change" and msg.control == 1:
+            mt = getattr(msg, "type", "")
+            if mt in ("program_change", "control_change"):
+                # Per-unit tone as sent (bank / PC / CC7), so a bass-sub
+                # reprogram can be undone for the file's own notes.
+                tone = getattr(self, "_tone_port", None)
+                if tone is None:
+                    tone = self._tone_port = [[[None, None, None, None] for _ in range(16)] for _ in range(self.n_ports)]
+                if port < len(tone):
+                    slot = tone[port][msg.channel & 0x0F]
+                    if mt == "program_change":
+                        slot[2] = int(msg.program)
+                    elif msg.control == 0:
+                        slot[0] = int(msg.value)
+                    elif msg.control == 32:
+                        slot[1] = int(msg.value)
+                    elif msg.control == 7:
+                        slot[3] = int(msg.value)
+            if mt == "control_change" and msg.control == 1:
                 # Per-unit CC1 as sent. Anima mod swells go only to live ports,
                 # so one unit can keep a stale wheel the others already reset.
                 shadow = getattr(self, "_cc1_port", None)
@@ -3689,6 +3706,12 @@ class Duality:
             # New instrument starts with a resting wheel on every unit; the
             # file re-sends CC1 after the PC if it wants one.
             self._anima_mod_clear(ch)
+            # The file's PC reached every unit and replaced any bass-sub
+            # patch on this channel; old sub snapshots no longer apply.
+            armed = getattr(self, "_anima_wave_sub_armed", None) or set()
+            for key in [k for k in armed if k[1] == ch]:
+                armed.discard(key)
+                (getattr(self, "_anima_wave_sub_saved", None) or {}).pop(key, None)
             self._anima_expr_phrase[ch] = False
             self._anima_expr_shape[ch] = None
             self._anima_expr_peak[ch] = ANIMA_EXPR_DEFAULT
@@ -3932,6 +3955,7 @@ class Duality:
         self._anima_fam_ghost = {}
         self._anima_bass_sub_choice = None
         self._anima_wave_sub_armed = set()
+        self._anima_wave_sub_saved = {}
         self._anima_cc11_cur = [ANIMA_EXPR_DEFAULT] * 16
         self._anima_cc11_tgt = [ANIMA_EXPR_DEFAULT] * 16
         self._anima_cc11_own = [False] * 16
@@ -6159,8 +6183,16 @@ class Duality:
                 dest = None
                 if is_bass:
                     # Dedicated variation on a spare box so Bass Multi stays clean.
+                    # Never a unit the file's bass plays on: the sub reprograms
+                    # this channel there (22:07 test: first sub hit the bass's
+                    # pinned P1 while a 150 ms reroute sent that note to P2,
+                    # and every later bass note played as Mild Bass).
+                    avoid = set(hero_ports)
+                    for q in (self._anima_ch_port.get(ch), self._anima_note_port.get(ch)):
+                        if q is not None:
+                            avoid.add(q)
                     for p in self._anima_gs_ports():
-                        if p == hero:
+                        if p in avoid:
                             continue
                         if self._anima_ghost_poly_ok(p):
                             dest = p
@@ -6174,6 +6206,13 @@ class Duality:
                         if is_bass:
                             slot = self._anima_pick_bass_sub(dest, ch)
                             cc0, cc32, pc, name = slot
+                            saved = getattr(self, "_anima_wave_sub_saved", None)
+                            if saved is None:
+                                saved = self._anima_wave_sub_saved = {}
+                            if (dest, ch) not in saved:
+                                tone = getattr(self, "_tone_port", None)
+                                if tone and dest < len(tone):
+                                    saved[(dest, ch)] = list(tone[dest][ch])
                             self._safe_out_send(dest, mido.Message("control_change", channel=ch, control=32, value=int(cc32) & 0x7F))
                             self._safe_out_send(dest, mido.Message("control_change", channel=ch, control=0, value=int(cc0) & 0x7F))
                             self._safe_out_send(dest, mido.Message("program_change", channel=ch, program=int(pc) & 0x7F))
@@ -6961,6 +7000,27 @@ class Duality:
         if not ports:
             ports = list(self._anima_ports[ch])
         return ports
+
+    def _anima_wave_sub_restore(self, port: int, ch: int) -> None:
+        """A file note is about to play where a bass sub reprogrammed this
+        channel: put the unit's own tone (bank / PC / CC7) back first."""
+        armed = getattr(self, "_anima_wave_sub_armed", None) or set()
+        if (port, ch) not in armed:
+            return
+        armed.discard((port, ch))
+        saved = (getattr(self, "_anima_wave_sub_saved", None) or {}).pop((port, ch), None)
+        if not saved:
+            return
+        cc0, cc32, pc, cc7 = saved
+        if cc32 is not None:
+            self._safe_out_send(port, mido.Message("control_change", channel=ch, control=32, value=cc32))
+        if cc0 is not None:
+            self._safe_out_send(port, mido.Message("control_change", channel=ch, control=0, value=cc0))
+        if pc is not None:
+            self._safe_out_send(port, mido.Message("program_change", channel=ch, program=pc))
+        if cc7 is not None:
+            self._safe_out_send(port, mido.Message("control_change", channel=ch, control=7, value=cc7))
+        self._anima_feedback("ghost", f"ch{ch + 1} tone restored on P{port + 1} after bass sub", status=False)
 
     def _anima_mod_clear(self, ch: int) -> None:
         """CC1=0 on every unit that still holds a raised wheel for this channel.
@@ -7828,6 +7888,10 @@ class Duality:
                     self.drop_count += 1
                     return
 
+                if self.anima and getattr(self, "_anima_wave_sub_armed", None):
+                    for port in sent_ports:
+                        self._anima_wave_sub_restore(port, note_msg.channel & 0x0F)
+
                 if self.anima and self._anima_should_strum(note_msg.channel & 0x0F):
                     self._anima_strum_push(note_msg.channel & 0x0F, note_msg, sent_ports)
                 else:
@@ -8380,6 +8444,7 @@ class Duality:
         self._anima_ghosts = {}
         self._anima_ghost_sound = {}
         self._anima_wave_sub_armed = set()
+        self._anima_wave_sub_saved = {}
         self._anima_fam_ghost = {}
         self._anima_bass_sub_choice = None
         self.active.clear()
