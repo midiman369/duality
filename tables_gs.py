@@ -135,19 +135,6 @@ GS_EFX_TYPES = {
     (0x11, 0x08): "PH/Auto Wah",
 }
 
-# 8850/8820-only insertion types (88Pro list stops before these Multis).
-GS_EFX_8850_ONLY = frozenset({
-    (0x03, 0x00),  # Rotary Multi
-    (0x04, 0x00),  # GTR Multi 1
-    (0x04, 0x01),  # GTR Multi 2
-    (0x04, 0x02),  # GTR Multi 3
-    (0x04, 0x03),  # Clean Gt Multi 1
-    (0x04, 0x04),  # Clean Gt Multi 2
-    (0x04, 0x05),  # Bass Multi
-    (0x04, 0x06),  # EP Multi
-    (0x05, 0x00),  # Keyboard Multi
-})
-
 ANIMA_EFX_GS = {
     "organ_rotary": [          # Drawbar / Perc / Rock (PC 17–19)
         (0x03, 0x00, "Rotary Multi"),
