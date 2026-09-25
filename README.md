@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.18.62** (`python duality.py --version`).
+Current development line: **v0.19.007** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -16,16 +16,9 @@ Duality routes MIDI notes across one or more sound modules so you can treat seve
 
 Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG, MT-32, Ketron/Solton, etc.).
 
-<!-- IMAGE NEEDED: hero — current live status panel, ~120-col terminal, 4 GS ports + history -->
-<!-- ![Duality live status](docs/images/status-hero.png) -->
+![Duality live status: four SC-VA GS units, an XG and an MT-32 out, Anima on](docs/images/status-hero.svg)
 
-**Screenshots below are from earlier development builds** (layout and feature set have moved on).
-
-<img width="1080" height="260" alt="Earlier build – status panel" src="https://github.com/user-attachments/assets/38f339ec-0894-41b3-b933-a882c6dec397" />
-
-<img width="1080" height="260" alt="Earlier build – meters / activity" src="https://github.com/user-attachments/assets/55dbf0c4-9be0-4747-8fae-65511ae5bcd0" />
-
-<img width="1080" height="260" alt="Earlier build – channel rows" src="https://github.com/user-attachments/assets/56312654-1d04-429c-b382-35203fe7053d" />
+*Live panel from an offline replay of a real GM soundtrack (four Sound Canvas VA units, XG, MT-32; Crucible + Anima, seed 6BA1), rock section with both guitars on OD1/OD2.*
 
 ---
 
@@ -59,12 +52,13 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 
 ### Anima (opt-in phrasing)
 - Velocity humanize, expression / mod ramps, guitar strum (including “Hetfield” down-pick on dirt tones)
-- **GS EFX**: one insertion per `:gs` port; guitars can pack two via OD1/OD2 + pan; file-driven EFX stays on its port
+- **GS EFX**: one insertion per `:gs` unit, chosen by instrument-family priority; never retyped under a sounding part; guitars pair via OD1/OD2 by pan; file-driven EFX stays on its port
+- **Ghosts**: chord-tone harmony, bass / organ sub-octaves, dirt-guitar unison on a spare unit
 - **Foley**: shared high channel (usually 16) for 8850 SFX (fret, cut, chord stroke, slap, breath, …)
 - **Tone colors**: seeded 8850 CC00 (same PC) plus family-matched **CM-64 PCM/LA** (banks 126/127, SC-55 map)
 - File **GM/GM2 On** on `:gs` ports becomes **GS Reset** so the Canvas leaves GM-lock and honors those banks
 - 4-char hex **seed** on the badge; `--anima-seed` / **S** lock a keeper across **X**
-- Game mode (`--anima-game` / **A** cycle): short idle + new seed on a real PC burst
+- Game mode (`--anima-game` / **A** cycle): 4 s of real silence resets; a real PC burst (new cue) rolls a new seed
 - Single output allowed when Anima is on
 
 ### Record + log
@@ -112,6 +106,7 @@ Repo layout (runtime):
 | `tables_xg.py` | XG types + Alchemy maps |
 | `tables_anima.py` | GM / MT-32 / Sierra categories |
 | `tables_8850.py` | SC-8850 CC00 + map + CM-64 variation tables |
+| `tables_voices.py` | SC-8850 voices per tone (poly accounting) |
 | `tables_voodoo.py` / `voodoo_banks.py` | MT-TO-GM / KQ6 SysEx |
 
 ### Platforms
@@ -216,7 +211,7 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | `--strict-format-detection` | Only System On / Reset SysEx may switch format |
 | `--scpop` | Force SCPOP note broadcast to format-matched ports |
 | `--anima` | Phrasing + GS EFX + foley + 8850 / CM-64 tone colors |
-| `--anima-game` | Game mode (implies `--anima`): 4 s idle + cue reroll |
+| `--anima-game` | Game mode (implies `--anima`): 4 s silence reset + cue reroll |
 | `--anima-seed [HEX]` | Lock seed (`4A2F`, `0x4A2F`, or decimal). Bare flag locks first roll |
 | `--anima-efx-stable` | Deprecated alias for bare `--anima-seed` |
 | `--voodoo` | Load GM bank on MT-32 outs at start |
@@ -261,14 +256,7 @@ Format keys set the **input / stream format** for Crucible. They do **not** chan
 
 ## Status panel
 
-<!-- IMAGE NEEDED: current full panel (header + meters + channel grid + Recent) -->
-<!-- ![Status panel](docs/images/status-panel.png) -->
-
-<!-- IMAGE NEEDED: short GIF — format badge / Crucible jumping GS vs XG -->
-<!-- ![Crucible demo](docs/images/crucible-demo.gif) -->
-
-<!-- IMAGE NEEDED: Anima — EFX + foley lines in Recent, Cut/Stroke on ch16 -->
-<!-- ![Anima foley](docs/images/anima-foley.png) -->
+![Status panel: meters, channel grid, Recent](docs/images/status-panel.svg)
 
 While running:
 
@@ -278,10 +266,6 @@ While running:
 - Last chord, last activity, status + rolling history
 - Format badge (`[GS]`, `[GS*]`), Crucible / Voodoo / Anima / SCPOP
 - Activity pulse and decoded SysEx
-
-**Older panel capture** (prior UI generation):
-
-<img width="1086" height="269" alt="Earlier build – panel detail" src="https://github.com/user-attachments/assets/767d3c82-0850-48d3-b060-7df83c8da3c7" />
 
 Wide terminals (≥ ~118 columns) get the side **Recent** panel automatically.
 
@@ -302,16 +286,24 @@ Family is tracked so a later PC stays in brass / organ / strings / …. A *real*
 
 **Seeds.** The badge shows a 4-char hex. Same seed → same colors. `--anima-seed 4A2F` or hotkey **S** locks it; **X** then repeats the take. Game mode rolls a new seed on a burst of program changes (new cue) unless the seed is locked.
 
-**GS EFX** — one insert per tagged GS unit. Priority roughly: dirty guitar → clean/acoustic guitar → lead / shakuhachi → organ → bass → … File-programmed EFX stays on that port; Anima may use *other* units for extra inserts. OD1/OD2 can split two dirt guitars by pan when they are hard-left / hard-right.
+**GS EFX** — each tagged GS unit has one insertion effect, so with four units Anima can give four instrument families an insert at a time. Families are ranked (table below): guitars first, then organ / harmonica / plucked / e-pianos, lead / wind / brass, bass, strings, pad, piano, chromatic, fx.
+
+- **Placement.** The program-change dump at song start is placed once, after it settles (or at the first note), so each unit gets one type write. A part that is actually playing takes a lower-ranked unit in a gap in that owner's playing. A lower part only gets a unit whose owner has gone stale: silent 15 s, or never played within its grace (1 s after the song-start dump, 12 s after a mid-song PC).
+- **No glitches under notes.** A unit's insert type (and who owns it) never changes while one of its insert parts is sounding, including ghosts and queued strums. Dry parts on that unit don't count. At most one type change per unit every 1.2 s, and for 150 ms after a change that part's notes play on another unit instead (rerouted, never delayed).
+- **Guitars.** A second guitar pairs onto its partner's unit before taking another family's. Hard-left / hard-right pairs use OD1/OD2 so each keeps its side (centered until a quiet moment allows the switch). A panned lone guitar prefers Overdrive / Distortion, which honour its pan.
+- **File EFX** stays on the file's port; Anima uses the *other* units.
+
+![Anima EFX priority and palettes](docs/images/anima-efx-priority.svg)
 
 Bass split: Finger / Picked may use **Bass Multi** (mono OD chain). Slap, fretless, synth bass, and upright stay **wide** (chorus / Space-D / enhancer).
 
+**Ghosts** — extra notes Anima adds on the same channel: a chord-tone harmony on melody lines (never above C7), a sub-octave under bass and organ, and a unison double of a dirt guitar on a spare unit. Each wheel it moves (CC1 mod, CC11 expression) returns to rest on every unit, and a program change starts the new instrument with the mod wheel at zero.
+
 **Foley** — one shared SFX channel per GS synth (usually 16), overflowed to another out if the hero is full. 8850 programming stays on the **default map**. Gesture after a short hold: fret / cut / chord stroke / steel slide; bass slap vs slide; wind click vs breath. Families take turns on the same lane.
 
-**Game mode** — 4 s idle reset and a new seed + EFX roll on a real PC burst (DOS / soundtrack cue changes).
+![Anima foley map](docs/images/foley-8850-map.svg)
 
-<!-- IMAGE NEEDED: 88emu / SC-8850 part screen showing 8850 map + Gt.Cut Noise -->
-<!-- ![8850 foley map](docs/images/foley-8850-map.png) -->
+**Game mode** — resets after 4 s of real silence (no new MIDI *and* nothing still sounding, so a held chord is not a new scene), and rolls a new seed + EFX set on a real PC burst (DOS / soundtrack cue changes).
 
 ---
 

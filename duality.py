@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.006"
+VERSION = "0.19.007"
 
 
 """
@@ -33,13 +33,20 @@ Voodoo (MT-32 GM)
   • 1/2/3-unit maps; 4+ even units can use pairs (P); LA32 pan table
 
 Anima (opt-in)
-  • Velocity humanize, expr/mod ramps, guitar strum
-  • GS EFX: one insert per GS box, placed once after the PC dump. A playing part takes a lower-priority box in that owner's gap; lower parts wait until the owner is stale. Never retypes under a sounding EFX player; one type write per box per 1.2 s; notes skip a box for 150 ms after its type/Part On changes. Notes never delayed.
-  • Foley: shared ch16 8850 SFX (CC0=CC00, CC32=0, PC 121/122)
-  • Ghosts (Phase 1): bass/organ sub-octave on-channel; dist-guitar
-    unison on a spare GS port (inherits EFX). One extra note per hero.
-  • Seeded 8850 tone variations on capital 0/0 only — file bank always wins
-  • --anima-game / A cycle; single output allowed
+  • Velocity humanize, expr/mod ramps, guitar strum; CC1 returns to rest
+    on every unit, and each PC starts the new tone with CC1=0
+  • GS EFX: one insert per GS unit by family priority (tables_gs
+    ANIMA_EFX_PRIORITY), placed once after the PC dump. A playing part
+    takes a lower-priority unit in that owner's gap; lower parts wait until
+    the owner is stale. Never retypes under a sounding EFX player; one type
+    write per unit per 1.2 s; notes skip a unit for 150 ms after its type /
+    Part On changes. Notes are never delayed. Guitars pair on OD1/OD2 by pan.
+  • Foley: shared ch16 8850 SFX (PC 121/122 variations)
+  • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
+    dist-guitar unison on a spare GS unit (inherits EFX)
+  • Seeded 8850 / CM-64 tone colors on capital 0/0 only — file bank wins
+  • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
+  • Single output allowed
 
 Record / log / panel
   • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx)
@@ -57,7 +64,7 @@ Hotkeys (input/stream format — not output tags)
 -------
 F clear input format   L lock/unlock input format
 G GM↔GM2   R GS   Y XG   M MT-32 (again = Voodoo GM)
-V Voodoo bank   P Voodoo layout   A Anima off/normal/game
+V Voodoo bank   P Voodoo layout   A Anima off/normal/game   S seed lock
 B balance↔rr   X reset+Anima   W record   C clear log   Q quit
 
 Usage examples
@@ -594,7 +601,7 @@ ANIMA_GAME_SNAP_DIFF = 3       # channels whose PC changed vs last cue
 ANIMA_EFX_IDLE_SEC = 15.0   # keep current EFX this long after hero goes quiet
 ANIMA_EFX_HOLD_SEC = 5.0    # family stays "sounding" this long after last note
 ANIMA_EFX_ARM_SEC = 12.0    # unused by the 0.19 planner; kept so older logs stay readable
-ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX *type* changes (priority upgrade exempt)
+ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX type/owner changes on one unit
 ANIMA_EFX_FLUSH_GAP = 0.18  # unused; 166 flush applies on the part's own note-off
 ANIMA_EFX_SETTLE_SEC = 0.060  # unused; notes are not delayed
 ANIMA_EFX_DUMP_SEC = 1.0    # an unheard claim is not stolen for this long; after it a quiet unheard box can be taken
@@ -3948,7 +3955,13 @@ class Duality:
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
-        if time.monotonic() - self.last_midi_time < idle_need:
+        now = time.monotonic()
+        # Held notes, ghosts and queued strums are not idle: a game cue that
+        # sustains a chord past 4 s with no new MIDI was being reset mid-scene.
+        if self.active or (self._anima_ghosts or {}) or self._anima_strum_q:
+            self._anima_sound_t = now
+        quiet_since = max(self.last_midi_time, float(getattr(self, "_anima_sound_t", 0.0) or 0.0))
+        if now - quiet_since < idle_need:
             self._anima_session_idle_done = False
             return
         if getattr(self, "_anima_session_idle_done", False):
@@ -4993,7 +5006,11 @@ class Duality:
         return gs[0] if gs else None
 
     def _anima_build_plan(self, extra_ch: int | None = None) -> list:
-        """One insertion slot per GS port. Guitars pack 2-per-unit (OD1/OD2 if they clash)."""
+        """Global plan for the settled PC dump: one insert per GS unit by priority.
+
+        Used by the burst settle only; a single note places its own channel
+        with _anima_efx_place. Guitars pack 2-per-unit (OD1/OD2 if they clash).
+        """
         gs_all = self._anima_gs_ports()
         home = self._anima_file_home_port()
         reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
@@ -5709,7 +5726,9 @@ class Duality:
         }
 
     def _anima_efx_flush_pending(self, ch: int) -> None:
-        """Apply a deferred EFX type once that part has no sounding notes."""
+        """Legacy deferred-type flush. The 0.19 planner never sets ``pending``
+        (a busy unit is simply left alone), so this is a no-op guard kept for
+        slots restored from older state."""
         if any(k[0] == ch for k in self.active):
             return
         now = time.monotonic()
