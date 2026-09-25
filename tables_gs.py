@@ -134,6 +134,20 @@ GS_EFX_TYPES = {
     (0x11, 0x07): "PH/Rotary",
     (0x11, 0x08): "PH/Auto Wah",
 }
+
+# 8850/8820-only insertion types (88Pro list stops before these Multis).
+GS_EFX_8850_ONLY = frozenset({
+    (0x03, 0x00),  # Rotary Multi
+    (0x04, 0x00),  # GTR Multi 1
+    (0x04, 0x01),  # GTR Multi 2
+    (0x04, 0x02),  # GTR Multi 3
+    (0x04, 0x03),  # Clean Gt Multi 1
+    (0x04, 0x04),  # Clean Gt Multi 2
+    (0x04, 0x05),  # Bass Multi
+    (0x04, 0x06),  # EP Multi
+    (0x05, 0x00),  # Keyboard Multi
+})
+
 ANIMA_EFX_GS = {
     "organ_rotary": [          # Drawbar / Perc / Rock (PC 17–19)
         (0x03, 0x00, "Rotary Multi"),
@@ -155,6 +169,9 @@ ANIMA_EFX_GS = {
         (0x04, 0x00, "GTR Multi 1"),
         (0x04, 0x01, "GTR Multi 2"),
         (0x04, 0x02, "GTR Multi 3"),
+        (0x11, 0x03, "OD1/OD2"),
+        (0x01, 0x10, "Overdrive"),
+        (0x01, 0x11, "Distortion"),
     ],
     "guitar_mute": [
         (0x11, 0x08, "PH/Auto Wah"),
@@ -203,7 +220,7 @@ ANIMA_EFX_GS = {
         (0x11, 0x00, "Cho/Delay"),
         (0x11, 0x01, "FL/Delay"),
         (0x01, 0x40, "Hexa Chorus"),
-        (0x01, 0x10, "Overdrive"),   # has EFX Pan — last resort
+        (0x01, 0x10, "Overdrive"),   # has EFX Pan; Drive is lowered for leads
         (0x01, 0x11, "Distortion"),
     ],
     "ethnic_wind": [
@@ -256,17 +273,31 @@ ANIMA_EFX_GS = {
         (0x01, 0x44, "3D Chorus"),
         (0x01, 0x43, "Space-D"),
     ],
+    "chromatic": [             # Honky / celesta / vibes / marimba / xylophone
+        (0x01, 0x20, "Phaser"),
+        (0x01, 0x00, "Stereo-EQ"),
+        (0x01, 0x02, "Enhancer"),
+        (0x01, 0x43, "Space-D"),
+    ],
+    "fx": [                    # Rain / soundtrack / crystal / atmosphere
+        (0x01, 0x43, "Space-D"),
+        (0x01, 0x44, "3D Chorus"),
+        (0x01, 0x13, "Stereo Delay"),
+        (0x01, 0x42, "Stereo Chorus"),
+    ],
 }
 ANIMA_EFX_PRIORITY = (
     "guitar_dist", "guitar_mute", "guitar_clean", "guitar_acoustic",
     "organ_rotary", "harmonica", "organ_chorus", "plucked", "ep_rhodes", "ep_dx", "keys_pluck",
-    "lead", "ethnic_wind", "synth_brass", "orch_brass", "bass_electric", "strings", "pad", "bass_wide", "bass_acoustic", "piano_acoustic",
+    "lead", "ethnic_wind", "synth_brass", "orch_brass", "bass_electric",
+    "strings", "pad", "bass_wide", "bass_acoustic", "piano_acoustic",
+    "chromatic", "fx",
 )
 # Dual-guitar parallel split (SC-8850 #59 OD1/OD2)
 ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB = 0x11, 0x03
 ANIMA_SPLIT_LABEL = "OD1/OD2"
-ANIMA_SPLIT_PAN_LO = 8    # CC10 ≤ this counts as already-left
-ANIMA_SPLIT_PAN_HI = 119  # CC10 ≥ this counts as already-right
+ANIMA_SPLIT_PAN_LO = 40   # CC10 ≤ this counts as already-left
+ANIMA_SPLIT_PAN_HI = 88   # CC10 ≥ this counts as already-right
 ANIMA_EFX_DRIVE_03 = frozenset({
     (0x01, 0x10), (0x01, 0x11),
     (0x02, 0x00), (0x02, 0x01), (0x02, 0x02), (0x02, 0x03),
@@ -300,8 +331,46 @@ ANIMA_FILE_DIRT_FAMS = frozenset({
 })
 
 # EFX types with a Pan parameter (SC-8850 param index 1-based → address 40 03 03+n)
-# Overdrive / Distortion: P1 Drive, P2 Pan
+# Overdrive / Distortion (OM p.91): P1 Drive, P2 Amp Type, P19 Output Pan (40 03 15).
 ANIMA_EFX_PAN_SLOT = {
-    (0x01, 0x10): 2,
-    (0x01, 0x11): 2,
+    (0x01, 0x10): 19,
+    (0x01, 0x11): 19,
+}
+# Mono signature types: at most one live copy across all GS ports.
+ANIMA_EFX_EXCLUSIVE = frozenset({
+    (0x04, 0x00),  # GTR Multi 1
+    (0x04, 0x01),  # GTR Multi 2
+    (0x04, 0x02),  # GTR Multi 3
+})
+
+
+# Per-type EFX Parameter index (1-based → address 40 03 03+(n-1)).
+# Phase 1: the knobs we already touch. Fill the rest from OM p.91–128 / list p.216.
+GS_EFX_PARAMS = {
+    # #53 Bass Multi (04 05) — OM p.118
+    (0x04, 0x05): {
+        "Cmp Atck": 1,
+        "Cmp Sus": 2,
+        "Cmp Level": 3,
+        "Cmp Sw": 4,
+        "OD Sel": 5,
+        "OD Drive": 6,     # default 48; F.Bass/Harm wants ~16
+        "OD Amp": 7,
+        "OD Amp Sw": 8,
+        "OD Sw": 9,
+        "EQ L Gain": 10,
+        "EQ M Fq": 11,
+        "EQ M Q": 12,
+        "EQ M Gain": 13,
+        "EQ H Gain": 14,
+        "CF Sel": 15,
+        "CF Rate": 16,
+        "CF Depth": 17,
+        "CF Fb": 18,
+        "CF Mix": 19,
+        "Level": 20,
+    },
+    # #05 Overdrive / #06 Distortion — OM: P1 Drive, P2 Amp Type, P19 Pan
+    (0x01, 0x10): {"Drive": 1, "Amp Type": 2, "Amp Sw": 3, "Pan": 19},
+    (0x01, 0x11): {"Drive": 1, "Amp Type": 2, "Amp Sw": 3, "Pan": 19},
 }

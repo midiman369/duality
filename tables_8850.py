@@ -1,8 +1,9 @@
 """SC-8850 unique tone slots for Anima.
 
 Each slot is (cc00, cc32, pc) with:
-  cc32 4 = SC-8850, 3 = 88Pro, 2 = SC-88, 1 = SC-55
-  cc00 126/127 + cc32 1 = CM-64 PCM / LA (SC-55 map)
+  pc    0-based MIDI program (UI patch = pc + 1; French Horns = 61)
+  cc32  4 = SC-8850, 3 = 88Pro, 2 = SC-88, 1 = SC-55
+  cc00  126/127 + cc32 1 = CM-64 PCM / LA (SC-55 map)
 
 SFX PCs 120–127 are omitted (gesture / foley only).
 """
@@ -34,7 +35,7 @@ _C00 = {
     22: [0, 1, 8, 9],
     23: [0, 8, 16],
     24: [0, 8, 16, 24, 32, 40],
-    25: [0, 8, 9, 10, 16, 17, 18, 32, 33],
+    25: [0, 8, 9, 10, 16, 17, 18, 32, 33],  # 17 = MandolinTrem
     26: [0, 1, 8],
     27: [0, 1, 2, 3, 4, 5, 8, 9, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
     28: [0, 1, 2, 8, 16, 24],
@@ -155,6 +156,8 @@ _MAP_EXTRA = {
 def _cm_extras():
     out = {i: [] for i in range(120)}
     def add(gm_pc, cc00, pc1):
+        # CM-64 PCM/LA on the 8850: CC32=1 (SC-55 map) then CC00=126/127.
+        # CC32=0/4 + 126/127 is empty (No Instrument) on native/8850 maps.
         out[gm_pc].append((cc00, 1, (pc1 - 1) & 0x7F))
     # PCM 126 → nearest GM capital
     for pc, gm in (
@@ -227,6 +230,21 @@ def anima_cm_to_gm(cc00: int, pc: int) -> int | None:
     return None
 
 
+# (cc00, pc_0based) → keep 1 in N times Anima would have picked it.
+# MandolinTrem (Steel-str.Gt CC00=17) is a looped tremolo — too sticky at equal weight.
+ANIMA_TONE_RARE = {
+    (17, 25): 8,
+}
+
+# Never pick as a standing variation. Reserved for a future one-shot articulation.
+# Keys are (CC00, PC_0based). UI patch = PC_0based + 1.
+ANIMA_TONE_BLOCK = {
+    (24, 60),   # UI 061 / CC00 024  F.Horn Rip
+    (16, 61),   # UI 062 / CC00 016  Brass Fall
+    (17, 61),   # UI 062 / CC00 017  Trumpet Fall
+}
+
+
 def anima_tone_slots(pc: int) -> list[tuple[int, int, int]]:
     """Unique (cc00, cc32, pc) choices for a GM program (0-based). Empty = leave capital."""
     p = pc & 0x7F
@@ -235,6 +253,8 @@ def anima_tone_slots(pc: int) -> list[tuple[int, int, int]]:
     slots = []
     seen = set()
     for cc0 in _C00.get(p, [0]):
+        if (cc0, p) in ANIMA_TONE_BLOCK:
+            continue
         key = (cc0, 4, p)
         if key not in seen:
             seen.add(key)
@@ -254,3 +274,24 @@ def anima_tone_slots(pc: int) -> list[tuple[int, int, int]]:
                 seen.add(key)
                 slots.append(key)
     return slots
+
+
+def anima_combo_ok(cc0: int, cc32: int, pc: int) -> bool:
+    """True if this bank/map/PC exists on an SC-8850 (no No-Instrument)."""
+    cc0, cc32, pc = int(cc0) & 0x7F, int(cc32) & 0x7F, int(pc) & 0x7F
+    if cc0 == 126:
+        return cc32 == 1 and pc < 64
+    if cc0 == 127:
+        return cc32 == 1
+    if cc0 == 0:
+        return cc32 in (0, 1, 2, 3, 4)
+    # Variations live on 8850 (4) and classic (0), but GS files often
+    # address the same CC00 on maps 1–3 (55 / 88 / Pro).
+    if cc32 not in (0, 1, 2, 3, 4):
+        return False
+    if cc0 in _C00.get(pc, (0,)):
+        return True
+    # SFX / atmosphere PCs are sparsely tabled; trust the file.
+    if pc >= 119 and 0 < cc0 <= 48:
+        return True
+    return False
