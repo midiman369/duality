@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.009"
+VERSION = "0.19.010"
 
 
 """
@@ -298,6 +298,8 @@ from tables_gs import (
     ANIMA_SPLIT_PAN_HI,
     ANIMA_EFX_DRIVE_03,
     ANIMA_EFX_WAH,
+    ANIMA_EFX_WAH_MAN,
+    ANIMA_EFX_CTRL2,
     ANIMA_EFX_ROTARY,
     ANIMA_HETFIELD_PC,
     ANIMA_FILE_DIRT_TYPES,
@@ -4914,16 +4916,22 @@ class Duality:
         if not ports:
             return
         seed = self._anima_ensure_efx_seed()
-        msgs = [
-            self._gs_dt1([0x40, 0x03, 0x1B], [ANIMA_EFX_CTRL_CC]),  # C.Src1 = CC16
-            self._gs_dt1([0x40, 0x03, 0x1C], [0x7F]),               # C.Dep1 = +100%
-        ]
         key = (msb, lsb)
+        # CC16 drives whichever EFX Control carries the wah / rotary speed
+        # knob; the other depth sits at 0% (0x40) so CC16 moves nothing else.
+        on2 = key in ANIMA_EFX_CTRL2
+        msgs = [
+            self._gs_dt1([0x40, 0x03, 0x1B], [ANIMA_EFX_CTRL_CC]),         # C.Src1 = CC16
+            self._gs_dt1([0x40, 0x03, 0x1C], [0x40 if on2 else 0x7F]),     # C.Dep1
+            self._gs_dt1([0x40, 0x03, 0x1D], [ANIMA_EFX_CTRL_CC]),         # C.Src2 = CC16
+            self._gs_dt1([0x40, 0x03, 0x1E], [0x7F if on2 else 0x40]),     # C.Dep2
+        ]
         if key in ANIMA_EFX_DRIVE_03:
             drive = 40 + (seed % 51)  # 40–90
             msgs.append(self._gs_dt1([0x40, 0x03, 0x03], [drive]))
-        if key in ANIMA_EFX_WAH:
-            msgs.append(self._gs_dt1([0x40, 0x03, 0x04], [0x40]))  # Wah Man center
+        man = ANIMA_EFX_WAH_MAN.get(key)
+        if man is not None:
+            msgs.append(self._gs_dt1([0x40, 0x03, man], [0x40]))  # Wah Man center
         self._anima_efx_ours = True
         for i in ports:
             for m in msgs:
