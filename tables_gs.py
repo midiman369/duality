@@ -282,7 +282,7 @@ ANIMA_EFX_GS = {
     "fx": [                    # Rain / soundtrack / crystal / atmosphere
         (0x01, 0x43, "Space-D"),
         (0x01, 0x44, "3D Chorus"),
-        (0x01, 0x13, "Stereo Delay"),
+        (0x01, 0x50, "Stereo Delay"),
         (0x01, 0x42, "Stereo Chorus"),
     ],
 }
