@@ -18,7 +18,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 
 ![Duality live status: four SC-VA GS units, an XG and an MT-32 out, Anima on](docs/images/status-hero.svg)
 
-*Live panel from an offline replay of a real GM soundtrack (four Sound Canvas VA units, XG, MT-32; Crucible + Anima, seed 6BA1), rock section with both guitars on OD1/OD2.*
+*Live panel from an offline replay of a real GM soundtrack with the input locked to GS (**R** then **L**, badge `[GS*]`): four Sound Canvas VA units take the notes, the XG and MT-32 outs stay idle; Crucible + Anima, seed 6BA1, rock section with both guitars on OD1/OD2.*
 
 ---
 
@@ -41,6 +41,10 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 - **Set** format (G/R/Y/M) vs **lock** (L): lock blocks SysEx override and idle clear
 - `--strict-format-detection`: only System On / Reset SysEx may switch format
 - SCPOP / SC-ext (model-45 or banner — not LCD animation text) + optional `--scpop`
+
+![Crucible: GM, GS, XG and MT-32 streams on the same six outs](docs/images/crucible-demo.gif)
+
+*Same notes, four input dialects, same outs (four `gs8850+gm2` Canvases, one `xg`, one `mt32`). GM and GS land on the Canvases, XG only on the XG out, MT-32 only on the MT-32 out. Stills: [GM](docs/images/crucible-gm.svg) · [GS](docs/images/crucible-gs.svg) · [XG](docs/images/crucible-xg.svg) · [MT-32](docs/images/crucible-mt32.svg).*
 
 ### Voodoo (MT-32 GM)
 - Roland **MT-TO-GM** (1993) or Sierra **KQ6** bank on `:mt32` / `:mt` / `:cm` outs
