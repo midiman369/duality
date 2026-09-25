@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.002"
+VERSION = "0.19.005"
 
 
 """
@@ -34,7 +34,7 @@ Voodoo (MT-32 GM)
 
 Anima (opt-in)
   • Velocity humanize, expr/mod ramps, guitar strum
-  • GS EFX: 166 planner (priority fill at the PC, notes not delayed). A quiet box whose family has never sounded can be taken after the setup burst. A sounding box is not stolen, and a part that loses its box is unpinned so its next note can arm EFX. Chromatic and FX families included.
+  • GS EFX: one insert per GS box, placed once after the PC dump. A playing part takes a lower-priority box in that owner's gap; lower parts wait until the owner is stale. Never retypes under a sounding EFX player; one type write per box per 1.2 s; notes skip a box for 150 ms after its type/Part On changes. Notes never delayed.
   • Foley: shared ch16 8850 SFX (CC0=CC00, CC32=0, PC 121/122)
   • Ghosts (Phase 1): bass/organ sub-octave on-channel; dist-guitar
     unison on a spare GS port (inherits EFX). One extra note per hero.
@@ -597,7 +597,12 @@ ANIMA_EFX_ARM_SEC = 12.0    # unused by the 0.19 planner; kept so older logs sta
 ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX *type* changes (priority upgrade exempt)
 ANIMA_EFX_FLUSH_GAP = 0.18  # unused; 166 flush applies on the part's own note-off
 ANIMA_EFX_SETTLE_SEC = 0.060  # unused; notes are not delayed
-ANIMA_EFX_DUMP_SEC = 1.0    # setup-burst claims are not stolen; after this a quiet never-sounded box can be taken
+ANIMA_EFX_DUMP_SEC = 1.0    # an unheard claim is not stolen for this long; after it a quiet unheard box can be taken
+ANIMA_EFX_BURST_SEC = 0.25  # PC dump is placed once after this much PC silence (or at the first note)
+ANIMA_EFX_PC_GRACE_SEC = 12.0  # mid-song PC claim: lower families leave it alone this long while unheard
+ANIMA_EFX_PAN_OFF = 20        # |CC10-64| beyond this = a placed guitar (keep a pan-capable dirt type)
+ANIMA_EFX_BIG_BURST = 4       # this many PC channels in one burst = song setup (short DUMP grace)
+ANIMA_EFX_WET_SEC = 0.15      # after a type/Part On change, that part's notes use another box this long
 ANIMA_EFX_CTRL_CC = 16    # 8850 EFX C.Src1 → CC16 after one SysEx bind
 ANIMA_WAH_LFO_HZ = 0.55
 ANIMA_ROTARY_HOLD_SEC = 0.60
@@ -752,6 +757,9 @@ class Duality:
         self._anima_efx_sent = None     # (msb,lsb) last sent
         self._anima_efx_sound_t = {}
         self._anima_fam_played = {}     # family -> last real note (not a PC)
+        self._anima_efx_burst_dirty = False  # PC dump waiting for one settle
+        self._anima_efx_burst_t = 0.0
+        self._anima_efx_seek_t = [0.0] * 16
         self._anima_efx_switch_t = 0.0
         self._anima_efx_pending = None  # (fam, since)
         self._anima_split_on = False
@@ -3678,8 +3686,9 @@ class Duality:
             )
             if self.anima_game:
                 self._anima_game_note_pc()
-            # Load insertion type now so the first note is not under a DSP swap.
-            self._anima_maybe_efx(ch)
+            # Insert types are placed once the PC dump settles (or at the
+            # first note), still ahead of the notes. Not per PC in arrival order.
+            self._anima_efx_on_pc(ch)
 
     def _anima_cat_pc(self, ch: int) -> int:
         """GM capital this part is *for*, even if we are sounding a CM-64 PC."""
@@ -3873,6 +3882,9 @@ class Duality:
         self._anima_reset_efx_seed()
         self._anima_efx_sound_t = {}
         self._anima_fam_played = {}     # family -> last real note (not a PC)
+        self._anima_efx_burst_dirty = False  # PC dump waiting for one settle
+        self._anima_efx_burst_t = 0.0
+        self._anima_efx_seek_t = [0.0] * 16
         self._anima_ch_port = {}
         self._anima_fam_was = [None] * 16
         self._anima_note_port = {}
@@ -3920,6 +3932,7 @@ class Duality:
             return
         self._anima_game_poll()
         self._anima_park_idle_poll()
+        self._anima_efx_burst_poll()
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
@@ -4582,6 +4595,9 @@ class Duality:
         self._anima_fam_was = [None] * 16
         self._anima_efx_sound_t = {}
         self._anima_fam_played = {}     # family -> last real note (not a PC)
+        self._anima_efx_burst_dirty = False  # PC dump waiting for one settle
+        self._anima_efx_burst_t = 0.0
+        self._anima_efx_seek_t = [0.0] * 16
         self._anima_feedback("game", f"new cue ({diff} PCs) — EFX/tone reroll", status=True)
 
     def _anima_reroll_tones(self) -> None:
@@ -4701,6 +4717,20 @@ class Duality:
             pal = [row for row in pal if (row[0], row[1]) != (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)]
             if not pal:
                 return None
+        # A panned lone guitar keeps its side: GTR Multi has no Output Pan
+        # here, so it collapsed hard-panned guitars to the middle.
+        want_pan = False
+        if fam == "guitar_dist" and len(chs_set) < 2 and chs_set:
+            want_pan = any(
+                abs(int(self.pan[c] if self.pan[c] is not None else 64) - 64) > ANIMA_EFX_PAN_OFF
+                for c in chs_set
+            )
+            if want_pan:
+                panned = [row for row in pal if (row[0], row[1]) in ANIMA_EFX_PAN_SLOT]
+                if panned:
+                    pal = panned
+                else:
+                    want_pan = False
         # MandolinTrem already has a built-in tremolo — no delay/echo insert.
         trem = False
         for c in chs_set:
@@ -4719,6 +4749,8 @@ class Duality:
 
         def _from_typ(typ):
             if not typ:
+                return None
+            if want_pan and tuple(typ)[:2] not in ANIMA_EFX_PAN_SLOT:
                 return None
             for row in pal:
                 if (row[0], row[1]) == tuple(typ)[:2]:
@@ -5058,7 +5090,8 @@ class Duality:
                     if not sl.get("fam"):
                         used_ports.add(p)
                         return p
-            # 3) steal the lowest-priority occupant (slide them later)
+            # 3) steal the lowest-priority occupant, only if that box is
+            #    evictable (quiet players, and owner unheard or silent IDLE_SEC)
             steal = None
             steal_rank = -1
             for p in gs:
@@ -5068,8 +5101,12 @@ class Duality:
                 fam = sl.get("fam")
                 if not fam or fam == "file_park":
                     continue
+                if not self._anima_slot_evictable(p, now):
+                    continue
                 r = _rank(fam)
-                if r > _rank(for_fam) and r > steal_rank:
+                if sl.get("heard_t") and r <= _rank(for_fam):
+                    continue
+                if r > steal_rank:
                     steal, steal_rank = p, r
             if steal is not None:
                 used_ports.add(steal)
@@ -5133,7 +5170,8 @@ class Duality:
             else:
                 port = _take(fam)
                 if port is None:
-                    break
+                    # Lower families may still own their boxes.
+                    continue
                 sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
                 plan.append({
                     "port": port, "fam": fam, "chs": chs,
@@ -5171,6 +5209,9 @@ class Duality:
             self._anima_efx_ours = True
             self._safe_out_send(port, off)
             self._anima_efx_on[port][c] = False
+        for c, p in list((self._anima_ch_port or {}).items()):
+            if p == port:
+                self._anima_ch_port.pop(c, None)
         self._anima_slots[port] = {}
 
     def _anima_commit_plan(self, plan: list) -> None:
@@ -5226,6 +5267,10 @@ class Duality:
             if p == home:
                 continue
             if p not in keep and self._anima_slots[p].get("fam"):
+                # A heard owner keeps its box; never pull Part EFX out from
+                # under a sounding player.
+                if not self._anima_slot_evictable(p):
+                    continue
                 self._anima_clear_slot(p)
         # Secondaries: EFX Off on parts the FILE turned on (home keeps them).
         # Once per port — commit_plan runs on every note and was flooding Offs.
@@ -5272,6 +5317,16 @@ class Duality:
             return
         ch = chs[0]
         pan = self.pan[ch] if self.pan[ch] is not None else 64
+        pans = [int(self.pan[c]) if self.pan[c] is not None else 64 for c in chs]
+        if len(pans) >= 2 and min(pans) < 64 - ANIMA_EFX_PAN_OFF and max(pans) > 64 + ANIMA_EFX_PAN_OFF:
+            # Opposite-side guitars sharing one mono insert (ONESTOP intro):
+            # centre it until the OD1/OD2 split can latch in a quiet gap.
+            pan = 64
+            addr = 0x03 + (int(slot) - 1)
+            self._anima_efx_ours = True
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [pan]))
+            self._anima_feedback("efx-pan", f"P{port + 1} EFX pan param {slot} → 64 (split pending)", status=False)
+            return
         if abs(int(pan) - 64) <= 4:
             # Centered part on an extra dirt box: lean L/R by port.
             pan = 32 if (port % 2 == 0) else 96
@@ -5315,6 +5370,43 @@ class Duality:
         if ch not in (slot.get("chs") or []):
             return
         self._anima_efx_apply_pan(port, slot.get("typ"), slot.get("chs") or [ch])
+        self._anima_efx_guitar_upkeep(ch)
+
+    def _anima_efx_guitar_upkeep(self, ch: int) -> None:
+        """Fix a dirt box's stereo placement once it is quiet.
+
+        Two opposite-side guitars merged under a riff → latch OD1/OD2.
+        A lone panned guitar left on GTR Multi (CC10 came after the PC)
+        → move it to Overdrive/Distortion so it keeps its side.
+        Same rules as every other type change: quiet players, one type
+        write per box per switch window, no hold/retrigger.
+        """
+        port = self._anima_ch_port.get(ch & 0x0F)
+        if port is None or not (0 <= port < len(self._anima_slots)):
+            return
+        sl = self._anima_slots[port]
+        if sl.get("fam") != "guitar_dist" or not sl.get("typ"):
+            return
+        chs = list(sl.get("chs") or [])
+        if not chs or self._anima_port_players_sounding(port):
+            return
+        if time.monotonic() - float(sl.get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
+            return
+        if len(chs) >= 2:
+            pair = chs[:2]
+            if sl.get("split") or not self._anima_chs_want_split(pair):
+                return
+            self._anima_commit_slot({"port": port, "fam": "guitar_dist", "chs": pair, "split": True})
+            return
+        if tuple(sl["typ"])[:2] in ANIMA_EFX_PAN_SLOT:
+            return
+        c = chs[0]
+        pan = int(self.pan[c]) if self.pan[c] is not None else 64
+        if abs(pan - 64) <= ANIMA_EFX_PAN_OFF:
+            return
+        self._anima_commit_slot({
+            "port": port, "fam": "guitar_dist", "chs": chs, "split": False, "retype": True,
+        })
 
     def _anima_port_has_notes(self, port: int) -> bool:
         for info in self.active.values():
@@ -5323,38 +5415,98 @@ class Duality:
                 return True
         return False
 
-    def _anima_slot_reserved(self, port: int, now: float | None = None) -> bool:
-        """Live insert, recent sound, or a PC that has not been heard yet.
+    def _anima_efx_wet_mark(self, port: int, ch: int) -> None:
+        """Part just went wet / type just changed: keep its next notes off this box briefly."""
+        wet = getattr(self, "_anima_efx_wet", None)
+        if wet is None:
+            wet = self._anima_efx_wet = {}
+        wet[(port, ch & 0x0F)] = time.monotonic() + ANIMA_EFX_WET_SEC
 
-        HOLD alone made an armed-but-silent guitar Multi look free at 6s,
-        so organ wrote Rotary on that box while another port was idle.
+    def _anima_efx_wet_blocked(self, port: int, ch: int) -> bool:
+        wet = getattr(self, "_anima_efx_wet", None) or {}
+        return time.monotonic() < float(wet.get((port, ch & 0x0F), 0.0))
+
+    def _anima_port_players(self, port: int, extra_chs=None) -> set:
+        """Channels wired into this box's insert: Part EFX On here, slot owners, newcomers."""
+        sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
+        ons = self._anima_efx_on[port] if port < len(self._anima_efx_on) else [False] * 16
+        players = {c for c in range(16) if ons[c]}
+        players.update(sl.get("chs") or [])
+        players.update(extra_chs or [])
+        return players
+
+    def _anima_port_players_sounding(self, port: int, extra_chs=None) -> bool:
+        """Any EFX player of this box sounding on it (notes, ghosts, queued strums).
+
+        Dry parts load-balanced onto the unit do not count: their Part EFX is
+        Off, so an insert type change never reaches them.
+        """
+        players = self._anima_port_players(port, extra_chs)
+        if not players:
+            return False
+        for key, info in self.active.items():
+            if key[0] in players and port in (info.get("ports") or [info.get("port")]):
+                return True
+        for ghosts in (getattr(self, "_anima_ghosts", None) or {}).values():
+            for g in ghosts or []:
+                if g and g[0] == port and (g[1] & 0x0F) in players:
+                    return True
+        for _when, p, msg in getattr(self, "_anima_strum_q", None) or []:
+            if (
+                p == port
+                and getattr(msg, "type", "") == "note_on"
+                and msg.velocity > 0
+                and (msg.channel & 0x0F) in players
+            ):
+                return True
+        return False
+
+    def _anima_slot_evictable(self, port: int, now: float | None = None) -> bool:
+        """A box may change owner: empty, or unheard past the dump, or silent IDLE_SEC.
+
+        Once a family has actually played on a box it keeps it while it plays.
+        "Unheard" alone was the 0.19.002 ping-pong (lead ↔ pad on every gap).
         """
         now = time.monotonic() if now is None else now
         sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
         fam = sl.get("fam")
         if not fam:
-            return False
+            return True
         if fam == "file_park":
+            return False
+        if self._anima_port_players_sounding(port):
+            return False
+        if now - float(sl.get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
+            return False
+        return self._anima_slot_stale(port, now)
+
+    def _anima_slot_stale(self, port: int, now: float | None = None) -> bool:
+        """Owner no longer has a claim a LOWER family must respect.
+
+        Heard owners: silent ANIMA_EFX_IDLE_SEC. Unheard owners: past their
+        grace (short for the song-setup dump, longer for a mid-song PC,
+        which says that part is about to play).
+        """
+        now = time.monotonic() if now is None else now
+        sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
+        fam = sl.get("fam")
+        if not fam:
             return True
+        if fam == "file_park":
+            return False
+        heard = float(sl.get("heard_t") or 0)
+        if heard:
+            return (now - heard) >= ANIMA_EFX_IDLE_SEC
         claimed = float(sl.get("t") or 0)
-        heard = float((getattr(self, "_anima_efx_sound_t", None) or {}).get(fam) or 0)
-        if claimed and heard < claimed and (now - claimed) < ANIMA_EFX_ARM_SEC:
-            return True
-        if claimed and (now - claimed) < ANIMA_EFX_HOLD_SEC:
-            return True
-        for key in self.active:
-            c = key[0] if isinstance(key, tuple) else key
-            try:
-                if self._anima_efx_family(c) == fam:
-                    return True
-            except Exception:
-                pass
-        if heard and (now - heard) < ANIMA_EFX_HOLD_SEC:
-            return True
-        return False
+        grace = float(sl.get("grace") or ANIMA_EFX_DUMP_SEC)
+        return (now - claimed) >= grace
 
     def _anima_unpin_others(self, port: int, fam: str, chs: list, old_chs: list) -> None:
-        """Channels this box no longer owns must re-home. Same family stays."""
+        """Channels this box no longer owns must re-home. Same family stays.
+
+        Unpin and Part EFX Off are one action: pinned-but-Off played dry
+        forever (0.19.001).
+        """
         victims = set(old_chs or [])
         for c, p in list((self._anima_ch_port or {}).items()):
             if p == port:
@@ -5368,6 +5520,13 @@ class Duality:
             except Exception:
                 pass
             self._anima_ch_port.pop(c, None)
+            if self._anima_efx_on[port][c]:
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    port,
+                    self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x00]),
+                )
+                self._anima_efx_on[port][c] = False
 
     def _anima_commit_slot(self, item: dict) -> None:
         port = item["port"]
@@ -5396,15 +5555,24 @@ class Duality:
                 self._anima_efx_on[port][c] = want
             self._anima_unpin_others(port, "file_park", chs, list(old.get("chs") or []))
             return
+        # Invariant: never change type or owner under a sounding EFX player
+        # (dirt, OD1/OD2 and GTR Multi included). Dry parts do not count.
+        busy = self._anima_port_players_sounding(port, chs)
+        # One type write per box per switch window (the 196 s GTR Multi →
+        # OD1/OD2 double write). An empty box is never "recent".
+        if old.get("typ") and time.monotonic() - float(old.get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
+            busy = True
         # Same family + type already on this box: keep it. Channel list
         # may grow/shrink; that must not re-roll GTR Multi 1↔3.
-        # Split may still latch ON below.
+        # Split may still latch ON below, but only on a quiet box.
         if (
             old.get("fam") == fam
             and old.get("typ")
-            and not (split and not old.get("split"))
+            and (not (split and not old.get("split")) or busy)
+            and not (item.get("retype") and not busy)
         ):
-            self._anima_slots[port]["chs"] = list(set(chs) | set(old.get("chs") or []))
+            before = set(old.get("chs") or [])   # old IS the live slot dict
+            self._anima_slots[port]["chs"] = list(set(chs) | before)
             self._anima_slots[port]["split"] = bool(old.get("split"))
             for c in chs:
                 if self._anima_efx_on[port][c]:
@@ -5415,8 +5583,11 @@ class Duality:
                     self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x01]),
                 )
                 self._anima_efx_on[port][c] = True
+                self._anima_efx_wet_mark(port, c)
             merged = list(self._anima_slots[port].get("chs") or [])
             self._anima_unpin_others(port, fam, merged, list(old.get("chs") or []))
+            if set(merged) != before:
+                self._anima_efx_apply_pan(port, old.get("typ"), merged)
             return
         # Same family, type already sent — do not flap GTR Multi ↔ OD1/OD2
         # inside the switch window unless we are latching split ON.
@@ -5437,14 +5608,15 @@ class Duality:
                 and old.get("typ") == (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
             )
             if not already:
-                # Two incompatible players on one dirt box: split NOW.
-                # Waiting for silence never comes during a riff.
-                held = self._anima_hold_retrigger(port, chs)
+                if busy:
+                    # No hold/retrigger under a riff (ONESTOP hitch).
+                    return
                 self._anima_apply_od_split(chs, ports=[port])
-                self._anima_hold_resume(port, held)
             self._anima_slots[port] = {
                 "fam": fam, "chs": chs, "split": True,
                 "typ": (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB), "t": time.monotonic(),
+                "heard_t": float(old.get("heard_t") or 0) if old.get("fam") == fam else 0.0,
+                "grace": float(getattr(self, "_anima_efx_grace", ANIMA_EFX_DUMP_SEC)),
             }
             for c in range(16):
                 want = c in chs
@@ -5457,6 +5629,8 @@ class Duality:
                     self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
                 )
                 self._anima_efx_on[port][c] = want
+                if want:
+                    self._anima_efx_wet_mark(port, c)
             self._anima_unpin_others(port, fam, chs, list(old.get("chs") or []))
             return
         pick = self._anima_palette_pick(fam, port, chs)
@@ -5478,35 +5652,17 @@ class Duality:
             else:
                 item["split"] = True
                 return self._anima_commit_slot(item)
+        if busy and (old.get("typ") != typ or (old.get("fam") and old.get("fam") != fam)):
+            # A player is sounding: leave type, owner and part toggles alone.
+            # The new family stays unpinned (dry) and retries when this box
+            # or another one is quiet. No defer, no flush, no hold/retrigger.
+            return
         if old.get("typ") != typ:
-            # Busy = anything sounding on this box, not just the new family.
-            # Live type swaps click (Off → type → On / hold-retrigger) and
-            # that was the birdcall hitch: Delay → Space-D under chirps.
-            busy = any(
-                port in info.get("ports", [info["port"]])
-                for info in self.active.values()
-            ) or any(k[0] in chs for k in self.active)
-            old_typ = old.get("typ")
-            old_dirt = (old_typ in ANIMA_FILE_DIRT_TYPES) or str(old.get("fam") or "").startswith("guitar_dist")
-            new_dirt = (typ in ANIMA_FILE_DIRT_TYPES) or fam.startswith("guitar_dist")
-            # Dirt upgrades must not wait for silence — a riff never gaps
-            # long enough, and a late apply lands on strings/organ instead.
-            if busy and old_typ and not new_dirt:
-                # Leave the sounding family on this box. Replacing fam and
-                # deferring the type turned the playing part's EFX off, then
-                # a later flush wrote the new type with no part toggle.
-                # The rejected family stays unpinned and retries when quiet.
-                return
-            if not busy:
-                # Quiet: no hold/retrigger click.
-                held = []
-            else:
-                held = self._anima_hold_retrigger(port, chs)
             self._anima_efx_ours = True
             self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb]))
-            if held:
-                self._anima_hold_resume(port, held)
             self._anima_efx_sent = typ
+            for c in chs:
+                self._anima_efx_wet_mark(port, c)
             self._anima_efx_label = label
             self._anima_efx_hero = chs[0] if chs else None
             self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
@@ -5515,22 +5671,11 @@ class Duality:
             self._anima_bass_harm_drive(port, typ, chs)
             self._anima_lead_dirt_drive(port, typ, chs)
             self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} → GS {label}", status=True)
-        dirt_commit = (typ in ANIMA_FILE_DIRT_TYPES) or str(fam).startswith("guitar_dist")
+        elif old.get("fam") != fam:
+            self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} keeps GS {label}", status=True)
+        # Type and part toggles change together; only this box's owners are On.
         for c in range(16):
-            want = c in chs
-            # Sounding-on-this-port must not arm drums / rhythm parts.
-            if self._anima_is_rhythm(c):
-                want = False
-            elif not want and any(
-                k[0] == c and port in info.get("ports", [info["port"]])
-                for k, info in self.active.items()
-            ):
-                cfam = self._anima_efx_family(c) or ""
-                if dirt_commit:
-                    # Overdrive on a pad/strings that share the box was ONESTOP @ 0:23.
-                    want = cfam.startswith("guitar_dist") or cfam in ANIMA_FILE_DIRT_FAMS
-                else:
-                    want = True
+            want = c in chs and not self._anima_is_rhythm(c)
             if want == self._anima_efx_on[port][c]:
                 continue
             val = 0x01 if want else 0x00
@@ -5540,10 +5685,16 @@ class Duality:
                 self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
             )
             self._anima_efx_on[port][c] = want
+            if want:
+                self._anima_efx_wet_mark(port, c)
         self._anima_unpin_others(port, fam, chs, list(old.get("chs") or []))
         if old.get("split") and not split:
             self._anima_split_restore()
-        self._anima_slots[port] = {"fam": fam, "chs": chs, "split": False, "typ": typ, "t": time.monotonic()}
+        self._anima_slots[port] = {
+            "fam": fam, "chs": chs, "split": False, "typ": typ, "t": time.monotonic(),
+            "heard_t": float(old.get("heard_t") or 0) if old.get("fam") == fam else 0.0,
+            "grace": float(getattr(self, "_anima_efx_grace", ANIMA_EFX_DUMP_SEC)),
+        }
 
     def _anima_efx_flush_pending(self, ch: int) -> None:
         """Apply a deferred EFX type once that part has no sounding notes."""
@@ -5798,6 +5949,9 @@ class Duality:
         try:
             mid = self._gs_efx_part_mid(ch)
             self._send(port, self._gs_dt1([0x40, mid, 0x22], [0x01]))
+            # Track it so the next type change on this box turns it Off.
+            if port < len(self._anima_efx_on):
+                self._anima_efx_on[port][ch] = True
         except Exception:
             pass
 
@@ -6439,57 +6593,151 @@ class Duality:
             status=True,
         )
 
-    def _anima_efx_take_idle(self, ch: int) -> None:
-        """Give a left-out part a quiet insert that has never been heard.
+    def _anima_efx_place(self, ch: int) -> None:
+        """Seat one unpinned part on a box. Touches only that box.
 
-        The setup dump still fills by priority and is left alone for
-        ANIMA_EFX_DUMP_SEC. A box with notes, a file park, or a family that
-        has already played is not touched. No note is held or retriggered
-        here; commit_slot still applies 166's own dirt rule if this channel
-        is already sounding.
+        Order: this family's box (guitars prefer a spare unit first), an
+        empty box, then the lowest-priority evictable box. A heard owner is
+        only displaced by a higher family after ANIMA_EFX_IDLE_SEC of
+        silence. Nothing fits → the part plays dry and retries later.
         """
-        if self._anima_ch_port.get(ch) is not None:
-            return
         fam = self._anima_efx_family(ch)
         if not fam:
             return
         home = self._anima_file_home_port()
+        reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
+        if ch in reserved:
+            return
         gs = [p for p in self._anima_gs_ports() if p != home]
         if not gs:
             return
         now = time.monotonic()
         pri = {f: i for i, f in enumerate(ANIMA_EFX_PRIORITY)}
-        played = getattr(self, "_anima_fam_played", None) or {}
-        best = None
-        best_r = -1
+        rank = pri.get(fam, 99)
+
+        def _slot(p: int) -> dict:
+            return self._anima_slots[p] if p < len(self._anima_slots) else {}
+
+        same = [p for p in gs if _slot(p).get("fam") == fam]
+        empty = [p for p in gs if not _slot(p).get("fam")]
+        steal = None
+        steal_r = -1
         for p in gs:
-            sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
-            of = sl.get("fam")
-            if not of or of == "file_park" or of == fam:
+            of = _slot(p).get("fam")
+            if not of or of == fam or of == "file_park":
                 continue
-            if self._anima_port_has_notes(p):
+            # Never under a sounding player of that box, and never twice
+            # inside SWITCH_SEC (one type write per box per switch window).
+            if self._anima_port_players_sounding(p):
                 continue
-            if played.get(of):
-                continue
-            claimed = float(sl.get("t") or 0)
-            if not claimed or (now - claimed) < ANIMA_EFX_DUMP_SEC:
+            if now - float(_slot(p).get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
                 continue
             r = pri.get(of, 99)
-            if r > best_r:
-                best, best_r = p, r
-        if best is None:
+            if r <= rank:
+                # A higher (or equal) owner only yields once it has gone stale.
+                if not self._anima_slot_stale(p, now):
+                    continue
+            elif not self._anima_slot_stale(p, now):
+                # This part is playing and outranks the owner: take it in the
+                # owner's gap (none of its channels sounding anywhere).
+                owners = set(_slot(p).get("chs") or [])
+                if any(k[0] in owners for k in self.active):
+                    continue
+            if r > steal_r:
+                steal, steal_r = p, r
+        spare = empty[0] if empty else steal
+        port = None
+        chs = [ch]
+        split = False
+        partner = [
+            p for p in same
+            if len([c for c in (_slot(p).get("chs") or []) if c != ch]) == 1
+        ]
+        if fam == "guitar_dist" and empty:
+            port = empty[0]            # one guitar per unit keeps its pan
+        elif fam == "guitar_dist" and partner:
+            # Pair with the other guitar (OD1/OD2 keeps both sides) rather
+            # than taking another family's box (ONESTOP end: organ lost P3).
+            port = partner[0]
+            pair = [c for c in (_slot(port).get("chs") or []) if c != ch][:1] + [ch]
+            chs = pair
+            split = bool(_slot(port).get("split")) or self._anima_chs_want_split(pair)
+        elif fam == "guitar_dist" and spare is not None:
+            port = spare
+        elif same:
+            port = same[0]
+            sl = _slot(port)
+            if fam == "guitar_dist":
+                pair = [c for c in (sl.get("chs") or []) if c != ch][:1] + [ch]
+                chs = pair
+                split = bool(sl.get("split")) or (
+                    len(pair) >= 2 and self._anima_chs_want_split(pair)
+                )
+        elif spare is not None:
+            port = spare
+        if port is None:
             return
-        self._anima_commit_slot({
-            "port": best, "fam": fam, "chs": [ch], "split": False,
-        })
-        sl = self._anima_slots[best] if best < len(self._anima_slots) else {}
-        if sl.get("fam") == fam or sl.get("pending_fam") == fam:
-            self._anima_ch_port[ch] = best
-            self._anima_feedback(
-                "efx",
-                f"ch{ch + 1} {fam} takes quiet unheard P{best + 1}",
-                status=False,
-            )
+        self._anima_efx_grace = ANIMA_EFX_DUMP_SEC  # playing now; heard at once
+        self._anima_commit_slot({"port": port, "fam": fam, "chs": chs, "split": split})
+        sl = _slot(port)
+        if sl.get("fam") == fam and ch in (sl.get("chs") or []) and self._anima_efx_on[port][ch]:
+            self._anima_ch_port[ch] = port
+
+    def _anima_efx_settle_burst(self) -> None:
+        """One global plan after the PC dump has gone quiet (or at the first note)."""
+        if not getattr(self, "_anima_efx_burst_dirty", False):
+            return
+        self._anima_efx_burst_dirty = False
+        n = int(getattr(self, "_anima_efx_burst_n", 0) or 0)
+        self._anima_efx_burst_n = 0
+        self._anima_efx_grace = (
+            ANIMA_EFX_DUMP_SEC if n >= ANIMA_EFX_BIG_BURST else ANIMA_EFX_PC_GRACE_SEC
+        )
+        plan = self._anima_build_plan()
+        self._anima_commit_plan(plan)
+        self._anima_efx_grace = ANIMA_EFX_DUMP_SEC
+
+    def _anima_efx_burst_poll(self) -> None:
+        if not getattr(self, "_anima_efx_burst_dirty", False):
+            return
+        if time.monotonic() - float(getattr(self, "_anima_efx_burst_t", 0.0) or 0.0) >= ANIMA_EFX_BURST_SEC:
+            self._anima_efx_settle_burst()
+
+    def _anima_efx_on_pc(self, ch: int) -> None:
+        """PC: re-seat a pinned part whose family changed; then mark the burst."""
+        ch = ch & 0x0F
+        port = self._anima_ch_port.get(ch)
+        if port is not None and 0 <= port < len(self._anima_slots):
+            sl = self._anima_slots[port]
+            fam = self._anima_efx_family(ch)
+            if sl.get("fam") not in (None, "file_park") and fam != sl.get("fam"):
+                others = [c for c in (sl.get("chs") or []) if c != ch]
+                if fam and not others and not self._anima_port_players_sounding(port):
+                    # Sole owner, quiet box: retype on the PC, before its notes.
+                    self._anima_efx_grace = ANIMA_EFX_PC_GRACE_SEC
+                    self._anima_commit_slot({"port": port, "fam": fam, "chs": [ch], "split": False})
+                    self._anima_efx_grace = ANIMA_EFX_DUMP_SEC
+                    if self._anima_slots[port].get("fam") == fam and self._anima_efx_on[port][ch]:
+                        self._anima_ch_port[ch] = port
+                        return
+                # Leave the box to its remaining owners: unpin + Part Off together.
+                sl["chs"] = others
+                self._anima_ch_port.pop(ch, None)
+                if self._anima_efx_on[port][ch]:
+                    self._anima_efx_ours = True
+                    self._safe_out_send(
+                        port,
+                        self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x00]),
+                    )
+                    self._anima_efx_on[port][ch] = False
+                if not others:
+                    # Owner left; box keeps its type but is free for the next family.
+                    sl["heard_t"] = 0.0
+                    sl["t"] = 0.0
+        if self._anima_ch_port.get(ch) is None and self._anima_efx_family(ch):
+            self._anima_efx_burst_t = time.monotonic()
+            self._anima_efx_burst_dirty = True
+            self._anima_efx_burst_n = int(getattr(self, "_anima_efx_burst_n", 0) or 0) + 1
 
     def _anima_maybe_efx(self, ch: int) -> None:
         if not self.anima or self._anima_is_rhythm(ch):
@@ -6497,6 +6745,8 @@ class Duality:
         fmt = (getattr(self, "detected_format", None) or "").upper()
         if fmt not in ("GS", "SC", "SC-8850", "XG") and not self._anima_gs_ports():
             return
+        # A pending setup burst is placed once, before this note routes.
+        self._anima_efx_settle_burst()
         # Already parked on a box — do not rebuild the 4-port map.
         # Re-planning every note was the 17:49:27 OD1/OD2 + 170 toggles.
         if self._anima_ch_port.get(ch) is not None:
@@ -6506,13 +6756,15 @@ class Duality:
         # real part had just turned its EFX on.
         if not self._anima_efx_family(ch):
             return
-        plan = self._anima_build_plan(extra_ch=ch)
-        self._anima_commit_plan(plan)
-        if self._anima_ch_port.get(ch) is None:
-            # 166 would leave this part dry if every box went to a higher
-            # family at the dump. After that burst, a quiet box whose family
-            # has never actually sounded can be taken. Notes are not delayed.
-            self._anima_efx_take_idle(ch)
+        # A dry part re-seeks at most once per SWITCH_SEC.
+        now = time.monotonic()
+        seek = getattr(self, "_anima_efx_seek_t", None)
+        if seek is None:
+            seek = self._anima_efx_seek_t = [0.0] * 16
+        if now - seek[ch] < ANIMA_EFX_SWITCH_SEC:
+            return
+        seek[ch] = now
+        self._anima_efx_place(ch)
 
     def _anima_efx_assign_family(self, fam: str, hero: int) -> None:
         """EFX On for every channel in this family; Off for the others."""
@@ -7429,8 +7681,25 @@ class Duality:
                             lim = self.poly_limits[last] or 1
                             if self.voice_counts[last] < lim:
                                 pin = last
+                    wet_skip = None
+                    if (
+                        pin is not None
+                        and self.anima
+                        and self._anima_efx_wet_blocked(pin, ch_n)
+                    ):
+                        # Box was just retyped / Part On for this channel:
+                        # this note plays dry elsewhere (not delayed); the
+                        # next phrase lands on the insert.
+                        others = [p for p in eligible if p != pin]
+                        if others:
+                            wet_skip = pin
+                            pin = None
                     if pin is not None and pin in eligible:
                         port = pin
+                    elif wet_skip is not None:
+                        port = self._choose_from_ports(
+                            [p for p in eligible if p != wet_skip], is_chord
+                        )
                     else:
                         port = self._choose_port(is_chord)
                     if port is None:
@@ -7521,6 +7790,15 @@ class Duality:
                         played = None
                     if played:
                         self._anima_fam_played[played] = time.monotonic()
+                        # This box's owner is actively playing. Any note of a
+                        # pinned owner counts: a re-struck held key stays on its
+                        # old port, and that must not make the box look unheard.
+                        hch = note_msg.channel & 0x0F
+                        hp = self._anima_ch_port.get(hch)
+                        if hp is not None and 0 <= hp < len(self._anima_slots):
+                            hsl = self._anima_slots[hp]
+                            if hch in (hsl.get("chs") or []):
+                                hsl["heard_t"] = time.monotonic()
                     if (note_msg.channel & 0x0F) == 9:
                         self._anima_drum_last = time.monotonic()
                     self._anima_maybe_foley(
@@ -7616,6 +7894,7 @@ class Duality:
                         if not still:
                             self._anima_idle_t[ch] = time.monotonic()
                             self._anima_efx_flush_pending(ch)
+                            self._anima_efx_guitar_upkeep(ch)
                 else:
                     # Unknown off — do not broadcast to every port (that
                     # was leaving phantom offs on the unit that never
