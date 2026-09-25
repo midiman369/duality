@@ -103,7 +103,7 @@ ANIMA_SIERRA_PC = {
 
 
 ANIMA_EXPR_CATS = frozenset(
-    {"strings", "ensemble", "brass", "wind", "pad", "lead", "organ", "fx"}
+    {"strings", "ensemble", "brass", "wind", "pad", "lead", "fx"}
 )
 ANIMA_MOD_CATS = frozenset(
     {"strings", "ensemble", "pad", "wind", "brass", "lead"}
