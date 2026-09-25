@@ -44,7 +44,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 
 ![Crucible: GM, GS, XG and MT-32 streams on the same six outs](docs/images/crucible-demo.gif)
 
-*Same notes, four input dialects, same outs (four `gs8850+gm2` Canvases, one `xg`, one `mt32`). GM and GS land on the Canvases, XG only on the XG out, MT-32 only on the MT-32 out. Stills: [GM](docs/images/crucible-gm.svg) · [GS](docs/images/crucible-gs.svg) · [XG](docs/images/crucible-xg.svg) · [MT-32](docs/images/crucible-mt32.svg).*
+*Same notes, four input dialects, same outs (four `8850+gm2`, one `xg`, one `mt32`). GM and GS land on the 8850 outs, XG only on the XG out, MT-32 only on the MT-32 out. Stills: [GM](docs/images/crucible-gm.svg) · [GS](docs/images/crucible-gs.svg) · [XG](docs/images/crucible-xg.svg) · [MT-32](docs/images/crucible-mt32.svg).*
 
 ### Voodoo (MT-32 GM)
 - Roland **MT-TO-GM** (1993) or Sierra **KQ6** bank on `:mt32` / `:mt` / `:cm` outs
