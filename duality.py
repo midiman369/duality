@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.008"
+VERSION = "0.19.009"
 
 
 """
@@ -289,7 +289,6 @@ from tables_gs import (
     GS_CHORUS_MACRO,
     GS_DELAY_MACRO,
     GS_EFX_TYPES,
-    GS_EFX_8850_ONLY,
     ANIMA_EFX_GS,
     ANIMA_EFX_PRIORITY,
     ANIMA_SPLIT_MSB,
@@ -4754,10 +4753,9 @@ class Duality:
         if port is not None:
             tags = self.out_formats[port] if port < len(self.out_formats) else set()
             cls = self._gs_canvas_class(tags)
+            # 88Pro/880 and 8820/8850 share the same 64 insertion types.
             if cls not in ("88pro", "8850"):
                 return None
-            if cls == "88pro":
-                pal = [row for row in pal if (row[0], row[1]) not in GS_EFX_8850_ONLY]
         if not pal:
             return None
         chs_set = set(chs or [])
