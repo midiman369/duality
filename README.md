@@ -67,9 +67,9 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 - Single output allowed when Anima is on
 
 ### Record + log
-- `--record [DIR]` / hotkey **W**: IN + each OUT as type-1 SMF (conductor + Ch1–Ch16 + SysEx)
+- `--record [DIR]` / hotkey **W**: IN + each OUT as type-1 SMF (conductor + Ch1–Ch16 + SysEx), in `recordings/` by default
 - Idle ~10 s closes a take and the next MIDI opens a new file
-- `--log` / `--log-verbose`; **C** clears the log
+- `--log` / `--log-verbose` (default `logs/duality.log`); **C** clears the log
 
 ### Live status panel
 - Per-port meters + VU-style peak hold, Total / Peak / Util
@@ -224,8 +224,8 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | `--voodoo-layout` | `stripe` (default) or `pairs` |
 | `--alchemy` | **BROKEN/EXPERIMENTAL** GS↔XG rewrite; allows one output |
 | `--alchemy-all` | Alchemy fan-out to all GS/XG outs (implies `--alchemy`) |
-| `--record [DIR]` | Write IN/OUT SMFs (default dir `.`). Hotkey **W** |
-| `--log [PATH]` | Status / bank / port health (default `duality.log`) |
+| `--record [DIR]` | Write IN/OUT SMFs (default dir `recordings/`, created if needed). Hotkey **W** |
+| `--log [PATH]` | Status / bank / port health (default `logs/duality.log`, folder created if needed) |
 | `--log-verbose [PATH]` | All CCs etc. Wins if both log flags are set |
 | `--no-status` | No live panel |
 | `--list` | List ports and exit |
@@ -337,7 +337,7 @@ Think “Super Munt GM,” but on hardware. `--voodoo` or **M** while the input 
 
 ## Recordings
 
-`--record` or **W** writes:
+`--record` or **W** writes into `recordings/` (or the folder you give) — git ignores it, like `logs/`:
 
 - `IN-<input>-<format>-<timestamp>.mid`
 - `OUT-<port>-<tags>-<timestamp>.mid` per output
