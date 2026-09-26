@@ -22,6 +22,24 @@ python tests/run_all.py
 | `every-breath-8850.mid` | Every Breath You Take (SC-8850 bulk-dump setup) | `replay_bulk_dump.py` |
 | `d_e1m1.mid` | DOOM E1M1 (file OD1/OD2 on parts 1+2) | `replay_file_efx_echo.py` |
 
+## Where the songs came from
+
+For a future session: ask the user for these by their original names, then
+copy each to `tests/midi/` under the test name. The checksum (first 16 hex
+of SHA-256) confirms it is the same file.
+
+| Test name | Original file (as sent) | Arrived in | Bytes | SHA-256 (16) |
+|-----------|-------------------------|------------|-------|--------------|
+| `onestop-in-220022.mid` | `IN-Duality-4-gs-20260924-220022.mid` | sent on its own | 28463 | `d5a61021374b87c4` |
+| `onestop-in-221619.mid` | `IN-Duality-4-gs-20260924-221619.mid` | `duality-logrec.zip` | 46177 | `478585ce0aa570d2` |
+| `onestop-in-222922.mid` | `IN-Duality-4-gs-20260924-222922.mid` | `latestlogrec.zip` | 46176 | `ac5880e0afdd7c9e` |
+| `bass-in-000745.mid` | `IN-Duality-4-gs-20260925-000745.mid` | `OUT-SCVA2-8-gm2gs8850-20260925-000745.zip` | 867 | `9112e1401c63a525` |
+| `every-breath-8850.mid` | `Every_Breath_You_Take_8850.mid` | sent on its own | 47765 | `97b45e8eadd03e05` |
+| `d_e1m1.mid` | `D_E1M1.mid` | sent on its own | 18772 | `68b33cb4f045a6c8` |
+
+The IN takes are Duality `--record` captures of the input stream (the
+song as the player sent it), so they are the song too and stay local.
+
 ## Tests
 
 | Script | Checks |
