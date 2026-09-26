@@ -5,6 +5,8 @@ Checks, with the song replayed through Anima at seed 6BA1:
   - an accompaniment hero is played at ANIMA_HARM_ACC_HERO, its ghost below it
   - no upper ghost of a lower part is left at or over a line that starts above it
   - harmony count stays near its measured level (wall of sound kept)
+  - 97 only: the ch3 string solo (26.6-53.2 s) is found as a featured line and
+    lifted; ch4 in its register is not played louder than the file
 """
 import os
 import sys
@@ -57,6 +59,7 @@ for m in mf:
 
 fails = []
 modes = collections.Counter()
+solo = {"in": 0, "out": 0, "n": 0, "feat": 0}
 i, tt, end = 0, 0.0, events[-1][0] + 1.0
 while tt <= end:
     CLOCK[0] = 1000.0 + tt
@@ -67,6 +70,14 @@ while tt <= end:
         d.process(m)
         if not (m.type == "note_on" and m.velocity) or m.channel == 9:
             continue
+        if SONG == "97" and 28.0 <= tt <= 53.0 and m.channel in (2, 3):
+            outv = [x.velocity for _t, p, x in REC[n0:]
+                    if x.type == "note_on" and x.channel == m.channel and x.note == m.note]
+            if outv and m.channel == 2:
+                solo["in"] += m.velocity; solo["out"] += outv[0]; solo["n"] += 1
+                solo["feat"] += 2 in d._anima_line
+            elif outv and outv[0] > m.velocity + D.ANIMA_HUMANIZE_UP:
+                fails.append(f"t={tt:.2f} ch4 n{m.note} v{outv[0]} louder than file v{m.velocity} over the solo")
         harm = [x for x in LOG[l0:] if x.startswith("harm ") and not x.startswith("harm yield")]
         mine = [x for x in harm if f" ch{m.channel + 1} n{m.note} " in x]
         if mine:
@@ -96,6 +107,11 @@ while tt <= end:
     d._check_anima_session_idle()
     tt = round(tt + 0.005, 3)
 
+if SONG == "97":
+    lift = solo["out"] / max(1, solo["in"])
+    print(f"ch3 solo: {solo['n']} notes, featured {solo['feat']}, out/in {lift:.2f}")
+    if solo["feat"] < solo["n"] * 0.9 or lift < 1.15:
+        fails.append(f"ch3 solo not spotlit (featured {solo['feat']}/{solo['n']}, out/in {lift:.2f})")
 total = sum(modes.values())
 print(f"Death Gate {SONG}: harmonised {total} notes {dict(modes)}")
 if total < FLOOR:
