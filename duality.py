@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.013"
+VERSION = "0.19.014"
 
 
 """
@@ -615,6 +615,7 @@ ANIMA_FOLEY_CAT = {
 
 ANIMA_FILE_EFX_HOLD = 1e9   # file-owned EFX lasts until GS Reset / format clear
 ANIMA_SESSION_IDLE_SEC = 30.0  # quiet MIDI → drop Anima EFX/slot state
+ANIMA_EFX_ECHO_SEC = 0.5      # own SysEx seen back on IN within this = echo
 ANIMA_GAME_IDLE_SEC = 4.0      # --anima-game: shorter "new cue" silence
 ANIMA_GAME_PC_BURST = 3        # PCs in a window = song setup dump
 ANIMA_GAME_PC_WINDOW = 0.28
@@ -2101,9 +2102,16 @@ class Duality:
             self._out_last_ok[port] = time.monotonic()
             self._out_fail_logged[port] = False
             if getattr(self, "_anima_efx_ours", False) and getattr(msg, "type", "") == "sysex":
+                # Remember our own SysEx briefly, so a loop-back echo is not
+                # read as the file's. Timed: an echo is back within ms, while
+                # the file may send the very same bytes a song later.
                 sig = tuple(int(b) & 0xFF for b in (msg.data or [])[:10])
-                bag = list(getattr(self, "_anima_efx_sent_sig", None) or [])
-                bag.append(sig)
+                now_s = time.monotonic()
+                bag = [
+                    (s, t) for s, t in (getattr(self, "_anima_efx_sent_sig", None) or [])
+                    if now_s - t < ANIMA_EFX_ECHO_SEC
+                ]
+                bag.append((sig, now_s))
                 self._anima_efx_sent_sig = bag[-12:]
             self._record_out(port, msg)
             return True
@@ -4119,6 +4127,7 @@ class Duality:
         self._anima_file_efx_home = None
         self._anima_file_efx_type = None
         self._anima_file_efx_parts = set()
+        self._anima_efx_sent_sig = []   # a new file: nothing of ours is in flight
         self._anima_file_dirt = [False] * 16
         self._anima_hetfield_roll = [False] * 16
         self._anima_file_off_sent = set()
@@ -4284,11 +4293,18 @@ class Duality:
         # Only ignore our own echo, not the next file SysEx.
         if msg.type == "sysex":
             sig = tuple(int(b) & 0xFF for b in (msg.data or [])[:10])
-            bag = getattr(self, "_anima_efx_sent_sig", None) or []
-            if sig in bag:
-                self._anima_efx_sent_sig = [s for s in bag if s != sig]
+            now_s = time.monotonic()
+            bag = [
+                (s, t) for s, t in (getattr(self, "_anima_efx_sent_sig", None) or [])
+                if now_s - t < ANIMA_EFX_ECHO_SEC
+            ]
+            hit = next((i for i, (s, _t) in enumerate(bag) if s == sig), None)
+            if hit is not None:
+                del bag[hit]
+                self._anima_efx_sent_sig = bag
                 self._anima_efx_ours = False
                 return
+            self._anima_efx_sent_sig = bag
         self._anima_efx_ours = False
         desc = (description or "").lower()
         if "gs reset" in desc or desc.startswith("xg system on") or "gm system on" in desc:
