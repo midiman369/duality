@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.015"
+VERSION = "0.19.016"
 
 
 """
@@ -57,7 +57,8 @@ Anima (opt-in)
 
 Record / log / panel
   • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx) → recordings/
-  • --log / --log-verbose → logs/duality.log; C clears; port health on session end
+  • --log / --log-verbose → logs/duality-<stamp>.log, one per run and per
+    --record take (same stamp as its IN/OUT); C starts a new log; port health
   • Live meters, channel grid, Recent history, format badge, decoded SysEx
 
 Other
@@ -72,7 +73,7 @@ Hotkeys (input/stream format — not output tags)
 F clear input format   L lock/unlock input format
 G GM↔GM2   R GS   Y XG   M MT-32 (again = Voodoo GM)
 V Voodoo bank   P Voodoo layout   A Anima off/normal/game   S seed lock
-B balance↔rr   X reset+Anima   W record   C clear log   Q quit
+B balance↔rr   X reset+Anima   W record   C new log   Q quit
 
 Usage examples
 --------------
@@ -894,19 +895,17 @@ class Duality:
         self._voodoo_catchup_origin = 0.0
         self._voodoo_catchup_t0 = 0.0
         self._log_file = None
+        # A path with {stamp} (the default logs/duality-{stamp}.log) gives one
+        # log per run, and with --record one per take (same stamp as its
+        # IN/OUT files). A plain path is appended to as before.
+        self._log_template = log_path if (log_path and "{stamp}" in log_path) else None
         if log_path:
-            try:
-                folder = os.path.dirname(log_path)
-                if folder:
-                    os.makedirs(folder, exist_ok=True)
-                self._log_file = open(log_path, "a", encoding="utf-8")
-                self._log_file.write(
-                    f"\n--- Duality session start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"
-                )
-                self._log_file.flush()
-            except OSError as e:
-                console.print(f"[yellow]Could not open log {log_path!r}: {e}[/]")
-                self._log_file = None
+            if self._log_template:
+                self._log_path = self._log_template.format(stamp=time.strftime("%Y%m%d-%H%M%S"))
+            if self._log_open("a", f"\n--- Duality session start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"):
+                pass
+            else:
+                console.print(f"[yellow]Could not open log {self._log_path!r}[/]")
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 7
         self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
@@ -1059,6 +1058,40 @@ class Duality:
     # ------------------------------------------------------------------
     
 
+    def _log_open(self, mode: str, header: str) -> bool:
+        try:
+            folder = os.path.dirname(self._log_path)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            self._log_file = open(self._log_path, mode, encoding="utf-8")
+            self._log_file.write(header)
+            self._log_file.flush()
+            return True
+        except OSError:
+            self._log_file = None
+            return False
+
+    def _log_rotate(self, stamp: str, why: str) -> bool:
+        """Close this log and open logs/duality-<stamp>.log (template logs only)."""
+        if not self._log_template:
+            return False
+        path = self._log_template.format(stamp=stamp)
+        if path == self._log_path and self._log_file is not None:
+            return True
+        if self._log_file is not None:
+            try:
+                self._log_file.write(
+                    f"{time.strftime('%H:%M:%S')} --- continued in {os.path.basename(path)} ({why}) ---\n"
+                )
+                self._log_file.close()
+            except OSError:
+                pass
+            self._log_file = None
+        self._log_path = path
+        return self._log_open(
+            "a", f"--- Duality log {time.strftime('%Y-%m-%d %H:%M:%S')} ({why}) ---\n"
+        )
+
     def _log_line(self, line: str) -> None:
         """Append one line to --log file (no-op if logging disabled).
 
@@ -1077,9 +1110,15 @@ class Duality:
             pass
 
     def _clear_log(self) -> None:
-        """Truncate the --log file and start a fresh section (hotkey C)."""
+        """Hotkey C: start a new timestamped log (or truncate a fixed-name one)."""
         if not getattr(self, "_log_path", None):
             self._set_status("No log file (--log not set)", duration=2.0)
+            return
+        if self._log_template:
+            if self._log_rotate(time.strftime("%Y%m%d-%H%M%S"), "hotkey C"):
+                self._set_status(f"New log: {os.path.basename(self._log_path)}", duration=2.5)
+            else:
+                self._set_status("New log failed", duration=3.0)
             return
         try:
             if self._log_file is not None:
@@ -7839,6 +7878,8 @@ class Duality:
         self._rec_in = []
         self._rec_out = [[] for _ in range(self.n_ports)]
         self._rec_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        # One log per take, named like its IN/OUT files.
+        self._log_rotate(self._rec_stamp, f"take {self._rec_stamp}")
         self._set_status(f"Recording ON ({self._rec_stamp})", duration=3.0)
         self._log_line(f"RECORD start {self._rec_stamp} ({reason})")
 
@@ -9754,23 +9795,24 @@ def main():
     parser.add_argument(
         "--log",
         nargs="?",
-        const=os.path.join("logs", "duality.log"),
+        const=os.path.join("logs", "duality-{stamp}.log"),
         default=None,
         metavar="PATH",
         help=(
             "Append status, Alchemy, bank/PC, and RPN/NRPN events to a log file "
-            "(default path: logs/duality.log). See also --log-verbose."
+            "(default: logs/duality-<date>-<time>.log, one per run, and one per take with --record; "
+            "a path with {stamp} works the same, a plain path is appended to). See also --log-verbose."
         ),
     )
     parser.add_argument(
         "--log-verbose",
         nargs="?",
-        const=os.path.join("logs", "duality.log"),
+        const=os.path.join("logs", "duality-{stamp}.log"),
         default=None,
         metavar="PATH",
         help=(
             "Enable logging in verbose mode (all CCs, pitch, etc.). "
-            "Optional path (default: logs/duality.log). "
+            "Optional path (default: logs/duality-<date>-<time>.log). "
             "If both --log and --log-verbose are given, verbose wins."
         ),
     )

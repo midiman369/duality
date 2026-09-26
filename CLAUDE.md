@@ -6,7 +6,8 @@
   tests; the rest print SKIP. `tests/README.md` → "Where the songs came from" lists each file's
   original name and checksum: ask the user to upload the ones you need and put takes in
   `recordings/`, songs in `tests/midi/` (original names are fine; both are git-ignored).
-- Duality writes `--log` to `logs/duality.log` and `--record` takes to `recordings/` by default.
+- Duality writes `--log` to `logs/duality-<stamp>.log` (one per run, one per `--record` take with the
+  take's stamp; C starts a new one) and `--record` takes to `recordings/` by default.
 - Anima GS EFX addresses and parameters come from the SC-8850 manual's Insertion Effect List
   (p.216-223) and MIDI Implementation (p.237); see comments in `tables_gs.py`.
 

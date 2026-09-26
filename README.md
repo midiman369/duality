@@ -69,7 +69,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 ### Record + log
 - `--record [DIR]` / hotkey **W**: IN + each OUT as type-1 SMF (conductor + Ch1–Ch16 + SysEx), in `recordings/` by default
 - Idle ~10 s closes a take and the next MIDI opens a new file
-- `--log` / `--log-verbose` (default `logs/duality.log`); **C** clears the log
+- `--log` / `--log-verbose`: `logs/duality-<date>-<time>.log`, one per run and, with `--record`, one per take (same stamp as its IN/OUT files); **C** starts a new log
 
 ### Live status panel
 - Per-port meters + VU-style peak hold, Total / Peak / Util
@@ -225,7 +225,7 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | `--alchemy` | **BROKEN/EXPERIMENTAL** GS↔XG rewrite; allows one output |
 | `--alchemy-all` | Alchemy fan-out to all GS/XG outs (implies `--alchemy`) |
 | `--record [DIR]` | Write IN/OUT SMFs (default dir `recordings/`, created if needed). Hotkey **W** |
-| `--log [PATH]` | Status / bank / port health (default `logs/duality.log`, folder created if needed) |
+| `--log [PATH]` | Status / bank / port health. Default `logs/duality-<stamp>.log` (per run, per take). A path with `{stamp}` does the same; a plain path is appended to |
 | `--log-verbose [PATH]` | All CCs etc. Wins if both log flags are set |
 | `--no-status` | No live panel |
 | `--list` | List ports and exit |
@@ -253,7 +253,7 @@ Format keys set the **input / stream format** for Crucible. They do **not** chan
 | **B** | Balance ↔ round-robin |
 | **X** | Panic + dialect resets + Anima session reset (not format lock) |
 | **W** | Start / stop recording |
-| **C** | Clear log file |
+| **C** | Start a new log file (a fixed `--log` path is cleared instead) |
 | **Q** | Panic and quit |
 | **Ctrl+C** | Panic and quit |
 
