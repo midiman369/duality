@@ -11,6 +11,7 @@ RUNS = [
     ("onestop_harness", "onestop_harness.py", {}),
     ("onestop_early", "onestop_early.py", {}),
     ("tempo", "tempo_test.py", {}),
+    ("mallet sticking", "mallet_test.py", {}),
     ("onestop 22:00", "onestop_replay.py", {}),
     ("onestop 22:16", "onestop_replay2.py", {}),
     ("onestop 22:29", "onestop_replay4.py", {}),

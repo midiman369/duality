@@ -45,6 +45,7 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `death-gate-03.mid` | `03_-_Death_Gate.MID` | sent on its own | 10979 | `ea51ce60bb29345b` |
 | `death-gate-07.mid` | `07_-_Death_Gate.MID` | sent on its own (plus take `duality-20260926-105647.zip`) | 16475 | `273e78ce59e18479` |
 | `death-gate-97.mid` | `97_-_Death_Gate.MID` | sent on its own | 29260 | `52c4adef9c67f8a7` |
+| `death-gate-09.mid` | `09_-_Death_Gate.MID` (xylophone on ch2; for listening to mallet sticking) | sent on its own | 12943 | `c526c54a47b9fd14` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
@@ -59,6 +60,7 @@ song as the player sent it), so they are the song too and stay local.
 | `replay_bulk_dump.py` | A bulk-dump file keeps its own insert (P1 never retyped, ch7 on it) |
 | `replay_file_efx_echo.py` | File Part EFX On is not swallowed as Anima's own echo; `GAME=0/1`, `PRE=0/12` (another song first) |
 | `replay_harmony.py` | Harmony balance (`SONG=03/07/97`): ghost and hero velocity scales, tonal intervals (no 2nd/tritone/7th against the hero, no semitone rub with a held note), no upper ghost left over a line that starts above it, harmony count kept; 97 also checks the ch3 string solo (fast line) and the ch4 Metal Pad tune at 2:50 (slow line) are spotlit |
+| `mallet_test.py` | Mallet sticking, no song: chords struck by hands, doubles / triplets / rolls only where the part leaves room, cancelled by an early note or a program change, rolls alternate hands, nothing left hanging |
 | `tempo_test.py` | Beat tracker: exact on MIDI clock, musical relative on note onsets |
 
 Timing check: a note within 100 ms of its unit's insert type change or its
