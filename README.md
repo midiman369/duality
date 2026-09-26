@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.012** (`python duality.py --version`).
+Current development line: **v0.19.017** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -315,7 +315,7 @@ Family is tracked so a later PC stays in brass / organ / strings / …. A *real*
 
 Bass split: Finger / Picked (`bass_electric`) lean on **Bass Multi**; slap, fretless and synth bass (`bass_wide`) and upright (`bass_acoustic`) have their own lists, mostly chorus / Space D / enhancer.
 
-**Ghosts** — extra notes Anima adds on the same channel: a chord-tone harmony on melody lines (never above C7), a sub-octave under bass and organ, and a unison double of a dirt guitar on a spare unit. Each wheel it moves (CC1 mod, CC11 expression) returns to rest on every unit, and a program change starts the new instrument with the mod wheel at zero.
+**Ghosts** — extra notes Anima adds on the same channel: a chord-tone harmony on melody lines (never above C7), a sub-octave under bass and organ, and a unison double of a dirt guitar on a spare unit. Harmony is balanced so a section does not just get louder: a melody keeps its velocity and gets its ghost above at 50%; an accompaniment voice (another part sounds above it, or it tops a held chord while a line moves) plays at 85% with its ghost *below* at 45% (a third or sixth under, never below C3); a thin source (at most one other voice) gets both sides, extending the chord. An upper ghost steps aside when a line starts over it, and a pitch another part (or its ghost) already sounds is not doubled. Each wheel it moves (CC1 mod, CC11 expression) returns to rest on every unit, and a program change starts the new instrument with the mod wheel at zero.
 
 **Foley** — one shared SFX channel per GS synth (usually 16), overflowed to another out if the hero is full. 8850 programming stays on the **default map**. Gesture after a short hold: fret / cut / chord stroke / steel slide; bass slap vs slide; wind click vs breath. Families take turns on the same lane.
 

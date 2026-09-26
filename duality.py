@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.016"
+VERSION = "0.19.017"
 
 
 """
@@ -51,6 +51,10 @@ Anima (opt-in)
   • Foley: shared ch16 8850 SFX (PC 121/122 variations)
   • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
     dist-guitar unison on a spare GS unit (inherits EFX)
+  • Harmony balance: melody gets its ghost above at 50%; accompaniment (a
+    part sounds above it, or a held chord under a moving line) plays at 85%
+    with its ghost below at 45%; a thin source gets both sides. An upper
+    ghost yields when a line starts over it; unisons are not doubled.
   • Seeded 8850 / CM-64 tone colors on capital 0/0 only — file bank wins
   • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
   • Single output allowed
@@ -524,7 +528,17 @@ ANIMA_UNROLL_JITTER = 0.004
 ANIMA_ACOUSTIC_PCS = frozenset({24, 25})  # nylon / steel — slightly more harp-like
 # Harmony: chord-tones from held notes; octave if we cannot see a chord.
 ANIMA_HARM_CATS = frozenset({"brass", "wind", "strings", "ensemble", "pad"})
-ANIMA_HARM_VEL = 0.58
+ANIMA_HARM_VEL = 0.50       # ghost vs the file's velocity: melody line
+ANIMA_HARM_HERO = 0.90      # the harmonised note itself: melody line, thin source
+ANIMA_HARM_HERO_BUSY = 1.00 # melody over other parts keeps its velocity (must cut through)
+ANIMA_HARM_ACC_VEL = 0.45   # accompaniment (another part sounds above it)
+ANIMA_HARM_ACC_HERO = 0.85
+ANIMA_HARM_LOW_VEL = 0.45   # lower voice when a thin source gets both sides
+ANIMA_HARM_RECENT = 0.60    # a part that struck within this still counts as sounding
+ANIMA_HARM_FLOOR = 48       # no lower harmony ghost below C3 (mud)
+ANIMA_HARM_THIN = 1         # other voices at most this many: thin source, harmony on both sides
+ANIMA_HARM_CHORD_SEC = 1.0  # a channel that held a chord this recently is chordal
+ANIMA_HARM_QUIET_CATS = frozenset({"sfx", "percussive", "fx", "bass"})  # not "another part"
 ANIMA_HARM_HOLD = 0.080  # ignore passing tones younger than this
 ANIMA_HARM_TEMPLATES = (
     ((0, 4, 7, 11), "maj7"),
@@ -853,6 +867,11 @@ class Duality:
         self._anima_ghost_log_t = 0.0
         self._anima_wave_sub_armed = set()  # (port, ch) already on a waveform sub patch
         self._anima_fam_ghost = {}       # "bass"|"organ" -> owning (ch, note)
+        self._anima_harm_next = None     # (key, plan) decided before the hero is sent
+        self._anima_harm_hero = {}       # hero key -> velocity scale while it has harmony
+        self._anima_harm_up = {}         # hero key -> upper harmony ghost pitch
+        self._anima_harm_recent = {}     # ch -> (top note, t) of its latest onsets
+        self._anima_harm_chord_t = {}    # ch -> last time it held two or more notes
         self._anima_bass_sub_choice = None  # (cc0, cc32, pc, name) for this seed
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
         # Per-channel bank select state (for Alchemy PC mapping)
@@ -6310,6 +6329,8 @@ class Duality:
     def _anima_ghost_kill(self, key) -> None:
         """Note-off every ghost tied to a hero (ch, note)."""
         ghosts = (self._anima_ghosts or {}).pop(key, None)
+        (getattr(self, "_anima_harm_hero", None) or {}).pop(key, None)
+        (getattr(self, "_anima_harm_up", None) or {}).pop(key, None)
         fams = getattr(self, "_anima_fam_ghost", None) or {}
         for fam, owner in list(fams.items()):
             if owner == key:
@@ -6482,6 +6503,169 @@ class Duality:
             return iv
         return 12 if note + 12 <= 127 else None
 
+    def _anima_harm_interval_below(self, note: int, chord, avoid=()) -> int | None:
+        """Chord-tone interval below `note` (third, then sixth), or None.
+
+        Octave below only when we cannot see a chord. Never under ANIMA_HARM_FLOOR.
+        """
+        note = int(note) & 0x7F
+        if chord is None:
+            prefer = (12,)
+            tones = None
+        else:
+            _root, name, tones = chord
+            if name == "pow":
+                prefer = (5, 12)
+            else:
+                prefer = (3, 4, 8, 9, 5, 12)
+                seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+                # Seed picks third-first or sixth-first; both stay chord tones.
+                if (seed >> 3) & 1:
+                    prefer = (8, 9, 3, 4, 5, 12)
+        for iv in prefer:
+            cand = note - iv
+            if cand < ANIMA_HARM_FLOOR:
+                continue
+            if tones is not None and iv != 12 and (cand % 12) not in tones:
+                continue
+            if cand in avoid:
+                continue
+            return iv
+        return None
+
+    def _anima_harm_others(self, ch: int, note: int):
+        """(above, voices) for other melodic parts: any sounding above `note`, how many voices.
+
+        A part counts while it holds a note or struck one within ANIMA_HARM_RECENT
+        (staccato melody lines leave gaps between notes).
+        """
+        now = time.monotonic()
+        above = False
+        voices = 0
+        seen = {}
+        held = {}
+        for (c, n) in list(self.active):
+            seen[c] = max(seen.get(c, -1), int(n) & 0x7F)
+            held[c] = held.get(c, 0) + 1
+        for c, (n, t) in list((getattr(self, "_anima_harm_recent", None) or {}).items()):
+            if now - t <= ANIMA_HARM_RECENT:
+                seen[c] = max(seen.get(c, -1), n)
+        for c, top in seen.items():
+            if c == ch or self._anima_is_rhythm(c):
+                continue
+            if self._anima_category(c) in ANIMA_HARM_QUIET_CATS or self._anima_ghost_fam(c) == "bass":
+                continue
+            voices += max(1, held.get(c, 0))
+            if top > note:
+                above = True
+        return above, voices
+
+    def _anima_harm_plan(self, ch: int, note: int):
+        """Harmony for a note about to be sent: None or a plan dict.
+
+        Decided before the hero goes out so its own velocity can make room.
+          mel  - top of the texture: ghost above x0.50 (below if no room);
+                 hero x1.0 over other parts, x0.90 when alone
+          acc  - another part sounds above, or this is the top of a held chord
+                 while another part moves: hero x0.85, ghost below x0.45
+          both - thin source (at most ANIMA_HARM_THIN other voices): above x0.50,
+                 below x0.45, hero x0.90
+        """
+        ch, note = ch & 0x0F, int(note) & 0x7F
+        key = (ch, note)
+        if self.scpop_mode or getattr(self, "voodoo_active", False) or getattr(self, "voodoo_loading", False):
+            return None   # no ghosts there, so no room to make
+        if key in (self._anima_ghosts or {}):
+            scale = (getattr(self, "_anima_harm_hero", None) or {}).get(key)
+            return {"mode": "keep", "hero": scale, "ivs": []} if scale else None
+        if self._anima_is_rhythm(ch):
+            return None
+        cat = self._anima_category(ch)
+        if cat not in ANIMA_HARM_CATS or self._anima_ghost_fam(ch):
+            return None
+        if self._anima_should_strum(ch):
+            return None
+        if not self._anima_harm_is_melody(ch, note):
+            return None
+        owner = (getattr(self, "_anima_fam_ghost", None) or {}).get(f"harm-{cat}")
+        if owner and owner != key and note < owner[1]:
+            if owner in (self._anima_ghosts or {}) or owner in self.active:
+                return None
+        chord = self._anima_chord_guess(extra=(ch, note))
+        above, voices = self._anima_harm_others(ch, note)
+        busy = voices > 0
+        # A unison part (or its ghost), or this part's own chord, already sounds it: no double.
+        snd = getattr(self, "_anima_ghost_sound", None) or {}
+        sounding = {int(n) for (_c, n) in self.active} | {int(n) for (_c, n) in snd}
+        up = self._anima_harm_interval(note, chord)
+        if up and (note + up > ANIMA_HARM_TOP or note + up in sounding):
+            up = None   # ONESTOP end: n92→104 string ghosts stacked shrill
+        down = self._anima_harm_interval_below(note, chord, avoid=sounding)
+        # The top of a held chord accompanies any line that is moving.
+        now = time.monotonic()
+        chordal = now - float(self._anima_harm_chord_t.get(ch, -99.0)) <= ANIMA_HARM_CHORD_SEC
+        if above or (chordal and busy):
+            mode, hero = "acc", ANIMA_HARM_ACC_HERO
+            if down:
+                ivs = [(-down, ANIMA_HARM_ACC_VEL)]
+            elif up and not self._anima_harm_crosses(ch, note, note + up):
+                ivs = [(up, ANIMA_HARM_ACC_VEL)]
+            else:
+                ivs = []
+        elif voices <= ANIMA_HARM_THIN and up and down:
+            mode, hero = "both", ANIMA_HARM_HERO
+            ivs = [(up, ANIMA_HARM_VEL), (-down, ANIMA_HARM_LOW_VEL)]
+        else:
+            mode, hero = "mel", (ANIMA_HARM_HERO_BUSY if busy else ANIMA_HARM_HERO)
+            if up:
+                ivs = [(up, ANIMA_HARM_VEL)]
+            elif down:
+                ivs = [(-down, ANIMA_HARM_VEL)]
+            else:
+                ivs = []
+        if not ivs:
+            return None
+        return {"mode": mode, "hero": hero, "ivs": ivs, "chord": chord}
+
+    def _anima_harm_crosses(self, ch: int, note: int, gnote: int) -> bool:
+        """True if a ghost at gnote would reach (within a tone) a part sounding above note."""
+        now = time.monotonic()
+        tops = [int(n) for (c, n) in self.active if c != ch and not self._anima_is_rhythm(c)]
+        for c, (n, t) in (getattr(self, "_anima_harm_recent", None) or {}).items():
+            if c != ch and now - t <= ANIMA_HARM_RECENT:
+                tops.append(n)
+        return any(gnote >= t - 2 for t in tops if t > note)
+
+    def _anima_harm_onset(self, ch: int, note: int) -> None:
+        """A real note starts: note it for recency and clear upper ghosts it collides with.
+
+        An upper harmony ghost from another channel whose hero sits below this
+        note just became an inner voice; if the ghost reaches this note (within
+        a tone) it would cover the line, so release it.
+        """
+        ch, note = ch & 0x0F, int(note) & 0x7F
+        if self._anima_is_rhythm(ch):
+            return
+        if self._anima_category(ch) in ANIMA_HARM_QUIET_CATS or self._anima_ghost_fam(ch) == "bass":
+            return
+        now = time.monotonic()
+        if any(c == ch and n != note for (c, n) in self.active):
+            self._anima_harm_chord_t[ch] = now
+        rec = self._anima_harm_recent
+        old = rec.get(ch)
+        if old and now - old[1] <= ANIMA_HARM_HOLD and old[0] > note:
+            rec[ch] = (old[0], now)
+        else:
+            rec[ch] = (note, now)
+        for hkey, gnote in list((self._anima_harm_up or {}).items()):
+            if hkey[0] == ch or hkey[1] >= note:
+                continue
+            if gnote >= note - 2:
+                self._anima_ghost_kill(hkey)
+                self._anima_ghost_log(
+                    f"harm yield ch{hkey[0] + 1} n{gnote} under ch{ch + 1} n{note}"
+                )
+
     def _anima_harm_is_melody(self, ch: int, note: int) -> bool:
         """Only harmonize the current highest held tone in harmony families."""
         best = (int(note) & 0x7F, -(int(ch) & 0x0F))
@@ -6640,62 +6824,68 @@ class Duality:
                     except Exception:
                         pass
 
-        # Chord-tone harmony (one voice per harmony family).
-        want_harm = (
-            not ghosts
-            and cat in ANIMA_HARM_CATS
-            and not is_bass
-            and not is_organ
-            and not self._anima_should_strum(ch)
-        )
-        if want_harm and not self._anima_harm_is_melody(ch, note):
-            want_harm = False
-        hfam = f"harm-{cat}" if want_harm else None
-        if want_harm and hfam:
+        # Chord-tone harmony (one hero per harmony family; plan from the send path).
+        plan = None
+        pend = getattr(self, "_anima_harm_next", None)
+        if pend and pend[0] == key:
+            plan = pend[1]
+            self._anima_harm_next = None
+        elif not ghosts:
+            plan = self._anima_harm_plan(ch, note)
+        if plan and (ghosts or not plan.get("ivs")):
+            plan = None
+        hfam = f"harm-{cat}" if plan else None
+        if plan:
             owner = (getattr(self, "_anima_fam_ghost", None) or {}).get(hfam)
             if owner and owner != key:
                 if owner in (self._anima_ghosts or {}) or owner in self.active:
-                    och, onote = owner
-                    if note < onote:
-                        want_harm = False
+                    if note < owner[1]:
+                        plan = None
                     else:
                         self._anima_ghost_kill(owner)
-                else:
-                    pass
-        if want_harm:
-            chord = self._anima_chord_guess(extra=(ch, note))
-            iv = self._anima_harm_interval(note, chord)
+        if plan:
             dest = hero if self._anima_ghost_poly_ok(hero) else None
             if dest is None:
                 for p in self._anima_gs_ports():
                     if p != hero and self._anima_ghost_poly_ok(p):
                         dest = p
                         break
-            if dest is not None and iv and note + iv > ANIMA_HARM_TOP:
-                iv = 0   # ONESTOP end: n92→104 string ghosts stacked shrill
-            if dest is not None and iv:
+            snd = getattr(self, "_anima_ghost_sound", None) or {}
+            sounding = {int(n) for (_c, n) in self.active if _c != ch}
+            sounding |= {int(n) for (_c, n) in snd}
+            chord = plan.get("chord")
+            label = chord[1] if chord else "oct"
+            placed = []
+            for iv, scale in plan["ivs"] if dest is not None else ():
                 hnote = note + iv
-                occupied = (
-                    (ch, hnote) in self.active
-                    or (ch, hnote) in (getattr(self, "_anima_ghost_sound", None) or {})
+                if hnote < 0 or hnote > 127 or hnote == note:
+                    continue
+                # Already sounding (a unison part's ghost, or a real voice): no double.
+                if hnote in sounding or (ch, hnote) in self.active:
+                    continue
+                if dest != hero and not self._anima_ghost_poly_ok(dest):
+                    break
+                gvel = max(1, min(127, int(plan.get("vel", vel) * scale)))
+                try:
+                    self._send_routed(
+                        dest,
+                        mido.Message("note_on", channel=ch, note=hnote, velocity=gvel),
+                    )
+                    w = self._tone_voices(ch, dest)
+                    self.voice_counts[dest] += w
+                    ghosts.append((dest, ch, hnote, w))
+                    sounding.add(hnote)
+                    placed.append(f"{iv:+d}")
+                    if iv > 0:
+                        self._anima_harm_up[key] = hnote
+                    gfam = hfam
+                except Exception:
+                    pass
+            if placed:
+                self._anima_harm_hero[key] = plan["hero"]
+                self._anima_ghost_log(
+                    f"harm {plan['mode']} {label} {'/'.join(placed)} ch{ch + 1} n{note} P{dest + 1}"
                 )
-                if not occupied and hnote != note:
-                    gvel = max(1, min(127, int(vel * ANIMA_HARM_VEL)))
-                    try:
-                        self._send_routed(
-                            dest,
-                            mido.Message("note_on", channel=ch, note=hnote, velocity=gvel),
-                        )
-                        w = self._tone_voices(ch, dest)
-                        self.voice_counts[dest] += w
-                        ghosts.append((dest, ch, hnote, w))
-                        label = chord[1] if chord else "oct"
-                        self._anima_ghost_log(
-                            f"harm {label} +{iv} ch{ch + 1} n{note}→{hnote} P{dest + 1}"
-                        )
-                        gfam = hfam
-                    except Exception:
-                        pass
 
         if not ghosts and fam == "guitar_dist" and not self._anima_should_strum(ch):
             def _uni_dest_ok(p: int) -> bool:
@@ -8241,6 +8431,19 @@ class Duality:
                     # File (or retrigger) now owns this pitch — drop a harmony
                     # ghost that was sitting on the same channel+note.
                     self._anima_ghost_release_pitch(note_msg.channel & 0x0F, note_msg.note)
+                    # Harmony is decided now so the hero itself can make room.
+                    self._anima_harm_next = None
+                    try:
+                        self._anima_harm_onset(note_msg.channel & 0x0F, note_msg.note)
+                        hplan = self._anima_harm_plan(note_msg.channel & 0x0F, note_msg.note)
+                    except Exception:
+                        hplan = None
+                    if hplan and hplan.get("hero") and note_msg.velocity > 0:
+                        self._anima_harm_next = ((note_msg.channel & 0x0F, note_msg.note), hplan)
+                        hplan["vel"] = note_msg.velocity
+                        note_msg = note_msg.copy(
+                            velocity=max(1, min(127, int(note_msg.velocity * hplan["hero"])))
+                        )
 
                 def _notes_on_port(p: int) -> int:
                     return sum(
@@ -8828,6 +9031,11 @@ class Duality:
         self._anima_wave_sub_armed = set()
         self._anima_wave_sub_saved = {}
         self._anima_fam_ghost = {}
+        self._anima_harm_next = None
+        self._anima_harm_hero = {}
+        self._anima_harm_up = {}
+        self._anima_harm_recent = {}
+        self._anima_harm_chord_t = {}
         self._anima_bass_sub_choice = None
         self.active.clear()
         self.voice_counts = [0] * self.n_ports

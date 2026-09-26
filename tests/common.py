@@ -25,6 +25,9 @@ ORIGINAL = {
     "bass-in-000745.mid": "IN-Duality-4-gs-20260925-000745.mid",
     "every-breath-8850.mid": "Every_Breath_You_Take_8850.mid",
     "d_e1m1.mid": "D_E1M1.mid",
+    "death-gate-03.mid": "03_-_Death_Gate.MID",
+    "death-gate-07.mid": "07_-_Death_Gate.MID",
+    "death-gate-97.mid": "97_-_Death_Gate.MID",
 }
 
 if REPO not in sys.path:
@@ -44,3 +47,26 @@ def midi(name: str) -> str:
     alt = f" or {ORIGINAL[name]}" if name in ORIGINAL else ""
     print(f"SKIP: {name}{alt} not found in {', '.join(SEARCH)} (see tests/README.md)")
     sys.exit(77)
+
+
+def load(path: str):
+    """mido.MidiFile, tolerating XMI2MID files with stray bytes after end-of-track."""
+    import io
+    import struct
+    import mido
+    try:
+        return mido.MidiFile(path)
+    except (EOFError, OSError, ValueError):
+        pass
+    data = bytearray(open(path, "rb").read())
+    i = 14
+    while i + 8 <= len(data):
+        ln = struct.unpack(">I", data[i + 4:i + 8])[0]
+        end = data.find(b"\xff\x2f\x00", i + 8, i + 8 + ln)
+        if data[i:i + 4] == b"MTrk" and end >= 0:
+            new = end + 3 - (i + 8)
+            del data[end + 3:i + 8 + ln]
+            data[i + 4:i + 8] = struct.pack(">I", new)
+            ln = new
+        i += 8 + ln
+    return mido.MidiFile(file=io.BytesIO(bytes(data)))
