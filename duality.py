@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.020"
+VERSION = "0.19.021"
 
 
 """
@@ -60,6 +60,10 @@ Anima (opt-in)
     chord includes notes struck in the last 0.8 s (picked arpeggios).
   • Acoustic guitar plays at 112% while a sustained part at least as loud
     sounds within an octave (its notes decay, theirs hold).
+  • Mallet sticking (glock, vibes, marimba, xylophone, bells, dulcimer, steel
+    drums): chords struck by hands (2/4 mallets); where the part leaves room
+    the seed adds a double, a triplet or a fading hand-to-hand roll. A new
+    note or program change cancels what is pending. Notes are never delayed.
   • Featured lines: a fast single-note stepwise run, or a slow sustained
     single-note tune, is found live (one at a time) and spotlit: lifted toward
     the loudest part over it (≤×1.4); competing notes in its register play at
@@ -530,11 +534,32 @@ ANIMA_BURST_RELEASE = (0.0, 0.0)     # off-hold raced new ons; keep mutes tight
 ANIMA_STRUM_CATS = frozenset({"guitar"})
 # Block-chord unroll (no extra pitches). Wider than a guitar stroke.
 ANIMA_UNROLL_PCS = frozenset(
-    list(range(8, 16)) + [45, 46, 104, 105, 106, 107, 108]
-)  # chromatic perc + pizz/harp + sitar/banjo/shamisen/koto/kalimba
+    list(range(8, 16)) + [45, 46, 104, 105, 106, 107, 108, 112, 114]
+)  # chromatic perc + pizz/harp + sitar/banjo/shamisen/koto/kalimba + tinkle bell/steel drums
 ANIMA_UNROLL_COLLECT = 0.016
 ANIMA_UNROLL_STEP = 0.014
 ANIMA_UNROLL_JITTER = 0.004
+# Mallet sticking: a chord is struck by hands (2/4 mallets), and when the part
+# leaves room before its next note the seed adds a double, a triplet or a roll.
+# Celesta and music box are keyboards / combs: they keep the plain unroll.
+ANIMA_MALLET_PCS = {
+    9: "bell", 14: "bell", 112: "bell",    # glockenspiel, tubular bells, tinkle bell
+    11: "vibes",                           # vibraphone: doubles and triplets, rarely rolls
+    12: "roll", 13: "roll", 15: "roll", 114: "roll",   # marimba, xylophone, dulcimer, steel drums
+}
+ANIMA_MALLET_ODDS = {                      # share of roomy notes that get each ornament
+    "bell": (("double", 0.22), ("triplet", 0.08)),
+    "vibes": (("double", 0.20), ("triplet", 0.14)),
+    "roll": (("roll", 0.30), ("double", 0.18), ("triplet", 0.14)),
+}
+ANIMA_MALLET_HAND_GAP = 0.018  # second hand of a chord lands this much after the first
+ANIMA_MALLET_MIN_SPACE = 0.20  # the part's usual gap between notes, at least
+ANIMA_MALLET_ROLL_SPACE = 0.45 # a roll needs this much room
+ANIMA_MALLET_ROLL_STEP = 0.075 # hands alternate this fast in a roll
+ANIMA_MALLET_END = 0.70        # extra strokes finish within this share of the gap
+ANIMA_MALLET_VEL = 0.68        # first extra stroke vs the note's velocity
+ANIMA_MALLET_FADE = 0.88       # each further stroke
+ANIMA_MALLET_LEN = 0.080       # extra stroke length when the file's note has ended
 ANIMA_ACOUSTIC_PCS = frozenset({24, 25})  # nylon / steel — slightly more harp-like
 ANIMA_PLUCK_LIFT = 1.12      # acoustic guitar under sustained parts (its notes decay, theirs hold)
 ANIMA_SUSTAIN_CATS = frozenset({"wind", "brass", "strings", "ensemble", "pad", "organ", "lead"})
@@ -892,6 +917,9 @@ class Duality:
         self._anima_settle_bypass = False
         self._anima_settle_draining = False
         self._anima_strum_last_t = [0.0] * 16
+        self._anima_mallet_q = []            # [when, port, msg, ch, own_off]
+        self._anima_mallet_hist = [[] for _ in range(16)]   # recent stroke times per ch
+        self._anima_mallet_n = [0] * 16
         self._anima_strum_burst = [0] * 16
         self._anima_strum_off_hold = [0.0] * 16
         self._anima_foley_ch = [None] * self.n_ports   # reserved noise channel
@@ -3881,6 +3909,8 @@ class Duality:
         if msg.type != "program_change":
             return
         ch = msg.channel & 0x0F
+        self._anima_mallet_cancel(ch)   # no xylophone strokes on the next instrument
+        self._anima_mallet_hist[ch] = []
         self._anima_prog[ch] = msg.program & 0x7F
         self._anima_tone_cc0[ch] = None
         self._anima_tone_slot[ch] = None
@@ -4127,6 +4157,8 @@ class Duality:
         self._anima_rhythm = [False] * 16
         self._anima_rhythm[9] = True
         self._anima_strum_q = []
+        self._anima_mallet_q = []
+        self._anima_mallet_hist = [[] for _ in range(16)]
         self._anima_settle_q = []
         self._anima_settle_on = {}
         self._anima_efx_settle = [0.0] * self.n_ports
@@ -7923,6 +7955,7 @@ class Duality:
         now = time.monotonic()
         buf = self._anima_strum_buf[ch]
         if buf is None:
+            self._anima_mallet_cancel(ch)
             mode = self._anima_roll_mode(ch) or "strum"
             if mode == "unroll":
                 style = "alt"
@@ -7986,11 +8019,14 @@ class Duality:
             step = ANIMA_STRUM_STEP * 1.65
         else:
             step = ANIMA_STRUM_STEP
-        for i, (note_msg, ports) in enumerate(items):
-            string_j = random.uniform(0.0, jitter)
-            when = t0 + (i * step) + string_j
-            for p in ports:
-                self._anima_strum_q.append((when, p, note_msg))
+        if mode == "unroll" and pc in ANIMA_MALLET_PCS:
+            self._anima_mallet_flush(ch, items, t0, buf["dir"], jitter)
+        else:
+            for i, (note_msg, ports) in enumerate(items):
+                string_j = random.uniform(0.0, jitter)
+                when = t0 + (i * step) + string_j
+                for p in ports:
+                    self._anima_strum_q.append((when, p, note_msg))
         self._anima_strum_n[ch] += 1
         nstr = len(items)
         label = {1: "down", -1: "up"}[buf["dir"]]
@@ -8005,9 +8041,118 @@ class Duality:
             )
         self._anima_strum_buf[ch] = None
 
+    def _anima_mallet_flush(self, ch: int, items, t0: float, direction: int, jitter: float) -> None:
+        """Strike a mallet chord by hands, then maybe ornament it in the gap.
+
+        The first hand lands at t0 like any unroll; the other hand follows by
+        ANIMA_MALLET_HAND_GAP. Extra strokes only go where this part usually
+        leaves room, and a new note on the channel cancels what is still pending.
+        """
+        asc = sorted(items, key=lambda it: it[0].note)
+        if len(asc) >= 2:
+            half = len(asc) // 2
+            hands = [asc[:half], asc[half:]]
+            if direction < 0:
+                hands.reverse()
+        else:
+            hands = [asc]
+        for h, hand in enumerate(hands):
+            for note_msg, ports in hand:
+                when = t0 + h * ANIMA_MALLET_HAND_GAP + random.uniform(0.0, jitter * 0.5)
+                for p in ports:
+                    self._anima_strum_q.append((when, p, note_msg))
+        now = time.monotonic()
+        hist = [t for t in self._anima_mallet_hist[ch] if now - t <= 8.0][-8:]
+        hist.append(now)
+        self._anima_mallet_hist[ch] = hist
+        gaps = sorted(b - a for a, b in zip(hist, hist[1:]) if b - a > 0.03)
+        if len(gaps) < 3:
+            return
+        space = gaps[len(gaps) // 2]
+        if space < ANIMA_MALLET_MIN_SPACE:
+            return
+        style = ANIMA_MALLET_PCS[self._anima_cat_pc(ch)]
+        n = self._anima_mallet_n[ch]
+        self._anima_mallet_n[ch] = n + 1
+        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        rng = random.Random((seed << 12) ^ (ch << 8) ^ (n * 2654435761 & 0xFFFFFFFF))
+        roll = rng.random()
+        kind = None
+        for name, odds in ANIMA_MALLET_ODDS[style]:
+            if name == "roll" and space < ANIMA_MALLET_ROLL_SPACE:
+                continue
+            if roll < odds:
+                kind = name
+                break
+            roll -= odds
+        if kind is None:
+            return
+        if kind == "double":
+            offs = [space * 0.5]
+        elif kind == "triplet":
+            offs = [space / 3.0, space * 2.0 / 3.0]
+        else:
+            offs, k = [], 1
+            while k * ANIMA_MALLET_ROLL_STEP <= space * ANIMA_MALLET_END:
+                offs.append(k * ANIMA_MALLET_ROLL_STEP)
+                k += 1
+        base = t0 + (len(hands) - 1) * ANIMA_MALLET_HAND_GAP
+        for k, off in enumerate(offs):
+            hand = hands[k % len(hands)]
+            for note_msg, ports in hand:
+                vel = max(1, min(127, int(note_msg.velocity * ANIMA_MALLET_VEL * (ANIMA_MALLET_FADE ** k))))
+                msg = note_msg.copy(velocity=vel)
+                for p in ports:
+                    self._anima_mallet_q.append([base + off, p, msg, ch, False])
+        self._anima_feedback(
+            "mallet", f"ch{ch + 1} {kind} x{len(offs)} ({'chord' if len(asc) > 1 else 'note'})"
+        )
+
+    def _anima_mallet_drain(self) -> None:
+        """Fire due mallet strokes. Re-strike a key the file still holds (off + on,
+        the file's off ends it); otherwise play a short stroke with its own off."""
+        if not self._anima_mallet_q:
+            return
+        now = time.monotonic()
+        keep = []
+        for item in self._anima_mallet_q:
+            when, port, msg, ch, own_off = item
+            if when > now:
+                keep.append(item)
+                continue
+            if own_off:
+                self._send_routed(port, msg)
+                self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+                continue
+            key = (ch, msg.note)
+            off = mido.Message("note_off", channel=ch, note=msg.note, velocity=0)
+            if key in self.active:
+                self._send_routed(port, off)
+                self._send_routed(port, msg)
+            else:
+                self._send_routed(port, msg)
+                self.voice_counts[port] += 1
+                keep.append([now + ANIMA_MALLET_LEN, port, off, ch, True])
+        self._anima_mallet_q = keep
+
+    def _anima_mallet_cancel(self, ch: int) -> None:
+        """The part plays again: drop its pending strokes and end the sounding ones now."""
+        if not self._anima_mallet_q:
+            return
+        keep = []
+        for item in self._anima_mallet_q:
+            when, port, msg, c, own_off = item
+            if c != ch:
+                keep.append(item)
+            elif own_off:
+                self._send_routed(port, msg)
+                self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+        self._anima_mallet_q = keep
+
     def _anima_strum_drain(self) -> None:
         if self.anima:
             self._anima_foley_tick()
+            self._anima_mallet_drain()
         if not self._anima_strum_q:
             return
         now = time.monotonic()
