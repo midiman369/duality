@@ -41,6 +41,13 @@ Anima (opt-in)
     the owner is stale. Never retypes under a sounding EFX player; one type
     write per unit per 1.2 s; notes skip a unit for 150 ms after its type /
     Part On changes. Notes are never delayed. Guitars pair on OD1/OD2 by pan.
+  • GS EFX palettes: all 64 SC-8850 / SC-88Pro insertion types (OM list
+    p.216), picked per family with weights (favoured ×2, less often ×½).
+    After the pick: pan-capable types follow the file's CC10; delay times
+    follow the beat (MIDI clock, else note onsets) with feedback ≤ 50 %;
+    pitch shifters get a doubler / octave / fifth; Gate Reverb uses Sweep;
+    dirt inserts' Level follows a CC7/CC11 fade-out. CC16 drives only wah
+    and rotary types (on EFX Control 1 or 2, whichever holds the knob).
   • Foley: shared ch16 8850 SFX (PC 121/122 variations)
   • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
     dist-guitar unison on a spare GS unit (inherits EFX)

@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.007** (`python duality.py --version`).
+Current development line: **v0.19.012** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -57,6 +57,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 ### Anima (opt-in phrasing)
 - Velocity humanize, expression / mod ramps, guitar strum (including “Hetfield” down-pick on dirt tones)
 - **GS EFX**: one insertion per `:gs` unit, chosen by instrument-family priority; never retyped under a sounding part; guitars pair via OD1/OD2 by pan; file-driven EFX stays on its port
+- **Insert shaping**: each family picks from hand-chosen palettes of the 64 SC-8850 / SC-88Pro types; pan-capable inserts follow the file's pan, delays lock to the beat (feedback ≤ 50 %), pitch shifters play a doubler / octave / fifth, and dirt inserts fade out with the file
 - **Ghosts**: chord-tone harmony, bass / organ sub-octaves, dirt-guitar unison on a spare unit
 - **Foley**: shared high channel (usually 16) for 8850 SFX (fret, cut, chord stroke, slap, breath, …)
 - **Tone colors**: seeded 8850 CC00 (same PC) plus family-matched **CM-64 PCM/LA** (banks 126/127, SC-55 map)
@@ -106,7 +107,7 @@ Repo layout (runtime):
 | File | Role |
 |------|------|
 | `duality.py` | Router, UI, Crucible, Anima, Voodoo, record |
-| `tables_gs.py` | GS EFX / macros / Anima insertion palettes |
+| `tables_gs.py` | GS EFX types (all 64, SC-8850 / 88Pro), macros, Anima palettes + insert shaping |
 | `tables_xg.py` | XG types + Alchemy maps |
 | `tables_anima.py` | GM / MT-32 / Sierra categories |
 | `tables_8850.py` | SC-8850 CC00 + map + CM-64 variation tables |
@@ -297,9 +298,22 @@ Family is tracked so a later PC stays in brass / organ / strings / …. A *real*
 - **Guitars.** A second guitar pairs onto its partner's unit before taking another family's. Hard-left / hard-right pairs use OD1/OD2 so each keeps its side (centered until a quiet moment allows the switch). A panned lone guitar prefers Overdrive / Distortion, which honour its pan.
 - **File EFX** stays on the file's port; Anima uses the *other* units.
 
+**Palettes.** Every family has its own list of insert types, drawn from all 64 on the SC-8850 (the SC-88Pro has the same 64, at the same addresses, so both get the Multis). The lists were picked by ear, one tone per family, with each type marked normal, **favoured** (twice as likely) or **less often** (half as likely). The seed picks one per unit; a locked seed repeats it.
+
 ![Anima EFX priority and palettes](docs/images/anima-efx-priority.svg)
 
-Bass split: Finger / Picked may use **Bass Multi** (mono OD chain). Slap, fretless, synth bass, and upright stay **wide** (chorus / Space-D / enhancer).
+**Shaping.** After a type is picked, Duality sets the parameters that make it fit the part:
+
+- **Pan follows the file.** Types with a Pan knob (Humanizer, Auto Wah, Overdrive / Distortion, Compressor, the OD→ / DS→ series, …) put the output where the file panned the player. Parallel pairs (Cho/Delay, OD/Rotary, …) and the two pitch voices sit ±24 either side of it.
+- **Delays on the beat.** Delay times come from the tempo: MIDI clock if the player sends it, otherwise the rhythm of the notes. Multi-tap delays keep their tap pattern, and a delay picked before the beat is known is set once the part rests. Feedback is +30 % (+16 % on strings, pads, organs, fx and synth brass) and never above +50 %.
+- **Pitch shifters as free harmony.** 2 Pitch Shifter, Fb P.Shifter and Keyboard Multi play a doubler, an octave or a fifth (by family and seed) — harmony that costs no polyphony.
+- **Gate Reverb** uses its Sweep 1 / 2 modes.
+- **Dirt fades out.** A part's volume sits *before* its insert, so a fade into Overdrive used to stay loud. Dirt inserts now drop their own Level with the file's CC7 / CC11 once it falls below 75 %.
+- **CC16** (the insert's control source) only moves wah and rotary types, on EFX Control 1 or 2 — whichever holds the wah or speed knob on that type.
+
+![Anima insert shaping](docs/images/anima-efx-shaping.svg)
+
+Bass split: Finger / Picked (`bass_electric`) lean on **Bass Multi**; slap, fretless and synth bass (`bass_wide`) and upright (`bass_acoustic`) have their own lists, mostly chorus / Space D / enhancer.
 
 **Ghosts** — extra notes Anima adds on the same channel: a chord-tone harmony on melody lines (never above C7), a sub-octave under bass and organ, and a unison double of a dirt guitar on a spare unit. Each wheel it moves (CC1 mod, CC11 expression) returns to rest on every unit, and a program change starts the new instrument with the mod wheel at zero.
 
