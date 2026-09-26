@@ -6,7 +6,9 @@ Checks, with the song replayed through Anima at seed 6BA1:
   - no upper ghost of a lower part is left at or over a line that starts above it
   - harmony count stays near its measured level (wall of sound kept)
   - 97 only: the ch3 string solo (26.6-53.2 s) is found as a featured line and
-    lifted; ch4 in its register is not played louder than the file
+    lifted; ch4 in its register is not played louder than the file.
+    The ch4 Metal Pad tune at 2:50 (174-193 s) is found as a slow featured line
+    and ch5 string notes in unison with it are ducked.
 """
 import os
 import sys
@@ -60,6 +62,7 @@ for m in mf:
 fails = []
 modes = collections.Counter()
 solo = {"in": 0, "out": 0, "n": 0, "feat": 0}
+tune = {"n": 0, "feat": 0, "uni": 0, "uni_ducked": 0}
 i, tt, end = 0, 0.0, events[-1][0] + 1.0
 while tt <= end:
     CLOCK[0] = 1000.0 + tt
@@ -78,6 +81,16 @@ while tt <= end:
                 solo["feat"] += 2 in d._anima_line
             elif outv and outv[0] > m.velocity + D.ANIMA_HUMANIZE_UP:
                 fails.append(f"t={tt:.2f} ch4 n{m.note} v{outv[0]} louder than file v{m.velocity} over the solo")
+        if SONG == "97" and 174.0 <= tt <= 193.0 and m.channel in (3, 4):
+            outv = [x.velocity for _t, p, x in REC[n0:]
+                    if x.type == "note_on" and x.channel == m.channel and x.note == m.note]
+            if m.channel == 3:
+                tune["n"] += 1; tune["feat"] += 3 in d._anima_line
+            else:
+                cur = [n for (c, n) in d.active if c == 3]
+                if outv and cur and 3 in d._anima_line and abs(m.note - cur[0]) <= 2:
+                    tune["uni"] += 1
+                    tune["uni_ducked"] += outv[0] <= m.velocity * D.ANIMA_LINE_DUCK_NEAR + D.ANIMA_HUMANIZE_UP
         harm = [x for x in LOG[l0:] if x.startswith("harm ") and not x.startswith("harm yield")]
         mine = [x for x in harm if f" ch{m.channel + 1} n{m.note} " in x]
         if mine:
@@ -112,6 +125,11 @@ if SONG == "97":
     print(f"ch3 solo: {solo['n']} notes, featured {solo['feat']}, out/in {lift:.2f}")
     if solo["feat"] < solo["n"] * 0.9 or lift < 1.15:
         fails.append(f"ch3 solo not spotlit (featured {solo['feat']}/{solo['n']}, out/in {lift:.2f})")
+if SONG == "97":
+    print(f"ch4 tune at 2:50: {tune['n']} notes, featured {tune['feat']}; "
+          f"ch5 unisons {tune['uni']}, ducked {tune['uni_ducked']}")
+    if tune["feat"] < tune["n"] * 0.8 or tune["uni_ducked"] < tune["uni"]:
+        fails.append("ch4 tune at 2:50 not spotlit")
 total = sum(modes.values())
 print(f"Death Gate {SONG}: harmonised {total} notes {dict(modes)}")
 if total < FLOOR:

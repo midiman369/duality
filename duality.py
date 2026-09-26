@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.018"
+VERSION = "0.19.019"
 
 
 """
@@ -55,9 +55,10 @@ Anima (opt-in)
     part sounds above it, or a held chord under a moving line) plays at 85%
     with its ghost below at 45%; a thin source gets both sides. An upper
     ghost yields when a line starts over it; unisons are not doubled.
-  • Featured lines: a fast, single-note, stepwise part (a solo under a pad)
-    is found live and spotlit — lifted toward the loudest part over it (≤×1.4),
-    parts starting in its register play at 85%, harmony keeps out of its way.
+  • Featured lines: a fast single-note stepwise run, or a slow sustained
+    single-note tune, is found live (one at a time) and spotlit: lifted toward
+    the loudest part over it (≤×1.4); competing notes in its register play at
+    85% (75% within a tone of it); harmony keeps out of its way.
   • Seeded 8850 / CM-64 tone colors on capital 0/0 only — file bank wins
   • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
   • Single output allowed
@@ -555,7 +556,19 @@ ANIMA_LINE_HOLD = 1.0        # stays featured this long after its last note
 ANIMA_LINE_LIFT = 0.60       # close this share of the gap to the loudest part over it
 ANIMA_LINE_LIFT_MAX = 1.40   # never more than this times the file's velocity
 ANIMA_LINE_DUCK = 0.85       # other parts starting in the line's register
+ANIMA_LINE_DUCK_NEAR = 0.75  # ... within a tone of the line's current note (unison masking)
+ANIMA_LINE_COMPETE = 0.90    # only duck a note at least this loud vs the line's last note
 ANIMA_LINE_RANK = 1.5        # a line this many times busier outranks another
+ANIMA_LINE_MARGIN = 8        # lift aims this far over the loudest part over it
+# Slow featured line: a sustained single-note tune (97 at 2:50: ch4 Metal Pad
+# playing a violin-like line under a string chord and a fast arpeggio).
+ANIMA_LINE_SLOW_WIN = 6.0
+ANIMA_LINE_SLOW_NOTES = 4
+ANIMA_LINE_SLOW_RATE = 0.4   # notes per second, at least
+ANIMA_LINE_SLOW_MAX = 3.0    # and at most (faster is an arpeggio or a fast line)
+ANIMA_LINE_SLOW_LEGATO = 0.75  # share of notes that follow the last one without a gap
+ANIMA_LINE_SLOW_MOVE = 5     # most moves are a fourth or less (no arpeggio leaps)
+ANIMA_LINE_SLOW_HOLD = 2.5   # stays featured this long after its last note
 ANIMA_HARM_TEMPLATES = (
     ((0, 4, 7, 11), "maj7"),
     ((0, 3, 7, 10), "m7"),
@@ -888,8 +901,10 @@ class Duality:
         self._anima_harm_up = {}         # hero key -> upper harmony ghost pitch
         self._anima_harm_recent = {}     # ch -> (top note, t) of its latest onsets
         self._anima_harm_chord_t = {}    # ch -> last time it held two or more notes
-        self._anima_line_hist = {}       # ch -> [(t, note, mono)] recent onsets
-        self._anima_line = {}            # ch -> (lo, hi, last_t, rate) while it is a featured line
+        self._anima_line_hist = {}       # ch -> [(t, note, mono, legato, mono_loose)] recent onsets
+        self._anima_line_off = {}        # ch -> time of its last note-off
+        self._anima_line_vel = {}        # ch -> the featured line's last sent velocity
+        self._anima_line = {}            # ch -> (lo, hi, last_t, rate, hold) while it is a featured line
         self._anima_bass_sub_choice = None  # (cc0, cc32, pc, name) for this seed
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
         # Per-channel bank select state (for Alchemy PC mapping)
@@ -6628,7 +6643,7 @@ class Duality:
             above = chordal = False   # the line is the hero; it is lifted, not lowered
         if line:
             above = True              # in a featured line's register: accompany it
-            lo, hi = line
+            lo, hi = line[0], line[1]
             if up and lo - 2 <= note + up <= hi + 2:
                 up = None
             if down and lo - 2 <= note - down <= hi + 2:
@@ -6704,59 +6719,94 @@ class Duality:
                 )
 
     def _anima_line_feed(self, ch: int, note: int) -> None:
-        """Track a channel's onsets; mark it a featured line while it plays like one."""
+        """Track a channel's onsets; mark it a featured line while it plays like one.
+
+        Fast: a busy, single-note, stepwise run (a solo over a pad).
+        Slow: a sustained single-note tune, each note following the last.
+        """
         now = time.monotonic()
-        mono = not any(c == ch for (c, _n) in self.active)
-        hist = [x for x in self._anima_line_hist.get(ch, []) if now - x[0] <= ANIMA_LINE_WIN]
-        hist.append((now, note, mono))
+        others = sum(1 for (c, _n) in self.active if c == ch)
+        mono = others == 0
+        off = self._anima_line_off.get(ch)
+        legato = others == 1 or (off is not None and now - off <= 0.15)
+        keep = max(ANIMA_LINE_WIN, ANIMA_LINE_SLOW_WIN)
+        hist = [x for x in self._anima_line_hist.get(ch, []) if now - x[0] <= keep]
+        # (t, note, nothing else held, follows the last note, at most one other held)
+        hist.append((now, note, mono, bool(hist) and legato, others <= 1))
         self._anima_line_hist[ch] = hist
         was = ch in self._anima_line
-        rate = 0.0
-        if len(hist) < ANIMA_LINE_MIN_NOTES:
-            ok = False
-        else:
-            span = max(0.25, hist[-1][0] - hist[0][0])
-            rate = (len(hist) - 1) / span
-            notes = [x[1] for x in hist]
-            moves = [abs(b - a) for a, b in zip(notes, notes[1:]) if b != a]
+
+        def _moves(xs):
+            ns = [x[1] for x in xs]
+            return ns, [abs(b - a) for a, b in zip(ns, ns[1:]) if b != a]
+
+        rate, ok, hold = 0.0, False, ANIMA_LINE_HOLD
+        fast = [x for x in hist if now - x[0] <= ANIMA_LINE_WIN]
+        if len(fast) >= ANIMA_LINE_MIN_NOTES:
+            span = max(0.25, fast[-1][0] - fast[0][0])
+            rate = (len(fast) - 1) / span
+            notes, moves = _moves(fast)
             ok = (
                 rate >= ANIMA_LINE_RATE
-                and sum(1 for x in hist if x[2]) / len(hist) >= ANIMA_LINE_MONO
+                and sum(1 for x in fast if x[2]) / len(fast) >= ANIMA_LINE_MONO
                 and bool(moves)
                 and sum(1 for m in moves if m <= 2) / len(moves) >= ANIMA_LINE_STEP
                 and sorted(notes)[len(notes) // 2] >= ANIMA_LINE_MIN_NOTE
             )
+        if not ok and len(hist) >= ANIMA_LINE_SLOW_NOTES:
+            span = max(0.25, hist[-1][0] - hist[0][0])
+            srate = (len(hist) - 1) / span
+            notes, moves = _moves(hist)
+            ok = (
+                ANIMA_LINE_SLOW_RATE <= srate <= ANIMA_LINE_SLOW_MAX
+                and all(x[4] for x in hist)
+                and sum(1 for x in hist[1:] if x[3]) / (len(hist) - 1) >= ANIMA_LINE_SLOW_LEGATO
+                and len(set(notes)) >= 3
+                and bool(moves)
+                and sum(1 for m in moves if m <= ANIMA_LINE_SLOW_MOVE) / len(moves) >= 0.75
+                and sorted(notes)[len(notes) // 2] >= ANIMA_LINE_MIN_NOTE
+            )
+            if ok:
+                rate, hold = srate, ANIMA_LINE_SLOW_HOLD
+                fast = hist
         if ok:
-            # One hero at a time: a clearly busier line outranks this one, or it them.
+            # One hero at a time. A clearly busier line wins; between comparable
+            # lines the current one keeps it unless the new one sits above it.
+            med = sorted(x[1] for x in fast)[len(fast) // 2]
             for c, info in list(self._anima_line.items()):
-                if c == ch or now - info[2] > ANIMA_LINE_HOLD:
+                if c == ch:
                     continue
-                if info[3] >= rate * ANIMA_LINE_RANK:
-                    ok = False
-                elif rate >= info[3] * ANIMA_LINE_RANK:
+                if now - info[2] > info[4]:
                     self._anima_line.pop(c, None)
+                elif info[3] >= rate * ANIMA_LINE_RANK:
+                    ok = False
+                elif rate >= info[3] * ANIMA_LINE_RANK or med > info[1]:
+                    self._anima_line.pop(c, None)
+                else:
+                    ok = False
         if ok:
-            notes = [x[1] for x in hist]
-            self._anima_line[ch] = (min(notes), max(notes), now, rate)
+            notes = [x[1] for x in fast]
+            self._anima_line[ch] = (min(notes), max(notes), now, rate, hold)
             if not was:
+                kind = "slow" if hold == ANIMA_LINE_SLOW_HOLD else "fast"
                 self._anima_feedback(
-                    "line", f"ch{ch + 1} featured line {min(notes)}-{max(notes)}", status=True
+                    "line", f"ch{ch + 1} featured {kind} line {min(notes)}-{max(notes)}",
+                    status=True,
                 )
-        elif was and now - self._anima_line[ch][2] > ANIMA_LINE_HOLD:
-            self._anima_line.pop(ch, None)
         elif was:
-            lo, hi, _t, r = self._anima_line[ch]
-            self._anima_line[ch] = (min(lo, note), max(hi, note), now, r)
+            # It played but no longer reads as a line (the hold only bridges gaps).
+            self._anima_line.pop(ch, None)
 
     def _anima_line_over(self, ch: int, note: int):
-        """(lo, hi) of another channel's featured line whose register this note sits in."""
+        """(lo, hi, cur) of another channel's featured line whose register this note sits in."""
         now = time.monotonic()
-        for c, (lo, hi, t, _r) in list((getattr(self, "_anima_line", None) or {}).items()):
-            if now - t > ANIMA_LINE_HOLD:
+        for c, (lo, hi, t, _r, hold) in list((getattr(self, "_anima_line", None) or {}).items()):
+            if now - t > hold:
                 self._anima_line.pop(c, None)
                 continue
-            if c != ch and lo - 3 <= note <= hi + 12:
-                return lo, hi
+            if c != ch and lo - 5 <= note <= hi + 12:
+                hist = self._anima_line_hist.get(c) or [(t, lo)]
+                return lo, hi, hist[-1][1], int(self._anima_line_vel.get(c, 0))
         return None
 
     def _anima_line_lift(self, ch: int, note: int, vel: int) -> int:
@@ -6768,9 +6818,9 @@ class Duality:
             if self._anima_category(c) in ANIMA_HARM_QUIET_CATS:
                 continue
             loud = max(loud, int(info.get("velocity") or 0))
-        if loud <= vel:
+        if loud + ANIMA_LINE_MARGIN <= vel:
             return vel
-        want = vel + (loud - vel) * ANIMA_LINE_LIFT
+        want = vel + (loud + ANIMA_LINE_MARGIN - vel) * ANIMA_LINE_LIFT
         return max(vel, min(127, int(round(min(want, vel * ANIMA_LINE_LIFT_MAX)))))
 
     def _anima_harm_is_melody(self, ch: int, note: int) -> bool:
@@ -8554,12 +8604,15 @@ class Duality:
                     newv = note_msg.velocity
                     if hch in self._anima_line:
                         newv = self._anima_line_lift(hch, note_msg.note, note_msg.velocity)
+                        self._anima_line_vel[hch] = newv
                     elif (
                         not self._anima_is_rhythm(hch)
                         and self._anima_category(hch) not in ANIMA_HARM_QUIET_CATS
-                        and self._anima_line_over(hch, note_msg.note)
                     ):
-                        scale = min(scale, ANIMA_LINE_DUCK)
+                        over = self._anima_line_over(hch, note_msg.note)
+                        if over and note_msg.velocity >= over[3] * ANIMA_LINE_COMPETE:
+                            near = abs(note_msg.note - over[2]) <= 2
+                            scale = min(scale, ANIMA_LINE_DUCK_NEAR if near else ANIMA_LINE_DUCK)
                     newv = max(1, min(127, int(newv * scale)))
                     if newv != note_msg.velocity and note_msg.velocity > 0:
                         note_msg = note_msg.copy(velocity=newv)
@@ -8692,6 +8745,7 @@ class Duality:
                         self.voice_counts[port] = max(0, self.voice_counts[port] - w)
                     if self.anima:
                         still_held = key in self.active
+                        self._anima_line_off[ch_off] = now
                         if not still_held:
                             self._anima_mod_on.discard(key)
                             self._anima_ghost_kill(key)
@@ -9156,6 +9210,8 @@ class Duality:
         self._anima_harm_recent = {}
         self._anima_harm_chord_t = {}
         self._anima_line_hist = {}
+        self._anima_line_off = {}
+        self._anima_line_vel = {}
         self._anima_line = {}
         self._anima_bass_sub_choice = None
         self.active.clear()
