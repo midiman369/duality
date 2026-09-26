@@ -3,9 +3,14 @@
 These scripts replay MIDI through Duality with fake MIDI ports and a fake
 clock, then check what each output unit received. No hardware, no audio.
 
-**Songs are not in the repo.** Put your own copies in `tests/midi/` (or set
-`DUALITY_TEST_MIDI` to another folder). Git ignores `.mid` files there. A
-test whose file is missing prints `SKIP`.
+**Songs are not in the repo.** Each test finds its file under either its
+test name or its original name, in `tests/midi/` (source songs) or
+`recordings/` (Duality `--record` takes), or in `DUALITY_TEST_MIDI` if set.
+Git ignores `.mid` in `tests/midi/` and all of `recordings/` and `logs/`.
+A test whose file is missing prints `SKIP`.
+
+From the flat test-data zip: the two songs → `tests/midi/`, the `IN-…` /
+`OUT-…` takes → `recordings/`, the `duality-….log` files → `logs/`.
 
 ```bash
 python tests/run_all.py
@@ -24,9 +29,9 @@ python tests/run_all.py
 
 ## Where the songs came from
 
-For a future session: ask the user for these by their original names, then
-copy each to `tests/midi/` under the test name. The checksum (first 16 hex
-of SHA-256) confirms it is the same file.
+For a future session: ask the user for these by their original names and put
+them in `recordings/` (takes) or `tests/midi/` (songs); no renaming needed.
+The checksum (first 16 hex of SHA-256) confirms it is the same file.
 
 | Test name | Original file (as sent) | Arrived in | Bytes | SHA-256 (16) |
 |-----------|-------------------------|------------|-------|--------------|

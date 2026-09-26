@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.014"
+VERSION = "0.19.015"
 
 
 """
@@ -56,8 +56,8 @@ Anima (opt-in)
   • Single output allowed
 
 Record / log / panel
-  • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx)
-  • --log / --log-verbose; C clears; port health on session end
+  • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx) → recordings/
+  • --log / --log-verbose → logs/duality.log; C clears; port health on session end
   • Live meters, channel grid, Recent history, format badge, decoded SysEx
 
 Other
@@ -896,6 +896,9 @@ class Duality:
         self._log_file = None
         if log_path:
             try:
+                folder = os.path.dirname(log_path)
+                if folder:
+                    os.makedirs(folder, exist_ok=True)
                 self._log_file = open(log_path, "a", encoding="utf-8")
                 self._log_file.write(
                     f"\n--- Duality session start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"
@@ -7910,7 +7913,7 @@ class Duality:
             return
         self._rec_on = False
         import os
-        dest = self.record_dir or "."
+        dest = self.record_dir or "recordings"
         try:
             os.makedirs(dest, exist_ok=True)
         except Exception:
@@ -9254,7 +9257,7 @@ class Duality:
                 self._record_stop("hotkey W")
             else:
                 if not self.record_dir:
-                    self.record_dir = "."
+                    self.record_dir = "recordings"
                 self._rec_wanted = True
                 self._record_start("hotkey W")
         elif c == "a":
@@ -9569,12 +9572,12 @@ def main():
     parser.add_argument(
         "--record",
         nargs="?",
-        const=".",
+        const="recordings",
         default=None,
         metavar="DIR",
         help=(
             "Record Duality input and each output as Standard MIDI Files "
-            "in DIR (default: current directory). Includes SysEx. "
+            "in DIR (default: ./recordings, created if needed). Includes SysEx. "
             "Hotkey W starts/stops a new take."
         ),
     )
@@ -9751,23 +9754,23 @@ def main():
     parser.add_argument(
         "--log",
         nargs="?",
-        const="duality.log",
+        const=os.path.join("logs", "duality.log"),
         default=None,
         metavar="PATH",
         help=(
             "Append status, Alchemy, bank/PC, and RPN/NRPN events to a log file "
-            "(default path: duality.log). See also --log-verbose."
+            "(default path: logs/duality.log). See also --log-verbose."
         ),
     )
     parser.add_argument(
         "--log-verbose",
         nargs="?",
-        const="duality.log",
+        const=os.path.join("logs", "duality.log"),
         default=None,
         metavar="PATH",
         help=(
             "Enable logging in verbose mode (all CCs, pitch, etc.). "
-            "Optional path (default: duality.log). "
+            "Optional path (default: logs/duality.log). "
             "If both --log and --log-verbose are given, verbose wins."
         ),
     )
