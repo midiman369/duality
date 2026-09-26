@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.010"
+VERSION = "0.19.011"
 
 
 """
@@ -305,6 +305,19 @@ from tables_gs import (
     ANIMA_FILE_DIRT_TYPES,
     ANIMA_FILE_DIRT_FAMS,
     ANIMA_EFX_PAN_SLOT,
+    ANIMA_EFX_PAN_PARAMS,
+    ANIMA_EFX_PAN_PAIR_SPREAD,
+    GS_DLY_MS,
+    ANIMA_EFX_DELAY,
+    ANIMA_EFX_FB_CAP_PCT,
+    ANIMA_EFX_FB_PCT,
+    ANIMA_EFX_FB_PCT_HELD,
+    ANIMA_EFX_FB_HELD_FAMS,
+    ANIMA_EFX_PITCH,
+    ANIMA_EFX_PITCH_MODES,
+    ANIMA_EFX_PITCH_FAM_MODES,
+    ANIMA_EFX_PITCH_DEFAULT_MODES,
+    ANIMA_EFX_GATE_TYPE,
     ANIMA_EFX_EXCLUSIVE,
     GS_EFX_PARAMS,
 )
@@ -782,6 +795,12 @@ class Duality:
         self._last_key_ports = {}  # (ch,note) -> ports of last sounding voice
         self._anima_efx_on = [[False] * 16 for _ in range(self.n_ports)]
         self._anima_efx_pick = {}  # (fam, port) -> (msb, lsb, label)
+        # Beat tracking for delay inserts: MIDI clock first, note onsets second.
+        self._tempo_clock_t = 0.0
+        self._tempo_clock_iv = 0.0
+        self._tempo_onsets = []        # note-on times (chords merged)
+        self._tempo_beat = 0.0         # cached beat length in seconds (0 = unknown)
+        self._tempo_beat_t = 0.0
         self._anima_ports = [[] for _ in range(16)]
         self._anima_cc1_cur = [0] * 16
         self._anima_cc1_tgt = [0] * 16
@@ -3977,6 +3996,7 @@ class Duality:
         self._anima_game_poll()
         self._anima_park_idle_poll()
         self._anima_efx_burst_poll()
+        self._anima_efx_dly_upkeep()
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
@@ -4751,7 +4771,11 @@ class Duality:
 
     def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None):
         """Keep a player's type when they relocate; new player in same fam gets another row."""
-        pal = list(ANIMA_EFX_GS.get(fam) or [])
+        # Rows are (msb, lsb, name, weight); callers get (msb, lsb, name).
+        pal = [
+            (r[0], r[1], r[2], int(r[3]) if len(r) > 3 else 2)
+            for r in (ANIMA_EFX_GS.get(fam) or [])
+        ]
         if port is not None:
             tags = self.out_formats[port] if port < len(self.out_formats) else set()
             cls = self._gs_canvas_class(tags)
@@ -4794,7 +4818,7 @@ class Duality:
                 and "echo" not in str(row[2]).lower()
             ]
             if not pal:
-                pal = [(0x01, 0x02, "Enhancer")]
+                pal = [(0x01, 0x02, "Enhancer", 2)]
 
         def _from_typ(typ):
             if not typ:
@@ -4803,7 +4827,7 @@ class Duality:
                 return None
             for row in pal:
                 if (row[0], row[1]) == tuple(typ)[:2]:
-                    return row
+                    return tuple(row[:3])
             return (typ[0], typ[1], fam)
 
         # Same channels already on a slot → keep that insert (relocation).
@@ -4833,7 +4857,15 @@ class Duality:
         if cached and (cached[0], cached[1]) not in exclusive_live:
             return cached
         mix = self._anima_mix(sum(ord(c) for c in fam) * 31, 0 if port is None else (port + 1) * 97)
-        pick = pal[mix % len(pal)]
+        # Weighted by the picker: favoured ×2, less often ×½.
+        total = sum(max(1, row[3]) for row in pal)
+        roll = mix % total
+        pick = pal[-1]
+        for row in pal:
+            roll -= max(1, row[3])
+            if roll < 0:
+                pick = row
+                break
         used = {
             (v[0], v[1])
             for k, v in self._anima_efx_pick.items()
@@ -4848,6 +4880,7 @@ class Duality:
                 if not _blocked(alt):
                     pick = alt
                     break
+        pick = tuple(pick[:3])
         self._anima_efx_pick[key] = pick
         return pick
 
@@ -4910,6 +4943,157 @@ class Duality:
                 status=True,
             )
 
+    # ------------------------------------------------------------------
+    # Beat tracking (for delay-time inserts)
+    # ------------------------------------------------------------------
+    def _tempo_feed(self, msg, now: float) -> None:
+        if msg.type == "clock":
+            if self._tempo_clock_t and 0.004 < now - self._tempo_clock_t < 0.2:
+                iv = now - self._tempo_clock_t
+                self._tempo_clock_iv = iv if not self._tempo_clock_iv else self._tempo_clock_iv * 0.9 + iv * 0.1
+            self._tempo_clock_t = now
+            return
+        ons = self._tempo_onsets
+        if ons and now - ons[-1] < 0.04:
+            return  # same chord / strum
+        ons.append(now)
+        cut = now - 12.0
+        if len(ons) > 256 or (ons and ons[0] < cut):
+            self._tempo_onsets = [t for t in ons[-256:] if t >= cut]
+
+    def _anima_beat_sec(self) -> float:
+        """Beat length in seconds, or 0.0 when there is not enough to go on."""
+        now = time.monotonic()
+        if self._tempo_clock_iv and now - self._tempo_clock_t < 1.0:
+            return self._tempo_clock_iv * 24.0
+        if self._tempo_beat_t and now - self._tempo_beat_t < 2.0:
+            return self._tempo_beat
+        self._tempo_beat_t = now
+        ons = [t for t in self._tempo_onsets if t >= now - 12.0]
+        if len(ons) < 12:
+            self._tempo_beat = 0.0
+            return 0.0
+        # Histogram of onset-to-onset gaps (10 ms bins, up to 2.2 s).
+        hist = [0.0] * 221
+        for i, a in enumerate(ons):
+            for b in ons[i + 1:]:
+                gap = b - a
+                if gap > 2.2:
+                    break
+                if gap >= 0.1:
+                    hist[int(gap * 100 + 0.5)] += 1.0
+
+        def h(sec: float) -> float:
+            k = int(sec * 100 + 0.5)
+            if k < 1 or k > 219:
+                return 0.0
+            return hist[k] + 0.5 * (hist[k - 1] + hist[k + 1])
+
+        best, best_t = 0.0, 0.0
+        for ms in range(250, 1251, 5):
+            t = ms / 1000.0
+            s = h(t) + 0.5 * h(t / 2) + 0.5 * h(2 * t) + 0.33 * h(3 * t)
+            if s > best:
+                best, best_t = s, t
+        while best_t and best_t < 0.4:
+            best_t *= 2
+        while best_t > 0.8:
+            best_t /= 2
+        self._tempo_beat = best_t
+        return best_t
+
+    # ------------------------------------------------------------------
+    # Insert shaping: delay times / feedback, pitch intervals, gate type
+    # ------------------------------------------------------------------
+    def _anima_efx_dly_upkeep(self) -> None:
+        """Set delay times once the beat is known (or has moved), box quiet only."""
+        now = time.monotonic()
+        if now - getattr(self, "_anima_dly_check_t", 0.0) < 1.0:
+            return
+        self._anima_dly_check_t = now
+        beat = self._anima_beat_sec()
+        if not beat:
+            return
+        for port, sl in enumerate(self._anima_slots):
+            typ = tuple(sl.get("typ") or ())[:2]
+            dly = ANIMA_EFX_DELAY.get(typ)
+            if not dly or not dly["times"]:
+                continue
+            old = float(sl.get("dly_beat") or 0.0)
+            if old and abs(beat - old) / old < 0.12:
+                continue
+            chs = list(sl.get("chs") or [])
+            if self._anima_port_players_sounding(port):
+                continue
+            if now - float(sl.get("heard_t") or 0.0) < 1.5:
+                continue  # let the echo tail die before moving the time
+            self._anima_efx_shape(port, typ, chs, sl.get("fam"))
+
+    @staticmethod
+    def _gs_dly_index(scale: int, ms: float) -> int:
+        tab = GS_DLY_MS[scale]
+        return min(range(128), key=lambda i: abs(tab[i] - ms))
+
+    def _anima_efx_shape(self, port: int, typ: tuple, chs: list, fam: str | None) -> None:
+        typ = tuple(typ or ())[:2]
+        msgs = []
+        notes = []
+        seed = self._anima_ensure_efx_seed()
+        dly = ANIMA_EFX_DELAY.get(typ)
+        if dly:
+            beat = self._anima_beat_sec()
+            if beat and dly["times"]:
+                # One factor (halve/double) for every tap, so the taps keep
+                # their rhythm instead of folding onto the same echo.
+                scale = dly["times"][0][1]
+                tab = GS_DLY_MS[scale]
+                lo, hi = max(tab[1], 5.0), tab[-1]
+                top = max(b for _a, _s, b in dly["times"])
+                low = min(b for _a, _s, b in dly["times"])
+                k = 1.0
+                while beat * 1000.0 * top * k > hi:
+                    k /= 2
+                while beat * 1000.0 * low * k < lo and beat * 1000.0 * top * k * 2 <= hi:
+                    k *= 2
+                for addr, sc, beats in dly["times"]:
+                    ms = min(hi, max(lo, beat * 1000.0 * beats * k))
+                    msgs.append(self._gs_dt1([0x40, 0x03, addr], [self._gs_dly_index(sc, ms)]))
+                sl = self._anima_slots[port] if 0 <= port < len(self._anima_slots) else None
+                if sl is not None:
+                    sl["dly_beat"] = beat
+                notes.append(f"beat {beat * 1000:.0f}ms")
+            addr, kind = dly["fb"]
+            pct = ANIMA_EFX_FB_PCT_HELD if fam in ANIMA_EFX_FB_HELD_FAMS else ANIMA_EFX_FB_PCT
+            pct = min(pct, ANIMA_EFX_FB_CAP_PCT)
+            if kind == "pct":
+                val = 0x40 + int(round(pct / 2.0))
+            else:
+                val = int(round(127 * pct / 100.0))
+            msgs.append(self._gs_dt1([0x40, 0x03, addr], [val & 0x7F]))
+            notes.append(f"fb {pct}%")
+        voices = ANIMA_EFX_PITCH.get(typ)
+        if voices:
+            modes = ANIMA_EFX_PITCH_FAM_MODES.get(fam or "", ANIMA_EFX_PITCH_DEFAULT_MODES)
+            mode = modes[self._anima_mix(seed, (port + 1) * 131 + len(fam or "")) % len(modes)]
+            for (c_addr, f_addr), (semi, cents) in zip(voices, ANIMA_EFX_PITCH_MODES[mode]):
+                msgs.append(self._gs_dt1([0x40, 0x03, c_addr], [max(0x28, min(0x4C, 0x40 + semi))]))
+                msgs.append(self._gs_dt1([0x40, 0x03, f_addr], [max(0x0E, min(0x72, 0x40 + int(cents / 2)))]))
+            if typ == (0x01, 0x61) and fam != "fx":
+                msgs.append(self._gs_dt1([0x40, 0x03, 0x05], [0x40]))  # no feedback cascade
+            notes.append(f"pitch {mode}")
+        gate = ANIMA_EFX_GATE_TYPE.get(typ)
+        if gate:
+            addr, vals = gate
+            v = vals[self._anima_mix(seed, port + 7) % len(vals)]
+            msgs.append(self._gs_dt1([0x40, 0x03, addr], [v]))
+            notes.append("sweep " + str(v - 1))
+        if not msgs:
+            return
+        self._anima_efx_ours = True
+        for m in msgs:
+            self._safe_out_send(port, m)
+        self._anima_feedback("efx-param", f"P{port + 1} {' · '.join(notes)}", status=False)
+
     def _anima_efx_bind_and_seed(self, msb: int, lsb: int, ports=None) -> None:
         """One-shot: bind CC16 to EFX Ctrl1, seed drive, set rotary/wah base."""
         ports = list(ports) if ports is not None else self._anima_gs_ports()
@@ -4919,12 +5103,16 @@ class Duality:
         key = (msb, lsb)
         # CC16 drives whichever EFX Control carries the wah / rotary speed
         # knob; the other depth sits at 0% (0x40) so CC16 moves nothing else.
+        # Only wah and rotary types are driven by CC16. Everything else gets
+        # 0 % on both, so a CC16 left over from a wah cannot push, say,
+        # Stereo Delay's feedback (its Control 1 knob).
+        live = key in ANIMA_EFX_WAH or key in ANIMA_EFX_ROTARY
         on2 = key in ANIMA_EFX_CTRL2
         msgs = [
-            self._gs_dt1([0x40, 0x03, 0x1B], [ANIMA_EFX_CTRL_CC]),         # C.Src1 = CC16
-            self._gs_dt1([0x40, 0x03, 0x1C], [0x40 if on2 else 0x7F]),     # C.Dep1
-            self._gs_dt1([0x40, 0x03, 0x1D], [ANIMA_EFX_CTRL_CC]),         # C.Src2 = CC16
-            self._gs_dt1([0x40, 0x03, 0x1E], [0x7F if on2 else 0x40]),     # C.Dep2
+            self._gs_dt1([0x40, 0x03, 0x1B], [ANIMA_EFX_CTRL_CC]),                  # C.Src1 = CC16
+            self._gs_dt1([0x40, 0x03, 0x1C], [0x7F if live and not on2 else 0x40]),  # C.Dep1
+            self._gs_dt1([0x40, 0x03, 0x1D], [ANIMA_EFX_CTRL_CC]),                  # C.Src2 = CC16
+            self._gs_dt1([0x40, 0x03, 0x1E], [0x7F if live and on2 else 0x40]),      # C.Dep2
         ]
         if key in ANIMA_EFX_DRIVE_03:
             drive = 40 + (seed % 51)  # 40–90
@@ -5370,31 +5558,43 @@ class Duality:
         )
 
     def _anima_efx_apply_pan(self, port: int, typ: tuple, chs: list) -> None:
-        """For mono inserts that expose Pan, copy the hero channel's CC10."""
-        slot = ANIMA_EFX_PAN_SLOT.get(tuple(typ) if typ else None)
-        if not slot or not chs:
+        """Inserts with a Pan knob follow the player's file pan (CC10).
+
+        One pan address: the output sits where the player is panned.
+        Two (parallel pairs, the two pitch voices): spread around it.
+        A centred player keeps the type's own default, except the extra
+        dirt box, which still leans L/R by port.
+        """
+        key = tuple(typ)[:2] if typ else None
+        addrs = ANIMA_EFX_PAN_PARAMS.get(key)
+        if not addrs or not chs:
             return
-        ch = chs[0]
-        pan = self.pan[ch] if self.pan[ch] is not None else 64
         pans = [int(self.pan[c]) if self.pan[c] is not None else 64 for c in chs]
+        pan = pans[0]
+        why = ""
         if len(pans) >= 2 and min(pans) < 64 - ANIMA_EFX_PAN_OFF and max(pans) > 64 + ANIMA_EFX_PAN_OFF:
-            # Opposite-side guitars sharing one mono insert (ONESTOP intro):
-            # centre it until the OD1/OD2 split can latch in a quiet gap.
-            pan = 64
-            addr = 0x03 + (int(slot) - 1)
-            self._anima_efx_ours = True
-            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [pan]))
-            self._anima_feedback("efx-pan", f"P{port + 1} EFX pan param {slot} → 64 (split pending)", status=False)
-            return
-        if abs(int(pan) - 64) <= 4:
-            # Centered part on an extra dirt box: lean L/R by port.
-            pan = 32 if (port % 2 == 0) else 96
-        addr = 0x03 + (int(slot) - 1)  # P1 = 40 03 03
+            # Opposite-side players sharing one insert (ONESTOP intro guitars):
+            # centre it; the OD1/OD2 split latches in a quiet gap.
+            pan, why = 64, " (split pending)"
+        elif abs(pan - 64) <= 4:
+            if key in ANIMA_EFX_PAN_SLOT:
+                # Centred part on an extra dirt box: lean L/R by port.
+                pan, why = (32 if port % 2 == 0 else 96), " (dirt lean)"
+            else:
+                pan = 64
+        if len(addrs) == 1:
+            vals = [pan]
+        elif pan == 64 and not why:
+            vals = [0x01, 0x7F]  # the pair's own hard L/R default
+        else:
+            sp = ANIMA_EFX_PAN_PAIR_SPREAD
+            vals = [max(1, min(127, pan - sp)), max(1, min(127, pan + sp))]
         self._anima_efx_ours = True
-        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [int(pan) & 0x7F]))
+        for addr, v in zip(addrs, vals):
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [int(v) & 0x7F]))
         self._anima_feedback(
             "efx-pan",
-            f"P{port + 1} EFX pan param {slot} → {int(pan) & 0x7F}",
+            f"P{port + 1} EFX pan → {'/'.join(str(v) for v in vals)}{why}",
             status=False,
         )
 
@@ -5705,7 +5905,7 @@ class Duality:
                 ]
                 if not pal:
                     return
-                pick = pal[0]
+                pick = tuple(pal[0][:3])
                 msb, lsb, label = pick
                 typ = (msb, lsb)
             else:
@@ -5725,6 +5925,7 @@ class Duality:
             self._anima_efx_label = label
             self._anima_efx_hero = chs[0] if chs else None
             self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_efx_shape(port, typ, chs, fam)
             self._anima_efx_apply_pan(port, typ, chs)
             self._anima_organ_vol_lift(port, chs, label)
             self._anima_bass_harm_drive(port, typ, chs)
@@ -5807,6 +6008,7 @@ class Duality:
             self._anima_efx_sent = (msb, lsb)
             self._anima_efx_label = label
             self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_efx_shape(port, (msb, lsb), slot.get("chs") or [ch], slot.get("fam"))
             self._anima_efx_apply_pan(port, (msb, lsb), slot.get("chs") or [ch])
             self._anima_organ_vol_lift(port, slot.get("chs") or [ch], label)
             self._anima_bass_harm_drive(port, (msb, lsb), slot.get("chs") or [ch])
@@ -7680,6 +7882,8 @@ class Duality:
         if self._init_dump and (self.last_midi_time - self._init_dump_last) >= 3.0:
             self._init_dump_end("idle")
         self._record_in(msg)
+        if self.anima and (msg.type == "clock" or (msg.type == "note_on" and msg.velocity > 0)):
+            self._tempo_feed(msg, self.last_midi_time)
 
         # Drop surplus pitch/AT/mod from the FILE. 190 pitchbends in 100ms
         # cannot fit a 31.25 kbps DIN cable (MS40, many M8U ports). USB
