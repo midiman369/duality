@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.021"
+VERSION = "0.19.022"
 
 
 """
@@ -64,6 +64,7 @@ Anima (opt-in)
     drums): chords struck by hands (2/4 mallets); where the part leaves room
     the seed adds a double, a triplet or a fading hand-to-hand roll. A new
     note or program change cancels what is pending. Notes are never delayed.
+    On a delay insert the echoes follow the part's note spacing (12% fb).
   • Featured lines: a fast single-note stepwise run, or a slow sustained
     single-note tune, is found live (one at a time) and spotlit: lifted toward
     the loudest part over it (≤×1.4); competing notes in its register play at
@@ -560,6 +561,14 @@ ANIMA_MALLET_END = 0.70        # extra strokes finish within this share of the g
 ANIMA_MALLET_VEL = 0.68        # first extra stroke vs the note's velocity
 ANIMA_MALLET_FADE = 0.88       # each further stroke
 ANIMA_MALLET_LEN = 0.080       # extra stroke length when the file's note has ended
+# A mallet part on a delay insert: echoes follow the part's own note spacing
+# with a light feedback. The half-beat tap lands on the part's next note when
+# the delay reaches that far; a longer spacing folds to halves / quarters of
+# it (still on the part's grid, where a double would fall). The random
+# ornaments stay. A pitch shifter adding a fifth makes triplets and rolls less
+# likely (they would turn into a wash); mallets get doubler / octave-up today.
+ANIMA_MALLET_DLY_FB_PCT = 12
+ANIMA_MALLET_SHIFT_DAMP = 0.5
 ANIMA_ACOUSTIC_PCS = frozenset({24, 25})  # nylon / steel — slightly more harp-like
 ANIMA_PLUCK_LIFT = 1.12      # acoustic guitar under sustained parts (its notes decay, theirs hold)
 ANIMA_SUSTAIN_CATS = frozenset({"wind", "brass", "strings", "ensemble", "pad", "organ", "lead"})
@@ -5257,18 +5266,19 @@ class Duality:
     # Insert shaping: delay times / feedback, pitch intervals, gate type
     # ------------------------------------------------------------------
     def _anima_efx_dly_upkeep(self) -> None:
-        """Set delay times once the beat is known (or has moved), box quiet only."""
+        """Set delay times once the beat (or a mallet owner's pulse) is known or has
+        moved, box quiet only."""
         now = time.monotonic()
         if now - getattr(self, "_anima_dly_check_t", 0.0) < 1.0:
             return
         self._anima_dly_check_t = now
-        beat = self._anima_beat_sec()
-        if not beat:
-            return
         for port, sl in enumerate(self._anima_slots):
             typ = tuple(sl.get("typ") or ())[:2]
             dly = ANIMA_EFX_DELAY.get(typ)
             if not dly or not dly["times"]:
+                continue
+            beat, _mallet = self._anima_efx_dly_pulse(sl.get("chs") or [])
+            if not beat:
                 continue
             old = float(sl.get("dly_beat") or 0.0)
             if old and abs(beat - old) / old < 0.12:
@@ -5292,7 +5302,7 @@ class Duality:
         seed = self._anima_ensure_efx_seed()
         dly = ANIMA_EFX_DELAY.get(typ)
         if dly:
-            beat = self._anima_beat_sec()
+            beat, mallet = self._anima_efx_dly_pulse(chs)
             if beat and dly["times"]:
                 # One factor (halve/double) for every tap, so the taps keep
                 # their rhythm instead of folding onto the same echo.
@@ -5312,9 +5322,11 @@ class Duality:
                 sl = self._anima_slots[port] if 0 <= port < len(self._anima_slots) else None
                 if sl is not None:
                     sl["dly_beat"] = beat
-                notes.append(f"beat {beat * 1000:.0f}ms")
+                notes.append(f"{'mallet pulse' if mallet else 'beat'} {beat * 1000:.0f}ms")
             addr, kind = dly["fb"]
             pct = ANIMA_EFX_FB_PCT_HELD if fam in ANIMA_EFX_FB_HELD_FAMS else ANIMA_EFX_FB_PCT
+            if mallet:
+                pct = ANIMA_MALLET_DLY_FB_PCT
             pct = min(pct, ANIMA_EFX_FB_CAP_PCT)
             if kind == "pct":
                 val = 0x40 + int(round(pct / 2.0))
@@ -5331,6 +5343,9 @@ class Duality:
                 msgs.append(self._gs_dt1([0x40, 0x03, f_addr], [max(0x0E, min(0x72, 0x40 + int(cents / 2)))]))
             if typ == (0x01, 0x61) and fam != "fx":
                 msgs.append(self._gs_dt1([0x40, 0x03, 0x05], [0x40]))  # no feedback cascade
+            sl = self._anima_slots[port] if 0 <= port < len(self._anima_slots) else None
+            if sl is not None:
+                sl["pitch_mode"] = mode
             notes.append(f"pitch {mode}")
         gate = ANIMA_EFX_GATE_TYPE.get(typ)
         if gate:
@@ -8072,6 +8087,12 @@ class Duality:
         if space < ANIMA_MALLET_MIN_SPACE:
             return
         style = ANIMA_MALLET_PCS[self._anima_cat_pc(ch)]
+        damp = 1.0
+        port0 = asc[0][1][0] if asc and asc[0][1] else None
+        if port0 is not None and 0 <= port0 < len(self._anima_slots):
+            sl = self._anima_slots[port0] or {}
+            if ch in (sl.get("chs") or []) and sl.get("pitch_mode") == "power":
+                damp = ANIMA_MALLET_SHIFT_DAMP
         n = self._anima_mallet_n[ch]
         self._anima_mallet_n[ch] = n + 1
         seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
@@ -8081,6 +8102,8 @@ class Duality:
         for name, odds in ANIMA_MALLET_ODDS[style]:
             if name == "roll" and space < ANIMA_MALLET_ROLL_SPACE:
                 continue
+            if name in ("roll", "triplet"):
+                odds *= damp
             if roll < odds:
                 kind = name
                 break
@@ -8107,6 +8130,25 @@ class Duality:
         self._anima_feedback(
             "mallet", f"ch{ch + 1} {kind} x{len(offs)} ({'chord' if len(asc) > 1 else 'note'})"
         )
+
+    def _anima_mallet_space(self, ch: int) -> float:
+        """The mallet part's usual gap between notes (median of recent strokes), or 0."""
+        hist = self._anima_mallet_hist[ch & 0x0F]
+        gaps = sorted(b - a for a, b in zip(hist, hist[1:]) if b - a > 0.03)
+        return gaps[len(gaps) // 2] if len(gaps) >= 3 else 0.0
+
+    def _anima_efx_dly_pulse(self, chs) -> tuple:
+        """(seconds, mallet?) that a delay insert's taps are timed from.
+
+        A mallet owner with a known spacing gives twice that spacing, so a
+        half-beat tap lands one note later; otherwise the song's beat.
+        """
+        for c in chs or []:
+            if self._anima_cat_pc(c) in ANIMA_MALLET_PCS:
+                sp = self._anima_mallet_space(c)
+                if sp >= ANIMA_MALLET_MIN_SPACE:
+                    return sp * 2.0, True
+        return self._anima_beat_sec(), False
 
     def _anima_mallet_drain(self) -> None:
         """Fire due mallet strokes. Re-strike a key the file still holds (off + on,
