@@ -26,6 +26,7 @@ python tests/run_all.py
 | `bass-in-000745.mid` | IN take of the bass sub-octave test, 2026-09-25 00:07:45 | `replay_bass.py` |
 | `every-breath-8850.mid` | Every Breath You Take (SC-8850 bulk-dump setup) | `replay_bulk_dump.py` |
 | `d_e1m1.mid` | DOOM E1M1 (file OD1/OD2 on parts 1+2) | `replay_file_efx_echo.py` |
+| `death-gate-03.mid`, `-07`, `-97` | Death Gate (XMI2MID; a stray byte after end-of-track, `common.load` copes) | `replay_harmony.py` |
 
 ## Where the songs came from
 
@@ -41,6 +42,9 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `bass-in-000745.mid` | `IN-Duality-4-gs-20260925-000745.mid` | `OUT-SCVA2-8-gm2gs8850-20260925-000745.zip` | 867 | `9112e1401c63a525` |
 | `every-breath-8850.mid` | `Every_Breath_You_Take_8850.mid` | sent on its own | 47765 | `97b45e8eadd03e05` |
 | `d_e1m1.mid` | `D_E1M1.mid` | sent on its own | 18772 | `68b33cb4f045a6c8` |
+| `death-gate-03.mid` | `03_-_Death_Gate.MID` | sent on its own | 10979 | `ea51ce60bb29345b` |
+| `death-gate-07.mid` | `07_-_Death_Gate.MID` | sent on its own (plus take `duality-20260926-105647.zip`) | 16475 | `273e78ce59e18479` |
+| `death-gate-97.mid` | `97_-_Death_Gate.MID` | sent on its own | 29260 | `52c4adef9c67f8a7` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
@@ -54,6 +58,7 @@ song as the player sent it), so they are the song too and stay local.
 | `replay_bass.py` | Bass sub-octave never replaces the file's bass tone |
 | `replay_bulk_dump.py` | A bulk-dump file keeps its own insert (P1 never retyped, ch7 on it) |
 | `replay_file_efx_echo.py` | File Part EFX On is not swallowed as Anima's own echo; `GAME=0/1`, `PRE=0/12` (another song first) |
+| `replay_harmony.py` | Harmony balance (`SONG=03/07/97`): ghost and hero velocity scales, no upper ghost left over a line that starts above it, harmony count kept |
 | `tempo_test.py` | Beat tracker: exact on MIDI clock, musical relative on note onsets |
 
 Timing check: a note within 100 ms of its unit's insert type change or its

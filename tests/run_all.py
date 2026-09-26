@@ -20,6 +20,9 @@ RUNS = [
     ("file EFX echo, game", "replay_file_efx_echo.py", {"GAME": "1", "PRE": "0"}),
     ("file EFX echo, after a song", "replay_file_efx_echo.py", {"GAME": "0", "PRE": "12"}),
     ("file EFX echo, game, after a song", "replay_file_efx_echo.py", {"GAME": "1", "PRE": "12"}),
+    ("harmony, Death Gate 07", "replay_harmony.py", {"SONG": "07"}),
+    ("harmony, Death Gate 03", "replay_harmony.py", {"SONG": "03"}),
+    ("harmony, Death Gate 97", "replay_harmony.py", {"SONG": "97"}),
 ]
 bad = 0
 for name, script, env in RUNS:
