@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.012"
+VERSION = "0.19.013"
 
 
 """
@@ -4371,6 +4371,43 @@ class Duality:
                     status=True,
                 )
 
+    @staticmethod
+    def _gs_bulk_efx_msgs(msg: mido.Message) -> list:
+        """SC-88Pro/8850 bulk dump (Port A) → the plain DT1s Anima reads.
+
+        A bulk dump packs parameters as nibbles at 48 xx xx instead of the
+        usual 40 xx xx. Two packets matter to Anima:
+          48 1D 10  EQ + insertion block: byte 4-5 = EFX type (40 03 00)
+          48 1E 10 … 48 25 10  per-part extension, two blocks of 32 bytes
+                    per packet (block 0 = part 10, 1-9, A-F); byte 16 = Part
+                    EFX assign (40 4x 22).
+        Only "On" assigns are returned; the dump lists every other part as
+        Off, which is the power-on default, not a file decision.
+        """
+        if msg.type != "sysex":
+            return []
+        x = list(msg.data)
+        if len(x) < 10 or x[0] != 0x41 or x[2] != 0x42 or x[3] != 0x12 or x[4] != 0x48:
+            return []
+        bb, cc = x[5], x[6]
+        body = x[7:-1]
+        dec = [((body[i] & 0x0F) << 4) | (body[i + 1] & 0x0F) for i in range(0, len(body) - 1, 2)]
+
+        def dt1(addr, val):
+            s = (-(sum(addr) + sum(val))) & 0x7F
+            return mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, *addr, *val, s])
+
+        out = []
+        if (bb, cc) == (0x1D, 0x10) and len(dec) >= 6:
+            out.append(dt1([0x40, 0x03, 0x00], [dec[4] & 0x7F, dec[5] & 0x7F]))
+        elif cc == 0x10 and 0x1E <= bb <= 0x25:
+            for half in (0, 1):
+                seg = dec[half * 32:(half + 1) * 32]
+                if len(seg) > 16 and seg[16] == 0x01:
+                    block = (bb - 0x1E) * 2 + half
+                    out.append(dt1([0x40, 0x40 | block, 0x22], [0x01]))
+        return out
+
     def _anima_observe_rhythm(self, msg: mido.Message, quiet: bool = False) -> None:
         """Track GS 'use for rhythm' so Anima never puts EFX on a drum part."""
         if not self.anima:
@@ -8329,13 +8366,20 @@ class Duality:
             self._voodoo_maybe_auto()
             dump = self._init_dump
             description = "" if dump else self._describe_sysex(msg)
+            # A bulk dump carries the file's insert + Part EFX assigns packed;
+            # Anima must see them like the plain 40 03 00 / 40 4x 22 messages.
+            bulk = self._gs_bulk_efx_msgs(msg) if self.anima else []
             if dump:
                 # State only — no describe / status / history. Bytes already
                 # on the wire. Anima needs the file's EFX + rhythm map.
                 if self.anima:
                     self._anima_observe_file_efx(msg, "", quiet=True)
                     self._anima_observe_rhythm(msg, quiet=True)
+                    for bm in bulk:
+                        self._anima_observe_file_efx(bm, "", quiet=True)
             else:
+                for bm in bulk:
+                    self._anima_observe_file_efx(bm, "GS EFX (bulk dump)")
                 if description == "GS Reset" or (description and description.startswith("GS Reset")):
                     self._anima_gs_map_home("GS Reset")
                 self._anima_observe_sysex(msg, description)
