@@ -9,6 +9,8 @@ A marimba (GM 13) plays four-note chords every 0.6 s, then single notes every
   - a note arriving early cancels pending strokes (none after it on that key set)
   - a program change cancels pending strokes
   - no hanging notes, voice counts back to 0
+  - a Stereo Delay on the marimba's unit is timed from the part's spacing
+    (0.6 s chords: taps ~0.6 s / ~1.2 s, folded to fit) with 12% feedback
 """
 import sys
 import collections
@@ -35,7 +37,7 @@ class FakeIn:
 
 _outs = {}
 def open_output(name, *a, **k):
-    _outs[name] = FakeOut(len(_outs)); return _outs[name]
+    _outs[name] = FakeOut(int(name[1:]) - 1); return _outs[name]
 
 import duality as D
 D.mido.open_output = open_output
@@ -89,11 +91,28 @@ def run(seed):
     end = pc_at + 1.5
     ev.sort(key=lambda e: e[0])
     i, tt = 0, 0.0
+    checked = False
     while tt <= end:
         CLOCK[0] = 1000.0 + tt
         while i < len(ev) and ev[i][0] <= tt + 1e-9:
             d.process(ev[i][1]); i += 1
         d._anima_tick()
+        if not checked and tt >= chords[-1][0] + 0.05:
+            checked = True
+            pulse, mallet = d._anima_efx_dly_pulse([ch])
+            if not mallet or abs(pulse - 1.2) > 0.05:
+                fails.append(f"seed {seed:04X} delay pulse {pulse:.3f} mallet={mallet}, want 1.2 s")
+            n0 = len(REC)
+            d._anima_efx_shape(0, (0x01, 0x50), [ch], "chromatic")
+            dt1 = {tuple(m.data[4:7]): m.data[7] for _t, p, m in REC[n0:]
+                   if p == 0 and m.type == "sysex" and list(m.data[:4]) == [0x41, 0x10, 0x42, 0x12]}
+            tab = D.GS_DLY_MS[4]
+            l_ms, r_ms = tab[dt1.get((0x40, 0x03, 0x03), 0)], tab[dt1.get((0x40, 0x03, 0x04), 0)]
+            if not (abs(r_ms - 2 * l_ms) <= 0.1 * r_ms and (abs(l_ms - 600) < 40 or abs(l_ms - 300) < 25
+                                                             or abs(l_ms - 150) < 15)):
+                fails.append(f"seed {seed:04X} delay taps {l_ms:.0f}/{r_ms:.0f} ms not on the 0.6 s grid")
+            if dt1.get((0x40, 0x03, 0x05)) != 0x40 + D.ANIMA_MALLET_DLY_FB_PCT // 2:
+                fails.append(f"seed {seed:04X} delay feedback {dt1.get((0x40, 0x03, 0x05))}")
         tt = round(tt + 0.002, 3)
     ons = [(t0 - 1000.0, p, m) for t0, p, m in REC if m.type == "note_on" and m.velocity and m.channel == ch]
     # chord onsets: two hands
