@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.022"
+VERSION = "0.19.023"
 
 
 """
@@ -562,9 +562,9 @@ ANIMA_MALLET_VEL = 0.68        # first extra stroke vs the note's velocity
 ANIMA_MALLET_FADE = 0.88       # each further stroke
 ANIMA_MALLET_LEN = 0.080       # extra stroke length when the file's note has ended
 # A mallet part on a delay insert: echoes follow the part's own note spacing
-# with a light feedback. The half-beat tap lands on the part's next note when
-# the delay reaches that far; a longer spacing folds to halves / quarters of
-# it (still on the part's grid, where a double would fall). The random
+# with a light feedback. Each type's longest tap lands on the part's next note
+# when that type reaches that far (Tm Ctrl Delay 1 s, the others 500 ms);
+# a longer spacing folds to half of it (still on the part's grid). The random
 # ornaments stay. A pitch shifter adding a fifth makes triplets and rolls less
 # likely (they would turn into a wash); mallets get doubler / octave-up today.
 ANIMA_MALLET_DLY_FB_PCT = 12
@@ -5302,7 +5302,8 @@ class Duality:
         seed = self._anima_ensure_efx_seed()
         dly = ANIMA_EFX_DELAY.get(typ)
         if dly:
-            beat, mallet = self._anima_efx_dly_pulse(chs)
+            pulse, mallet = self._anima_efx_dly_pulse(chs)
+            beat = pulse
             if beat and dly["times"]:
                 # One factor (halve/double) for every tap, so the taps keep
                 # their rhythm instead of folding onto the same echo.
@@ -5311,6 +5312,11 @@ class Duality:
                 lo, hi = max(tab[1], 5.0), tab[-1]
                 top = max(b for _a, _s, b in dly["times"])
                 low = min(b for _a, _s, b in dly["times"])
+                if mallet:
+                    # The longest tap lands on the part's next note (this type's
+                    # range allowing; 500 ms or 1 s on the SC-8850), shorter taps
+                    # subdivide the gap.
+                    beat = pulse / top
                 k = 1.0
                 while beat * 1000.0 * top * k > hi:
                     k /= 2
@@ -5321,8 +5327,8 @@ class Duality:
                     msgs.append(self._gs_dt1([0x40, 0x03, addr], [self._gs_dly_index(sc, ms)]))
                 sl = self._anima_slots[port] if 0 <= port < len(self._anima_slots) else None
                 if sl is not None:
-                    sl["dly_beat"] = beat
-                notes.append(f"{'mallet pulse' if mallet else 'beat'} {beat * 1000:.0f}ms")
+                    sl["dly_beat"] = pulse
+                notes.append(f"{'mallet spacing' if mallet else 'beat'} {pulse * 1000:.0f}ms")
             addr, kind = dly["fb"]
             pct = ANIMA_EFX_FB_PCT_HELD if fam in ANIMA_EFX_FB_HELD_FAMS else ANIMA_EFX_FB_PCT
             if mallet:
@@ -8140,14 +8146,15 @@ class Duality:
     def _anima_efx_dly_pulse(self, chs) -> tuple:
         """(seconds, mallet?) that a delay insert's taps are timed from.
 
-        A mallet owner with a known spacing gives twice that spacing, so a
-        half-beat tap lands one note later; otherwise the song's beat.
+        A mallet owner with a known spacing gives that spacing: the delay's
+        longest tap is then set to land on the part's next note. Otherwise the
+        song's beat.
         """
         for c in chs or []:
             if self._anima_cat_pc(c) in ANIMA_MALLET_PCS:
                 sp = self._anima_mallet_space(c)
                 if sp >= ANIMA_MALLET_MIN_SPACE:
-                    return sp * 2.0, True
+                    return sp, True
         return self._anima_beat_sec(), False
 
     def _anima_mallet_drain(self) -> None:

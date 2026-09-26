@@ -100,17 +100,23 @@ def run(seed):
         if not checked and tt >= chords[-1][0] + 0.05:
             checked = True
             pulse, mallet = d._anima_efx_dly_pulse([ch])
-            if not mallet or abs(pulse - 1.2) > 0.05:
-                fails.append(f"seed {seed:04X} delay pulse {pulse:.3f} mallet={mallet}, want 1.2 s")
+            if not mallet or abs(pulse - 0.6) > 0.05:
+                fails.append(f"seed {seed:04X} delay pulse {pulse:.3f} mallet={mallet}, want 0.6 s")
             n0 = len(REC)
             d._anima_efx_shape(0, (0x01, 0x50), [ch], "chromatic")
             dt1 = {tuple(m.data[4:7]): m.data[7] for _t, p, m in REC[n0:]
                    if p == 0 and m.type == "sysex" and list(m.data[:4]) == [0x41, 0x10, 0x42, 0x12]}
-            tab = D.GS_DLY_MS[4]
+            tab = D.GS_DLY_MS[4]   # Stereo Delay: 500 ms at most, so 600 folds to 300 / 150
             l_ms, r_ms = tab[dt1.get((0x40, 0x03, 0x03), 0)], tab[dt1.get((0x40, 0x03, 0x04), 0)]
-            if not (abs(r_ms - 2 * l_ms) <= 0.1 * r_ms and (abs(l_ms - 600) < 40 or abs(l_ms - 300) < 25
-                                                             or abs(l_ms - 150) < 15)):
-                fails.append(f"seed {seed:04X} delay taps {l_ms:.0f}/{r_ms:.0f} ms not on the 0.6 s grid")
+            if not (abs(r_ms - 300) <= 20 and abs(l_ms - 150) <= 10):
+                fails.append(f"seed {seed:04X} Stereo Delay taps {l_ms:.0f}/{r_ms:.0f} ms, want 150/300")
+            n0 = len(REC)
+            d._anima_efx_shape(0, (0x01, 0x54), [ch], "chromatic")   # Tm Ctrl Delay: up to 1 s
+            dt1 = {tuple(m.data[4:7]): m.data[7] for _t, p, m in REC[n0:]
+                   if p == 0 and m.type == "sysex" and list(m.data[:4]) == [0x41, 0x10, 0x42, 0x12]}
+            tm = D.GS_DLY_MS[3][dt1.get((0x40, 0x03, 0x03), 0)]
+            if abs(tm - 600) > 20:
+                fails.append(f"seed {seed:04X} Tm Ctrl Delay {tm:.0f} ms, want 600 (the next chord)")
             if dt1.get((0x40, 0x03, 0x05)) != 0x40 + D.ANIMA_MALLET_DLY_FB_PCT // 2:
                 fails.append(f"seed {seed:04X} delay feedback {dt1.get((0x40, 0x03, 0x05))}")
         tt = round(tt + 0.002, 3)
