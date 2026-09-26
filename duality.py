@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.011"
+VERSION = "0.19.012"
 
 
 """
@@ -318,6 +318,7 @@ from tables_gs import (
     ANIMA_EFX_PITCH_FAM_MODES,
     ANIMA_EFX_PITCH_DEFAULT_MODES,
     ANIMA_EFX_GATE_TYPE,
+    ANIMA_EFX_DIRT_LEVEL,
     ANIMA_EFX_EXCLUSIVE,
     GS_EFX_PARAMS,
 )
@@ -801,6 +802,11 @@ class Duality:
         self._tempo_onsets = []        # note-on times (chords merged)
         self._tempo_beat = 0.0         # cached beat length in seconds (0 = unknown)
         self._tempo_beat_t = 0.0
+        # Dirt fade: file CC7/CC11 per channel and the loudest seen since its PC.
+        self._dirt_cc7 = [100] * 16
+        self._dirt_cc11 = [127] * 16
+        self._dirt_ref = [0] * 16
+        self._dirt_seen7 = [False] * 16
         self._anima_ports = [[] for _ in range(16)]
         self._anima_cc1_cur = [0] * 16
         self._anima_cc1_tgt = [0] * 16
@@ -3535,6 +3541,51 @@ class Duality:
         """Track file-driven expression so we do not fight it."""
         if msg.type == "control_change" and msg.control == 11:
             self._anima_file_cc11_t[msg.channel & 0x0F] = time.monotonic()
+        if msg.type == "control_change" and msg.control in (7, 11):
+            ch = msg.channel & 0x0F
+            if msg.control == 7:
+                self._dirt_cc7[ch] = int(msg.value)
+            else:
+                self._dirt_cc11[ch] = int(msg.value)
+            cur = self._dirt_cc7[ch] * self._dirt_cc11[ch]
+            if msg.control == 7 and not self._dirt_seen7[ch]:
+                # First real CC7 since the PC sets the reference (not the
+                # assumed 100 we started from).
+                self._dirt_seen7[ch] = True
+                self._dirt_ref[ch] = cur
+            else:
+                self._dirt_ref[ch] = max(self._dirt_ref[ch], cur)
+            port = self._anima_ch_port.get(ch)
+            if port is not None:
+                self._anima_dirt_level(port)
+
+    def _anima_dirt_level(self, port: int, force: bool = False) -> None:
+        """Dirt insert Level follows the file's CC7/CC11 fade on its players."""
+        if not (0 <= port < len(self._anima_slots)):
+            return
+        sl = self._anima_slots[port]
+        typ = tuple(sl.get("typ") or ())[:2]
+        base = ANIMA_EFX_DIRT_LEVEL.get(typ)
+        chs = list(sl.get("chs") or [])
+        if base is None or not chs:
+            return
+        ratio = 0.0
+        for c in chs:
+            ref = self._dirt_ref[c] or (100 * 127)
+            ratio = max(ratio, min(1.0, (self._dirt_cc7[c] * self._dirt_cc11[c]) / float(ref)))
+        # Mix trims above 75 % are left alone; a fade-out goes 75 % → 0.
+        lvl = int(round(base * min(1.0, ratio / 0.75)))
+        old = sl.get("dirt_lvl")
+        if old is None:
+            old = base  # a type write resets Level to its default
+        if not force and (lvl == old or (abs(lvl - old) < 2 and lvl not in (0, base))):
+            return
+        if force and lvl == base:
+            sl["dirt_lvl"] = base
+            return
+        sl["dirt_lvl"] = lvl
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x16], [lvl & 0x7F]))
 
     def _anima_port_8850(self, port: int) -> bool:
         """True for any Sound Canvas-class port (55/88/Pro/8850)."""
@@ -3704,6 +3755,9 @@ class Duality:
         return slot
 
     def _anima_on_pc(self, msg: mido.Message) -> None:
+        # New tone: whatever volume the file has set now is its full level.
+        _c = msg.channel & 0x0F
+        self._dirt_ref[_c] = self._dirt_cc7[_c] * self._dirt_cc11[_c]
         if msg.type != "program_change":
             return
         ch = msg.channel & 0x0F
@@ -5877,6 +5931,8 @@ class Duality:
                 "heard_t": float(old.get("heard_t") or 0) if old.get("fam") == fam else 0.0,
                 "grace": float(getattr(self, "_anima_efx_grace", ANIMA_EFX_DUMP_SEC)),
             }
+            if not already:
+                self._anima_dirt_level(port, force=True)
             for c in range(16):
                 want = c in chs
                 if want == self._anima_efx_on[port][c]:
@@ -5955,6 +6011,9 @@ class Duality:
             "heard_t": float(old.get("heard_t") or 0) if old.get("fam") == fam else 0.0,
             "grace": float(getattr(self, "_anima_efx_grace", ANIMA_EFX_DUMP_SEC)),
         }
+        if old.get("typ") != typ:
+            # Type write reset Level to default: re-apply a fade in progress.
+            self._anima_dirt_level(port, force=True)
 
     def _anima_efx_flush_pending(self, ch: int) -> None:
         """Legacy deferred-type flush. The 0.19 planner never sets ``pending``
@@ -6009,6 +6068,8 @@ class Duality:
             self._anima_efx_label = label
             self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
             self._anima_efx_shape(port, (msb, lsb), slot.get("chs") or [ch], slot.get("fam"))
+            slot["dirt_lvl"] = None
+            self._anima_dirt_level(port, force=True)
             self._anima_efx_apply_pan(port, (msb, lsb), slot.get("chs") or [ch])
             self._anima_organ_vol_lift(port, slot.get("chs") or [ch], label)
             self._anima_bass_harm_drive(port, (msb, lsb), slot.get("chs") or [ch])

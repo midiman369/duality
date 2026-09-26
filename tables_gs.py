@@ -652,6 +652,20 @@ ANIMA_EFX_PITCH_FAM_MODES = {
 }
 ANIMA_EFX_PITCH_DEFAULT_MODES = ("doubler", "oct_up")
 
+# Dirt inserts sit after the part's volume, so a CC7/CC11 fade only drives
+# the distortion softer and it stays loud. Their overall Level (40 03 16,
+# param 20 on every type) follows the fade instead. Value = the type default.
+ANIMA_EFX_DIRT_LEVEL = {
+    (0x01, 0x10): 96,   # Overdrive
+    (0x01, 0x11): 84,   # Distortion
+    (0x02, 0x00): 80, (0x02, 0x01): 80, (0x02, 0x02): 80,   # OD→
+    (0x02, 0x03): 72, (0x02, 0x04): 72, (0x02, 0x05): 72,   # DS→
+    (0x03, 0x00): 96,   # Rotary Multi (OD on)
+    (0x04, 0x00): 110, (0x04, 0x01): 80, (0x04, 0x02): 88,  # GTR Multi 1-3
+    (0x04, 0x05): 76,   # Bass Multi (OD on)
+    (0x11, 0x03): 127, (0x11, 0x04): 127, (0x11, 0x05): 127, (0x11, 0x06): 127,  # OD1/OD2, OD/…
+}
+
 # Gate Reverb: Type at 0x03, 02 = Sweep1, 03 = Sweep2 (they pop more).
 ANIMA_EFX_GATE_TYPE = {(0x01, 0x56): (0x03, (0x02, 0x03))}
 # Mono signature types: at most one live copy across all GS ports.
