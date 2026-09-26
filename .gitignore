@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Test songs stay local (copyright): tests/README.md
+tests/midi/*.mid
+tests/midi/*.MID
