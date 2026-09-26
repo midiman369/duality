@@ -4,6 +4,8 @@ Checks, with the song replayed through Anima at seed 6BA1:
   - every harmony ghost is at most ANIMA_HARM_VEL (or ACC/LOW) of the file's velocity
   - an accompaniment hero is played at ANIMA_HARM_ACC_HERO, its ghost below it
   - no upper ghost of a lower part is left at or over a line that starts above it
+  - harmony is tonal: never a second, tritone or seventh against its hero, and
+    never a semitone (or major 7th / minor 9th) against a held note nearby
   - harmony count stays near its measured level (wall of sound kept)
   - 97 only: the ch3 string solo (26.6-53.2 s) is found as a featured line and
     lifted; ch4 in its register is not played louder than the file.
@@ -18,7 +20,8 @@ import common
 import mido
 
 SONG = os.environ.get("SONG", "07")
-FLOOR = {"03": 140, "07": 215, "97": 1050}[SONG]
+# Floors are ~90% of the 0.19.020 count: passing tones and rubbing notes get no harmony.
+FLOOR = {"03": 90, "07": 160, "97": 850}[SONG]
 PATH = common.midi(f"death-gate-{SONG}.mid")
 
 CLOCK = [1000.0]
@@ -103,7 +106,14 @@ while tt <= end:
             cap = {"acc": D.ANIMA_HARM_ACC_VEL}.get(mode, D.ANIMA_HARM_VEL)
             # Humanize may lift a repeated note before harmony scales it.
             lift = max(D.ANIMA_HUMANIZE_UP, D.ANIMA_HUMANIZE_HOT_UP)
+            held = [n for (c, n) in d.active if not d._anima_is_rhythm(c) and (c, n) != (m.channel, m.note)]
             for g in ghosts:
+                iv = abs(g.note - m.note)
+                if iv in (1, 2, 6, 10, 11):
+                    fails.append(f"t={tt:.2f} ch{m.channel+1} n{m.note} ghost n{g.note}: interval {iv}")
+                rub = [n for n in held if abs(g.note - n) in (1, 11, 13)]
+                if rub:
+                    fails.append(f"t={tt:.2f} ch{m.channel+1} ghost n{g.note} rubs held {rub}")
                 if g.velocity > (m.velocity + lift) * cap + 1:
                     fails.append(f"t={tt:.2f} ch{m.channel+1} n{m.note} {mode} ghost n{g.note} "
                                  f"v{g.velocity} > {cap:.2f} x v{m.velocity}")

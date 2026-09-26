@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.019"
+VERSION = "0.19.020"
 
 
 """
@@ -51,14 +51,20 @@ Anima (opt-in)
   • Foley: shared ch16 8850 SFX (PC 121/122 variations)
   • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
     dist-guitar unison on a spare GS unit (inherits EFX)
-  • Harmony balance: melody gets its ghost above at 50%; accompaniment (a
-    part sounds above it, or a held chord under a moving line) plays at 85%
-    with its ghost below at 45%; a thin source gets both sides. An upper
-    ghost yields when a line starts over it; unisons are not doubled.
+  • Harmony balance: melody plays at 90% with its ghost above at 50%;
+    accompaniment (a part sounds above it, or a held chord under a moving
+    line) plays at 85% with its ghost below at 45%; a thin source gets both
+    sides. An upper ghost yields when a line starts over it; unisons are not
+    doubled. Tonal: thirds/sixths first, never a 2nd/tritone/7th against the
+    hero, no semitone rub with what sounds, no harmony on passing tones; the
+    chord includes notes struck in the last 0.8 s (picked arpeggios).
+  • Acoustic guitar plays at 112% while a sustained part at least as loud
+    sounds within an octave (its notes decay, theirs hold).
   • Featured lines: a fast single-note stepwise run, or a slow sustained
     single-note tune, is found live (one at a time) and spotlit: lifted toward
     the loudest part over it (≤×1.4); competing notes in its register play at
-    85% (75% within a tone of it); harmony keeps out of its way.
+    85% (75% within a tone of it); harmony keeps out of its way. Loudness is
+    velocity × CC7 × CC11, so a quiet-channel horn does not count as louder.
   • Seeded 8850 / CM-64 tone colors on capital 0/0 only — file bank wins
   • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
   • Single output allowed
@@ -530,16 +536,19 @@ ANIMA_UNROLL_COLLECT = 0.016
 ANIMA_UNROLL_STEP = 0.014
 ANIMA_UNROLL_JITTER = 0.004
 ANIMA_ACOUSTIC_PCS = frozenset({24, 25})  # nylon / steel — slightly more harp-like
+ANIMA_PLUCK_LIFT = 1.12      # acoustic guitar under sustained parts (its notes decay, theirs hold)
+ANIMA_SUSTAIN_CATS = frozenset({"wind", "brass", "strings", "ensemble", "pad", "organ", "lead"})
 # Harmony: chord-tones from held notes; octave if we cannot see a chord.
 ANIMA_HARM_CATS = frozenset({"brass", "wind", "strings", "ensemble", "pad"})
 ANIMA_HARM_VEL = 0.50       # ghost vs the file's velocity: melody line
 ANIMA_HARM_HERO = 0.90      # the harmonised note itself: melody line, thin source
-ANIMA_HARM_HERO_BUSY = 1.00 # melody over other parts keeps its velocity (must cut through)
 ANIMA_HARM_ACC_VEL = 0.45   # accompaniment (another part sounds above it)
 ANIMA_HARM_ACC_HERO = 0.85
 ANIMA_HARM_LOW_VEL = 0.45   # lower voice when a thin source gets both sides
 ANIMA_HARM_RECENT = 0.60    # a part that struck within this still counts as sounding
 ANIMA_HARM_FLOOR = 48       # no lower harmony ghost below C3 (mud)
+ANIMA_HARM_CTX = 0.8        # notes struck this recently still colour the chord (picked arpeggios)
+ANIMA_HARM_ACC_UP_MIN = 52  # accompaniment below this gets no ghost above (bass lines stay low)
 ANIMA_HARM_THIN = 1         # other voices at most this many: thin source, harmony on both sides
 ANIMA_HARM_CHORD_SEC = 1.0  # a channel that held a chord this recently is chordal
 ANIMA_HARM_QUIET_CATS = frozenset({"sfx", "percussive", "fx", "bass"})  # not "another part"
@@ -558,6 +567,7 @@ ANIMA_LINE_LIFT_MAX = 1.40   # never more than this times the file's velocity
 ANIMA_LINE_DUCK = 0.85       # other parts starting in the line's register
 ANIMA_LINE_DUCK_NEAR = 0.75  # ... within a tone of the line's current note (unison masking)
 ANIMA_LINE_COMPETE = 0.90    # only duck a note at least this loud vs the line's last note
+ANIMA_LINE_COMPETE_NEAR = 0.60  # ... or this loud when within a tone of it (unison masks)
 ANIMA_LINE_RANK = 1.5        # a line this many times busier outranks another
 ANIMA_LINE_MARGIN = 8        # lift aims this far over the loudest part over it
 # Slow featured line: a sustained single-note tune (97 at 2:50: ch4 Metal Pad
@@ -903,7 +913,8 @@ class Duality:
         self._anima_harm_chord_t = {}    # ch -> last time it held two or more notes
         self._anima_line_hist = {}       # ch -> [(t, note, mono, legato, mono_loose)] recent onsets
         self._anima_line_off = {}        # ch -> time of its last note-off
-        self._anima_line_vel = {}        # ch -> the featured line's last sent velocity
+        self._anima_line_vel = {}        # ch -> the featured line's last sent level (vel x CC7 x CC11)
+        self._anima_harm_ctx = []        # [(t, ch, note)] recent pitched onsets (chord context)
         self._anima_line = {}            # ch -> (lo, hi, last_t, rate, hold) while it is a featured line
         self._anima_bass_sub_choice = None  # (cc0, cc32, pc, name) for this seed
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
@@ -6463,11 +6474,16 @@ class Duality:
 
         extra = (ch, note) not yet in self.active. Passing tones younger
         than ANIMA_HARM_HOLD are ignored so we do not chase melody debris.
+        Notes other parts struck within ANIMA_HARM_CTX count too: a picked
+        guitar releases each note at once, yet its chord is still there.
         """
         now = time.monotonic()
         pcs = set()
         if extra is not None:
             pcs.add(int(extra[1]) & 0x7F)
+            for t0, c, n in list(getattr(self, "_anima_harm_ctx", None) or []):
+                if c != (int(extra[0]) & 0x0F) and now - t0 <= ANIMA_HARM_CTX:
+                    pcs.add(int(n) & 0x7F)
         for (c, n), info in list(self.active.items()):
             if self._anima_is_rhythm(c):
                 continue
@@ -6502,29 +6518,55 @@ class Duality:
         tones = frozenset((root + i) % 12 for i in siv)
         return root, name, tones
 
-    def _anima_harm_interval(self, note: int, chord) -> int | None:
-        """Chord-tone interval above `note`, or +12 when we have no chord."""
+    def _anima_harm_sounding(self, ch: int):
+        """Real pitches sounding now, plus notes other parts struck within ANIMA_HARM_CTX."""
+        now = time.monotonic()
+        notes = {int(n) for (c, n) in self.active if not self._anima_is_rhythm(c)}
+        for t0, c, n in list(getattr(self, "_anima_harm_ctx", None) or []):
+            if c != ch and now - t0 <= ANIMA_HARM_CTX:
+                notes.add(int(n))
+        return notes
+
+    @staticmethod
+    def _anima_harm_rubs(cand: int, notes, chord) -> bool:
+        """True if cand rubs against a nearby sounding pitch: a semitone (or major 7th /
+        minor 9th) within an octave, or a tritone the chord does not own."""
+        tri_ok = chord is not None and chord[1] in ("dim", "dim7", "m7b5", "7")
+        for n in notes:
+            d = abs(cand - n)
+            if d in (1, 11, 13):
+                return True
+            if d == 6 and not tri_ok:
+                return True
+        return False
+
+    def _anima_harm_interval(self, note: int, chord, ok=None) -> int | None:
+        """Chord-tone interval above `note`, or +12 when we have no chord.
+
+        ok(cand) -> bool rejects candidates that would rub (see _anima_harm_rubs).
+        """
         note = int(note) & 0x7F
+        ok = ok or (lambda _c: True)
         if chord is None:
-            return 12 if note + 12 <= 127 else None
+            return 12 if note + 12 <= 127 and ok(note + 12) else None
         _root, name, tones = chord
         if name == "pow":
             for iv in (12, 7):
-                if note + iv <= 127:
+                if note + iv <= 127 and ok(note + iv):
                     return iv
             return None
-        if name in ("maj", "maj7", "7", "aug"):
-            prefer = (4, 11, 10, 7, 12)
-        elif name in ("min", "m7", "mMaj7", "dim", "dim7", "m7b5"):
-            prefer = (3, 10, 6, 7, 12)
-        elif name.startswith("sus"):
-            prefer = (5, 7, 12)
+        # Thirds and sixths first, then a fourth / fifth, then the octave. Never a
+        # second, tritone or seventh against the hero: moving in parallel with a
+        # tune those read as atonal even when they are chord tones.
+        if name.startswith("sus"):
+            ordered = (5, 7, 12)
         else:
-            prefer = (7, 12)
-        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
-        # Rotate preference slightly so a locked seed is repeatable but not identical.
-        rot = seed % max(1, len(prefer) - 1)
-        ordered = prefer[rot:] + prefer[:rot]
+            sweet = (4, 3, 9, 8) if name in ("maj", "maj7", "7", "aug") else (3, 4, 8, 9)
+            seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+            # Seed picks third-first or sixth-first, so a locked seed is repeatable.
+            if (seed >> 3) & 1:
+                sweet = sweet[2:] + sweet[:2]
+            ordered = sweet + (5, 7, 12)
         for iv in ordered:
             cand = note + iv
             if cand > 127 or cand == note:
@@ -6533,10 +6575,12 @@ class Duality:
                 continue
             if (note % 12) == (cand % 12) and iv != 12:
                 continue
+            if not ok(cand):
+                continue
             return iv
-        return 12 if note + 12 <= 127 else None
+        return 12 if note + 12 <= 127 and ok(note + 12) else None
 
-    def _anima_harm_interval_below(self, note: int, chord, avoid=()) -> int | None:
+    def _anima_harm_interval_below(self, note: int, chord, avoid=(), ok=None) -> int | None:
         """Chord-tone interval below `note` (third, then sixth), or None.
 
         Octave below only when we cannot see a chord. Never under ANIMA_HARM_FLOOR.
@@ -6562,6 +6606,8 @@ class Duality:
             if tones is not None and iv != 12 and (cand % 12) not in tones:
                 continue
             if cand in avoid:
+                continue
+            if ok is not None and not ok(cand):
                 continue
             return iv
         return None
@@ -6597,8 +6643,7 @@ class Duality:
         """Harmony for a note about to be sent: None or a plan dict.
 
         Decided before the hero goes out so its own velocity can make room.
-          mel  - top of the texture: ghost above x0.50 (below if no room);
-                 hero x1.0 over other parts, x0.90 when alone
+          mel  - top of the texture: hero x0.90, ghost above x0.50 (below if no room)
           acc  - another part sounds above, or this is the top of a held chord
                  while another part moves: hero x0.85, ghost below x0.45
           both - thin source (at most ANIMA_HARM_THIN other voices): above x0.50,
@@ -6625,6 +6670,13 @@ class Duality:
             if owner in (self._anima_ghosts or {}) or owner in self.active:
                 return None
         chord = self._anima_chord_guess(extra=(ch, note))
+        if chord is not None and (note % 12) not in chord[2]:
+            return None   # a passing tone: harmonising it doubles the rub
+        near = self._anima_harm_sounding(ch)
+        near.discard(note)
+        if chord is None and any(abs(note - n) in (1, 11, 13) for n in near):
+            return None   # no chord seen and the note already rubs: leave it alone
+        rubs = lambda cand: not self._anima_harm_rubs(cand, near, chord)
         above, voices = self._anima_harm_others(ch, note)
         featured = ch in (getattr(self, "_anima_line", None) or {})
         line = None if featured else self._anima_line_over(ch, note)
@@ -6632,10 +6684,10 @@ class Duality:
         # A unison part (or its ghost), or this part's own chord, already sounds it: no double.
         snd = getattr(self, "_anima_ghost_sound", None) or {}
         sounding = {int(n) for (_c, n) in self.active} | {int(n) for (_c, n) in snd}
-        up = self._anima_harm_interval(note, chord)
+        up = self._anima_harm_interval(note, chord, ok=rubs)
         if up and (note + up > ANIMA_HARM_TOP or note + up in sounding):
             up = None   # ONESTOP end: n92→104 string ghosts stacked shrill
-        down = self._anima_harm_interval_below(note, chord, avoid=sounding)
+        down = self._anima_harm_interval_below(note, chord, avoid=sounding, ok=rubs)
         # The top of a held chord accompanies any line that is moving.
         now = time.monotonic()
         chordal = now - float(self._anima_harm_chord_t.get(ch, -99.0)) <= ANIMA_HARM_CHORD_SEC
@@ -6652,7 +6704,7 @@ class Duality:
             mode, hero = "acc", ANIMA_HARM_ACC_HERO
             if down:
                 ivs = [(-down, ANIMA_HARM_ACC_VEL)]
-            elif up and not self._anima_harm_crosses(ch, note, note + up):
+            elif up and note >= ANIMA_HARM_ACC_UP_MIN and not self._anima_harm_crosses(ch, note, note + up):
                 ivs = [(up, ANIMA_HARM_ACC_VEL)]
             else:
                 ivs = []
@@ -6660,15 +6712,15 @@ class Duality:
             mode, hero = "both", ANIMA_HARM_HERO
             ivs = [(up, ANIMA_HARM_VEL), (-down, ANIMA_HARM_LOW_VEL)]
         else:
-            mode, hero = "mel", (ANIMA_HARM_HERO_BUSY if busy else ANIMA_HARM_HERO)
+            mode, hero = "mel", ANIMA_HARM_HERO
             if up:
                 ivs = [(up, ANIMA_HARM_VEL)]
             elif down:
                 ivs = [(-down, ANIMA_HARM_VEL)]
             else:
                 ivs = []
-        if featured:
-            hero = 1.0
+        if featured and self._anima_line_lift(ch, note, 100) > 100:
+            hero = 1.0   # a buried line is lifted, not lowered
         if not ivs:
             return None
         return {"mode": mode, "hero": hero, "ivs": ivs, "chord": chord}
@@ -6692,9 +6744,13 @@ class Duality:
         ch, note = ch & 0x0F, int(note) & 0x7F
         if self._anima_is_rhythm(ch):
             return
+        now = time.monotonic()
+        if self._anima_category(ch) not in ("sfx", "percussive", "fx"):
+            ctx = [x for x in self._anima_harm_ctx if now - x[0] <= ANIMA_HARM_CTX]
+            ctx.append((now, ch, note))
+            self._anima_harm_ctx = ctx[-48:]
         if self._anima_category(ch) in ANIMA_HARM_QUIET_CATS or self._anima_ghost_fam(ch) == "bass":
             return
-        now = time.monotonic()
         if any(c == ch and n != note for (c, n) in self.active):
             self._anima_harm_chord_t[ch] = now
         rec = self._anima_harm_recent
@@ -6806,21 +6862,47 @@ class Duality:
                 continue
             if c != ch and lo - 5 <= note <= hi + 12:
                 hist = self._anima_line_hist.get(c) or [(t, lo)]
-                return lo, hi, hist[-1][1], int(self._anima_line_vel.get(c, 0))
+                return lo, hi, hist[-1][1], float(self._anima_line_vel.get(c, 0))
         return None
 
+    def _anima_gain(self, ch: int) -> float:
+        """The file's channel level: CC7 x CC11 (0..1)."""
+        ch &= 0x0F
+        return (self._dirt_cc7[ch] / 127.0) * (self._dirt_cc11[ch] / 127.0)
+
+    def _anima_pluck_lift(self, ch: int, note: int, vel: int) -> int:
+        """Acoustic guitar note: a little louder while a sustained part at least as
+        loud sounds within an octave (03: steel guitar under flute, horns, strings)."""
+        if self._anima_category(ch) != "guitar" or self._anima_cat_pc(ch) not in ANIMA_ACOUSTIC_PCS:
+            return vel
+        mine = vel * self._anima_gain(ch)
+        for (c, n), info in list(self.active.items()):
+            if c == ch or self._anima_is_rhythm(c) or abs(int(n) - note) > 12:
+                continue
+            if self._anima_category(c) not in ANIMA_SUSTAIN_CATS:
+                continue
+            if int(info.get("velocity") or 0) * self._anima_gain(c) >= mine:
+                return min(127, int(round(vel * ANIMA_PLUCK_LIFT)))
+        return vel
+
     def _anima_line_lift(self, ch: int, note: int, vel: int) -> int:
-        """Velocity for a featured line's note: part of the way up to the loudest part over it."""
-        loud = 0
+        """Velocity for a featured line's note: part of the way up to the loudest part over it.
+
+        Loudness is velocity x CC7 x CC11, so a horn at velocity 109 but CC7 50
+        does not count as louder than a line at 90 on CC7 127.
+        """
+        g = max(0.05, self._anima_gain(ch))
+        loud = 0.0
         for (c, n), info in list(self.active.items()):
             if c == ch or self._anima_is_rhythm(c) or int(n) < note - 5:
                 continue
             if self._anima_category(c) in ANIMA_HARM_QUIET_CATS:
                 continue
-            loud = max(loud, int(info.get("velocity") or 0))
-        if loud + ANIMA_LINE_MARGIN <= vel:
+            loud = max(loud, int(info.get("velocity") or 0) * self._anima_gain(c))
+        target = loud / g   # the loudest part, in this channel's velocity
+        if target + ANIMA_LINE_MARGIN <= vel:
             return vel
-        want = vel + (loud + ANIMA_LINE_MARGIN - vel) * ANIMA_LINE_LIFT
+        want = vel + (target + ANIMA_LINE_MARGIN - vel) * ANIMA_LINE_LIFT
         return max(vel, min(127, int(round(min(want, vel * ANIMA_LINE_LIFT_MAX)))))
 
     def _anima_harm_is_melody(self, ch: int, note: int) -> bool:
@@ -8601,18 +8683,20 @@ class Duality:
                         self._anima_harm_next = ((hch, note_msg.note), hplan)
                         hplan["vel"] = note_msg.velocity
                         scale = hplan["hero"]
-                    newv = note_msg.velocity
+                    newv = self._anima_pluck_lift(hch, note_msg.note, note_msg.velocity)
                     if hch in self._anima_line:
                         newv = self._anima_line_lift(hch, note_msg.note, note_msg.velocity)
-                        self._anima_line_vel[hch] = newv
+                        self._anima_line_vel[hch] = newv * self._anima_gain(hch)
                     elif (
                         not self._anima_is_rhythm(hch)
                         and self._anima_category(hch) not in ANIMA_HARM_QUIET_CATS
                     ):
                         over = self._anima_line_over(hch, note_msg.note)
-                        if over and note_msg.velocity >= over[3] * ANIMA_LINE_COMPETE:
+                        if over:
                             near = abs(note_msg.note - over[2]) <= 2
-                            scale = min(scale, ANIMA_LINE_DUCK_NEAR if near else ANIMA_LINE_DUCK)
+                            lvl = note_msg.velocity * self._anima_gain(hch)
+                            if lvl >= over[3] * (ANIMA_LINE_COMPETE_NEAR if near else ANIMA_LINE_COMPETE):
+                                scale = min(scale, ANIMA_LINE_DUCK_NEAR if near else ANIMA_LINE_DUCK)
                     newv = max(1, min(127, int(newv * scale)))
                     if newv != note_msg.velocity and note_msg.velocity > 0:
                         note_msg = note_msg.copy(velocity=newv)
@@ -9212,6 +9296,7 @@ class Duality:
         self._anima_line_hist = {}
         self._anima_line_off = {}
         self._anima_line_vel = {}
+        self._anima_harm_ctx = []
         self._anima_line = {}
         self._anima_bass_sub_choice = None
         self.active.clear()

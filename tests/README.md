@@ -58,7 +58,7 @@ song as the player sent it), so they are the song too and stay local.
 | `replay_bass.py` | Bass sub-octave never replaces the file's bass tone |
 | `replay_bulk_dump.py` | A bulk-dump file keeps its own insert (P1 never retyped, ch7 on it) |
 | `replay_file_efx_echo.py` | File Part EFX On is not swallowed as Anima's own echo; `GAME=0/1`, `PRE=0/12` (another song first) |
-| `replay_harmony.py` | Harmony balance (`SONG=03/07/97`): ghost and hero velocity scales, no upper ghost left over a line that starts above it, harmony count kept; 97 also checks the ch3 string solo (fast line) and the ch4 Metal Pad tune at 2:50 (slow line) are spotlit |
+| `replay_harmony.py` | Harmony balance (`SONG=03/07/97`): ghost and hero velocity scales, tonal intervals (no 2nd/tritone/7th against the hero, no semitone rub with a held note), no upper ghost left over a line that starts above it, harmony count kept; 97 also checks the ch3 string solo (fast line) and the ch4 Metal Pad tune at 2:50 (slow line) are spotlit |
 | `tempo_test.py` | Beat tracker: exact on MIDI clock, musical relative on note onsets |
 
 Timing check: a note within 100 ms of its unit's insert type change or its
