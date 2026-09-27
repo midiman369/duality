@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.030"
+VERSION = "0.19.031"
 
 
 """
@@ -772,7 +772,8 @@ ANIMA_WAH_BASE_GAP = 0.30    # at most one Manual write per unit this often
 # Lead or rhythm? Two or more notes at once, or a low register, is rhythm; single
 # high notes are lead. The role glides (seconds) so it does not flicker.
 ANIMA_WAH_LEAD_NOTES = (55, 67)     # single notes from G3 (rhythm) .. G4 (lead)
-ANIMA_WAH_ROLE_SEC = 1.5
+ANIMA_WAH_ROLE_SEC = 1.5           # glide back to rhythm (a stab inside a solo does not flip it)
+ANIMA_WAH_ROLE_LEAD_SEC = 0.25     # glide to lead: a solo opens up within a few notes
 ANIMA_WAH_RHYTHM_AMOUNT = 0.60      # a rhythm part's pedal moves this much of the lead's
 ANIMA_WAH_PEAK_GAP = 1.0            # at most one Peak write per unit this often
 ANIMA_ROTARY_HOLD_SEC = 0.60
@@ -5544,7 +5545,8 @@ class Duality:
             else:
                 ev = min(1.0, max(0.0, (top_now - lo_n) / max(1, hi_n - lo_n)))
             role = float(st.get("role", ev if "role" not in st else st["role"]))
-            role += (ev - role) * min(1.0, dt / ANIMA_WAH_ROLE_SEC)
+            tau = ANIMA_WAH_ROLE_LEAD_SEC if ev > role else ANIMA_WAH_ROLE_SEC
+            role += (ev - role) * min(1.0, dt / tau)
             st["role"] = role
         role = float(st.get("role", 1.0))
         amount = ANIMA_WAH_RHYTHM_AMOUNT + (1.0 - ANIMA_WAH_RHYTHM_AMOUNT) * role
@@ -5586,7 +5588,10 @@ class Duality:
         peak = ANIMA_EFX_WAH_PEAK.get(typ)
         if peak is not None:
             want_pk = peak[1] if role >= 0.5 else ANIMA_WAH_PEAK_RHYTHM
-            if st.get("peak", peak[1]) != want_pk and now - float(st.get("peak_t") or 0.0) >= ANIMA_WAH_PEAK_GAP:
+            # Opening up for a lead is never held back by the write gap; only
+            # dropping back to rhythm is rate-limited.
+            gap = 0.0 if want_pk == peak[1] else ANIMA_WAH_PEAK_GAP
+            if st.get("peak", peak[1]) != want_pk and now - float(st.get("peak_t") or 0.0) >= gap:
                 st["peak"], st["peak_t"] = want_pk, now
                 self._anima_efx_ours = True
                 self._safe_out_send(port, self._gs_dt1([0x40, 0x03, peak[0]], [want_pk]))
