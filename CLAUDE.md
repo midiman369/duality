@@ -38,6 +38,9 @@
 7. Insert type and Part EFX toggles change together.
 8. No replan per note of a pinned channel.
 
+Hero split (0.19.039): a featured line on a shared unit may take a spare unit with another type of its
+family (`_anima_hero_split_tick`): only when every family is placed and no part makes harmony (seats come
+first); type onto the empty unit, the hero moves in a breath; the hero unit yields to any family.
 "Quiet" means the unit's EFX players only (Part EFX On there, their ghosts, queued strums), not dry parts.
 Family priority lives in `tables_gs.ANIMA_EFX_PRIORITY` (a distorted guitar takes a unit from a pad).
 The file's own insert always wins its home unit.
