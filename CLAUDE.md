@@ -16,8 +16,9 @@
   (`tones/p001`..`p120`: per tone on, weight, EFX level -2..+2, note); copy them into
   `tables_8850.ANIMA_TONE_PREFS`. Weights and on/off are honoured; EFX level and notes are not wired yet
   (read the notes and propose how to act on them).
-- Tone candidates (0.19.035): every 8850-map variation; older-map tones (55 / 88 / 88Pro) only when they use a
-  waveform the 8850 map lacks; CM-64 tones unless their tone data duplicates another. The lists in
+- Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
+  tone data (voices, waveforms, parameters) is an exact copy of an 8850 tone or of one already offered
+  (by waveform alone was too strict: the 88Pro Piano 1 reuses samples yet is a different piano). The lists in
   `tables_8850.py` are generated from the ROM dump by `tools/gen_unique_tones.py <sc-8850.json>`
   (shingo45endo/tone-browser); rerun it rather than editing them.
 - Anima GS EFX addresses and parameters come from the SC-8850 manual's Insertion Effect List
