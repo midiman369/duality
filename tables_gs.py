@@ -533,6 +533,16 @@ ANIMA_WAH_MAN_SCREAM = 48   # a hard-played high note held: the whole wah drives
 ANIMA_EFX_WAH_PEAK = {
     (0x04, 0x02): (0x05, 127),  # GTR Multi 3: Wah Peak (default 10) - lead guitar
 }
+# A file's own wah (set and left, Control Source Off): Anima may play it with
+# the file's Manual as the pedal's rest. Defaults (Effect List) when the file
+# never wrote Manual; the wah switch per type (must be On in the file).
+ANIMA_EFX_WAH_MAN_DEFAULT = {
+    (0x04, 0x02): 60, (0x04, 0x04): 55, (0x01, 0x21): 68, (0x11, 0x06): 68, (0x11, 0x08): 68,
+}
+ANIMA_EFX_WAH_SWITCH = {
+    (0x04, 0x02): 0x06,   # GTR Multi 3: Wah Sw
+    (0x04, 0x04): 0x08,   # Clean Gt Multi 2: AW Sw
+}
 # The same wah on a rhythm part (power chords, low register, non-stop chugging):
 # a moderate Peak keeps a vowel without screaming over the whole song (Grabbag).
 ANIMA_WAH_PEAK_RHYTHM = 48

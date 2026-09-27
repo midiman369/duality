@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.031"
+VERSION = "0.19.032"
 
 
 """
@@ -342,6 +342,8 @@ from tables_gs import (
     ANIMA_EFX_WAH_MAN,
     ANIMA_EFX_WAH_PEAK,
     ANIMA_WAH_PEAK_RHYTHM,
+    ANIMA_EFX_WAH_MAN_DEFAULT,
+    ANIMA_EFX_WAH_SWITCH,
     ANIMA_WAH_MAN_BASE,
     ANIMA_WAH_MAN_SCREAM,
     ANIMA_EFX_CTRL2,
@@ -776,6 +778,14 @@ ANIMA_WAH_ROLE_SEC = 1.5           # glide back to rhythm (a stab inside a solo 
 ANIMA_WAH_ROLE_LEAD_SEC = 0.25     # glide to lead: a solo opens up within a few notes
 ANIMA_WAH_RHYTHM_AMOUNT = 0.60      # a rhythm part's pedal moves this much of the lead's
 ANIMA_WAH_PEAK_GAP = 1.0            # at most one Peak write per unit this often
+# The file's own wah: adopted only when the file set it and left it (writes
+# only in its setup burst, knob Control Source Off, wah switch On, no CC16 of
+# its own). The file's Manual is the pedal's rest; its Peak and everything
+# else stay. Any later file EFX write hands it back at once, for the song.
+ANIMA_FILE_EFX_SETUP_SEC = 4.0      # file EFX writes this soon after its first are setup
+ANIMA_FILE_WAH_REST = 30            # CC16 at rest = the file's Manual (Manual written 30 lower)
+ANIMA_FILE_WAH_MID = 55             # the pedal's usual playing position maps onto the file's Manual ...
+ANIMA_FILE_WAH_SWING = 0.70         # ... and swings around it this much (the file's tone stays the centre)
 ANIMA_ROTARY_HOLD_SEC = 0.60
 
 class Duality:
@@ -916,6 +926,11 @@ class Duality:
         self._anima_file_efx_home = None   # GS port that keeps the file insert
         self._anima_file_efx_type = None   # (msb, lsb) last file EFX type
         self._anima_file_efx_parts = set() # parts the FILE turned On
+        self._anima_file_efx_vals = {}     # 40 03 xx -> the file's last value
+        self._anima_file_efx_first_t = 0.0 # first file EFX write this song
+        self._anima_file_efx_live = False  # file writes EFX during the song: hands off
+        self._anima_file_cc16 = set()      # channels where the file sends CC16 itself
+        self._anima_file_wah = None        # adopted file wah state
         self._anima_file_dirt = [False] * 16
         self._anima_hetfield_roll = [False] * 16
         self._anima_file_off_sent = set()
@@ -3752,6 +3767,8 @@ class Duality:
 
     def _anima_on_cc(self, msg: mido.Message) -> None:
         """Track file-driven expression so we do not fight it."""
+        if msg.type == "control_change" and msg.control == ANIMA_EFX_CTRL_CC:
+            self._anima_file_cc16.add(msg.channel & 0x0F)   # the file uses CC16 itself
         if msg.type == "control_change" and msg.control == 11:
             self._anima_file_cc11_t[msg.channel & 0x0F] = time.monotonic()
         if msg.type == "control_change" and msg.control in (7, 11):
@@ -4331,6 +4348,11 @@ class Duality:
         self._anima_file_efx_home = None
         self._anima_file_efx_type = None
         self._anima_file_efx_parts = set()
+        self._anima_file_efx_vals = {}
+        self._anima_file_efx_first_t = 0.0
+        self._anima_file_efx_live = False
+        self._anima_file_cc16 = set()
+        self._anima_file_wah = None
         self._anima_efx_sent_sig = []   # a new file: nothing of ours is in flight
         self._anima_file_dirt = [False] * 16
         self._anima_hetfield_roll = [False] * 16
@@ -4532,6 +4554,9 @@ class Duality:
                     break
             if part is not None and 0 <= part <= 15:
                 self._anima_file_off_park(part, home, src="desc")
+        if len(data) >= 8 and data[0] == 0x41 and data[2] == 0x42 and data[3] == 0x12 \
+                and data[4] == 0x40 and data[5] == 0x03:
+            self._anima_file_efx_note(data[6], data[7:-1] if len(data) > 8 else data[7:])
         if len(data) >= 9 and data[0] == 0x41 and data[2] == 0x42 and data[3] == 0x12:
             aa, bb, cc = data[4], data[5], data[6]
             if aa == 0x40 and bb == 0x03 and cc == 0x00:
@@ -4598,7 +4623,8 @@ class Duality:
 
         A bulk dump packs parameters as nibbles at 48 xx xx instead of the
         usual 40 xx xx. Two packets matter to Anima:
-          48 1D 10  EQ + insertion block: byte 4-5 = EFX type (40 03 00)
+          48 1D 10  EQ + insertion block: byte 4+a = the value of 40 03 a
+                    (type at 4-5, params, sends, EFX Control Source/Depth)
           48 1E 10 … 48 25 10  per-part extension, two blocks of 32 bytes
                     per packet (block 0 = part 10, 1-9, A-F); byte 16 = Part
                     EFX assign (40 4x 22).
@@ -4621,6 +4647,11 @@ class Duality:
         out = []
         if (bb, cc) == (0x1D, 0x10) and len(dec) >= 6:
             out.append(dt1([0x40, 0x03, 0x00], [dec[4] & 0x7F, dec[5] & 0x7F]))
+            # The rest of the block follows 40 03 xx in order (params 03-16,
+            # sends 17-19, EFX Control 1B-1E, send EQ 1F): byte 4 + addr.
+            for addr in range(0x03, 0x20):
+                if 4 + addr < len(dec):
+                    out.append(dt1([0x40, 0x03, addr], [dec[4 + addr] & 0x7F]))
         elif cc == 0x10 and 0x1E <= bb <= 0x25:
             for half in (0, 1):
                 seg = dec[half * 32:(half + 1) * 32]
@@ -5482,6 +5513,7 @@ class Duality:
             states = self._anima_cc16_state = {}
         now = time.monotonic()
         seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        self._anima_file_wah_tick(dt, now)
         for port, sl in enumerate(self._anima_slots):
             typ = tuple((sl or {}).get("typ") or ())[:2]
             wah, rot = typ in ANIMA_EFX_WAH, typ in ANIMA_EFX_ROTARY
@@ -5514,6 +5546,7 @@ class Duality:
                 self._anima_cc16_send(port, owners, 127 if fast else 0, st)
 
     def _anima_wah_follow(self, port: int, typ: tuple, owners, st: dict, dt: float, now: float) -> None:
+        # (st["file"]: the file's own wah - rest at the file's Manual, its Peak kept, no screamer)
         """Wah pedal that follows the player (CC16 on top of the Manual base).
 
         Each pick quacks (by velocity); a held note sweeps from heel to toe and
@@ -5575,6 +5608,15 @@ class Duality:
         else:
             target = float(ANIMA_WAH_REST)
             scream = False
+        if st.get("file"):
+            # The file's Manual is the centre: silence and the usual playing
+            # position both land on it; the phrasing swings around it.
+            if notes:
+                target = st["rest"] + (target - ANIMA_FILE_WAH_MID) * ANIMA_FILE_WAH_SWING
+            else:
+                target = float(st["rest"])
+            target = max(0.0, min(127.0, target))
+            scream = False
         cur = float(st.get("cur", ANIMA_WAH_REST))
         tau = ANIMA_WAH_ATTACK_SEC if target > cur else ANIMA_WAH_RELEASE_SEC
         cur += (target - cur) * min(1.0, dt / max(0.005, tau))
@@ -5585,7 +5627,7 @@ class Duality:
             st["last_val"] = val
             self._anima_cc16_send(port, owners, val, st)
         # Peak follows the role (a screaming Peak belongs to a lead line).
-        peak = ANIMA_EFX_WAH_PEAK.get(typ)
+        peak = None if st.get("file") else ANIMA_EFX_WAH_PEAK.get(typ)
         if peak is not None:
             want_pk = peak[1] if role >= 0.5 else ANIMA_WAH_PEAK_RHYTHM
             # Opening up for a lead is never held back by the write gap; only
@@ -5597,7 +5639,7 @@ class Duality:
                 self._safe_out_send(port, self._gs_dt1([0x40, 0x03, peak[0]], [want_pk]))
                 self._anima_feedback("efx-param", f"P{port + 1} wah {'lead' if role >= 0.5 else 'rhythm'} Peak {want_pk}")
         # Screamer: the Manual base itself (SysEx), rate-limited.
-        man = ANIMA_EFX_WAH_MAN.get(typ)
+        man = None if st.get("file") else ANIMA_EFX_WAH_MAN.get(typ)
         want = ANIMA_WAH_MAN_SCREAM if scream else ANIMA_WAH_MAN_BASE
         if man is not None and want != st.get("base", ANIMA_WAH_MAN_BASE) \
                 and now - float(st.get("base_t") or 0.0) >= ANIMA_WAH_BASE_GAP:
@@ -5645,6 +5687,79 @@ class Duality:
     def _anima_chs_want_split(self, chs: list) -> bool:
         """OD1/OD2 (or separate boxes) when they clash in pitch *or* in the stereo field."""
         return self._anima_chs_conflict(chs) or self._anima_chs_spread(chs)
+
+    def _anima_file_efx_note(self, addr: int, val) -> None:
+        """Remember the file's insert values; a write after its setup burst means
+        the file plays its own EFX (hands off for the song)."""
+        now = time.monotonic()
+        if not self._anima_file_efx_first_t:
+            self._anima_file_efx_first_t = now
+        elif now - self._anima_file_efx_first_t > ANIMA_FILE_EFX_SETUP_SEC and not self._anima_file_efx_live:
+            self._anima_file_efx_live = True
+            self._anima_file_wah_release("the file writes its EFX during the song")
+        vals = self._anima_file_efx_vals
+        if addr == 0x00:
+            vals.clear()                      # a type write resets the parameters
+            if len(val) >= 2:
+                vals[0x00] = (int(val[0]) & 0x7F, int(val[1]) & 0x7F)
+        elif val:
+            vals[addr] = int(val[0]) & 0x7F
+
+    def _anima_file_wah_release(self, why: str) -> None:
+        """Give an adopted file wah back exactly as the file set it."""
+        st = self._anima_file_wah
+        self._anima_file_wah = None
+        if not st or not st.get("on"):
+            return
+        port = st["port"]
+        vals = self._anima_file_efx_vals
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, st["man"]], [st["file_man"]]))
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, st["src"]], [vals.get(st["src"], 0x00)]))
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, st["src"] + 1], [vals.get(st["src"] + 1, 0x40)]))
+        self._anima_feedback("efx", f"P{port + 1} file wah handed back ({why})", status=True)
+
+    def _anima_file_wah_tick(self, dt: float, now: float) -> None:
+        """Play the file's own wah when the file set it and left it (see ANIMA_FILE_*)."""
+        home = self._anima_file_home_port()
+        typ = tuple(self._anima_file_efx_type or ())[:2]
+        vals = self._anima_file_efx_vals
+        owners = sorted(c for c in self._anima_file_efx_parts if not self._anima_is_rhythm(c))
+        st = self._anima_file_wah
+        ok = (
+            home is not None and typ in ANIMA_EFX_WAH and owners and not self._anima_file_efx_live
+            and now - float(self._anima_file_efx_first_t or now) > 0.5
+            and not (set(owners) & self._anima_file_cc16)
+        )
+        if ok:
+            src = 0x1D if typ in ANIMA_EFX_CTRL2 else 0x1B
+            sw = ANIMA_EFX_WAH_SWITCH.get(typ)
+            if vals.get(src, 0x00) != 0x00:
+                ok = False                    # the file routes the knob itself
+            elif sw is not None and vals.get(sw) != 0x01:
+                ok = False                    # the file's wah is switched off (or unknown)
+        if not ok:
+            if st and st.get("on"):
+                self._anima_file_wah_release("no longer set-and-left")
+            return
+        if st is None or st.get("typ") != typ or st.get("port") != home:
+            man = ANIMA_EFX_WAH_MAN[typ]
+            file_man = int(vals.get(man, ANIMA_EFX_WAH_MAN_DEFAULT.get(typ, 64)))
+            rest = min(file_man, ANIMA_FILE_WAH_REST)
+            st = self._anima_file_wah = {
+                "on": True, "typ": typ, "port": home, "man": man, "src": src,
+                "file_man": file_man, "rest": rest, "sent": {}, "cur": float(rest), "file": True,
+            }
+            self._anima_efx_ours = True
+            self._safe_out_send(home, self._gs_dt1([0x40, 0x03, man], [file_man - rest]))
+            self._safe_out_send(home, self._gs_dt1([0x40, 0x03, src], [ANIMA_EFX_CTRL_CC]))
+            self._safe_out_send(home, self._gs_dt1([0x40, 0x03, src + 1], [0x7F]))
+            self._anima_cc16_send(home, owners, rest, st)
+            self._anima_feedback(
+                "efx", f"P{home + 1} file wah played (Manual {file_man} kept as the pedal's rest; "
+                       f"ch{','.join(str(c + 1) for c in owners)})", status=True,
+            )
+        self._anima_wah_follow(home, typ, owners, st, dt, now)
 
     def _anima_file_home_port(self) -> int | None:
         """Reserve P1 only while the file actually owns an insert."""
