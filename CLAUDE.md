@@ -1,6 +1,7 @@
 # Notes for Claude Code sessions
 
-- Develop on branch `dev`. The user downloads `duality.py` + `tables_gs.py` as a zip after each change.
+- Develop on branch `dev`. After each change, send the user a zip of only the runtime files that changed
+  in that version (e.g. `duality.py`, `tables_*.py`); leave out unchanged files, tests, tools and docs.
 - Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware).
 - Test songs are **not** in the repo (copyright). A fresh clone only runs the three self-contained
   tests; the rest print SKIP. `tests/README.md` → "Where the songs came from" lists each file's
