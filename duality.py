@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.032"
+VERSION = "0.19.033"
 
 
 """
@@ -5704,6 +5704,11 @@ class Duality:
                 vals[0x00] = (int(val[0]) & 0x7F, int(val[1]) & 0x7F)
         elif val:
             vals[addr] = int(val[0]) & 0x7F
+        st = self._anima_file_wah
+        if st and st.get("on") and not self._anima_file_efx_live:
+            if addr in (0x00, st["man"], st["src"], st["src"] + 1, ANIMA_EFX_WAH_SWITCH.get(st["typ"])):
+                # still inside its setup: give it back as now set; the tick re-reads and re-adopts
+                self._anima_file_wah_release("the file changed its wah setup")
 
     def _anima_file_wah_release(self, why: str) -> None:
         """Give an adopted file wah back exactly as the file set it."""
