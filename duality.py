@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.026"
+VERSION = "0.19.027"
 
 
 """
@@ -65,7 +65,7 @@ Anima (opt-in)
     spares are shared out by family. No spare: the hero's unit. With a seat,
     "both sides" allows up to 3 other voices and seat ghosts get +5% (not
     for a part that is already the loudest playing). A quiet seat gets a
-    gentle insert (tables_gs "seat": Space D, choruses, reverb); it ranks
+    gentle insert (tables_gs "seat": Space D at Balance D>50E, choruses, reverb); it ranks
     below every family, which takes the unit once its harmony is quiet.
   • Mallet sticking (glock, vibes, marimba, xylophone, bells, dulcimer, steel
     drums): chords struck by hands (2/4 mallets); where the part leaves room
@@ -325,6 +325,8 @@ from tables_gs import (
     GS_EFX_TYPES,
     ANIMA_EFX_GS,
     ANIMA_EFX_PRIORITY,
+    ANIMA_SEAT_BALANCE,
+    ANIMA_EFX_BALANCE_DEFAULT,
     ANIMA_SPLIT_MSB,
     ANIMA_SPLIT_LSB,
     ANIMA_SPLIT_LABEL,
@@ -5377,6 +5379,10 @@ class Duality:
             if sl is not None:
                 sl["pitch_mode"] = mode
             notes.append(f"pitch {mode}")
+        bal = ANIMA_SEAT_BALANCE.get(typ)
+        if bal and fam == "seat":
+            msgs.append(self._gs_dt1([0x40, 0x03, bal[0]], [bal[1]]))
+            notes.append(f"balance D>{bal[1]}E")
         gate = ANIMA_EFX_GATE_TYPE.get(typ)
         if gate:
             addr, vals = gate
@@ -6235,6 +6241,13 @@ class Duality:
             self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} → GS {label}", status=True)
         elif old.get("fam") != fam:
             self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} keeps GS {label}", status=True)
+            bal = ANIMA_SEAT_BALANCE.get(typ)
+            if bal and "seat" in (fam, old.get("fam")):
+                # No type write, so no parameter reset: move Balance between the
+                # seat's setting and the type's default ourselves.
+                val = bal[1] if fam == "seat" else ANIMA_EFX_BALANCE_DEFAULT
+                self._anima_efx_ours = True
+                self._safe_out_send(port, self._gs_dt1([0x40, 0x03, bal[0]], [val]))
         # Type and part toggles change together; only this box's owners are On.
         for c in range(16):
             want = c in chs and not self._anima_is_rhythm(c)

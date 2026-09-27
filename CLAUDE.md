@@ -34,8 +34,10 @@ The file's own insert always wins its home unit.
 - **Parameter randomisation**: seed-driven values inside a floor/ceiling per parameter.
 - **More live parameter control**: now that EFX Control 1/2 routing is right, drive more than drive
   level / rotary speed / wah manual.
-- **Subtler orchestral inserts**: lower wet/dry Balance (param 16, `40 03 12`) on strings / brass / pads,
-  and bring Stereo Delay back to strings with low feedback. Addresses are known (OM p.216-224).
+- **Subtler orchestral inserts**: lower wet/dry Balance on strings / brass / pads, and bring Stereo Delay
+  back to strings with low feedback. Confirmed from the Effect List (p.217): Balance is `40 03 12` on the
+  chorus types (#16-20) and Stereo Flanger, 00 = D>0E, 40 = D=E, 7F = D0<E (LCD "D>nE" = value n).
+  Check each other type's page before writing it. The seat unit's Space D already uses it (D>50E).
 - **Pitch shifter ↔ ghost harmony**: match the shifter's interval to the ghost harmony where the chord
   allows (today: key-safe doubler / octave / fifth only).
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
