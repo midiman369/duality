@@ -130,6 +130,17 @@ if cc16(home, after=12.2):
     fails.append("2: CC16 kept going after the hand-back")
 print(f"2 file writes later: handed back, Manual {back}, C.Src1 {src}")
 
+# 2b. the file rewrites Wah Man inside its setup (2 s): re-read, re-adopted around the new value
+d = run(song(extra=[(2.0, dt1([0x40, 0x03, 0x04], [90]))]), 6.0)
+home = d._anima_file_home_port()
+st = d._anima_file_wah
+ours = [v for t, v in writes(home, 0x04) if t >= 2.0]
+if not st or st.get("file_man") != 90:
+    fails.append(f"2b: not re-adopted around the file's new Manual ({st and st.get('file_man')})")
+if (90 - D.ANIMA_FILE_WAH_REST) not in ours:
+    fails.append(f"2b: Manual after the rewrite {ours}, want {90 - D.ANIMA_FILE_WAH_REST}")
+print(f"2b file rewrites in setup: re-adopted, Manual {ours}")
+
 # 3. Wah Sw Off: left alone;  4. file routes C.Src1: left alone
 for name, kw in (("3 wah switched off", {"wah_sw": 0}), ("4 file routes C.Src1", {"csrc": 0x01})):
     d = run(song(**kw), 8.0)
