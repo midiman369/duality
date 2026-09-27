@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.037"
+VERSION = "0.19.038"
 
 
 """
@@ -4778,8 +4778,8 @@ class Duality:
             return self._anima_efx_from_cat(_gm_category(p))
         if p <= 2:
             return "piano_acoustic"
-        if p == 3 or 8 <= p <= 14:
-            return "chromatic"
+        if p == 3 or 8 <= p <= 14 or p == 114:
+            return "chromatic"      # + Steel Drums (GM 115): mallets share the unit
         if 96 <= p <= 103:
             return "fx"
         if p == 4:
