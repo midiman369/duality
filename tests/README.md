@@ -51,6 +51,15 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
 
+## Generated test song (no copyright, rebuild anywhere)
+
+`python tests/make_funk_test.py` writes `tests/midi/anima_funk_test.mid`: an original E dorian funk
+groove (100 BPM, ~85 s) for hearing Anima's EFX control. Drawbar organ with long held chords (rotary
+flips) and short skanks (no flip), 16th-note muted guitar and off-beat clean guitar (wah candidates),
+Rhodes comping and an alto sax melody in the bridge, a breakdown with the muted guitar alone.
+Seeds that deal both a rotary organ and a wah guitar with the 0.19.028 palettes: `359A` (both
+guitars on wah types, OD/Rotary), `5419` (Auto Wah, Rotary Multi on Control 2), `286A`, `0772`.
+
 ## Tests
 
 | Script | Checks |
