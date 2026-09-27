@@ -474,6 +474,14 @@ ANIMA_EFX_GS = {
         (0x01, 0x55, "Reverb", 1),  # #26
     ],
 }
+# Seat-unit wet/dry per type: Balance (param #, EFX C.Src2-modulatable; Anima
+# leaves Control 2 depth at 0 so nothing moves it). OM p.217: 40 03 12,
+# 00 = D>0E ... 40 = D=E (default) ... 7F = D0<E. Display "D>nE" = value n.
+ANIMA_SEAT_BALANCE = {
+    (0x01, 0x43): (0x12, 0x32),   # Space D: D>50E (default D=E)
+}
+ANIMA_EFX_BALANCE_DEFAULT = 0x40  # D=E: what a family gets back on a type it keeps
+
 ANIMA_EFX_PRIORITY = (
     "guitar_dist", "guitar_mute", "guitar_clean", "guitar_acoustic",
     "organ_rotary", "harmonica", "organ_chorus", "plucked", "ep_rhodes", "ep_dx", "keys_pluck",
