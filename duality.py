@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.036"
+VERSION = "0.19.037"
 
 
 """
@@ -3924,21 +3924,33 @@ class Duality:
         return None
 
     @staticmethod
+    def _anima_weighted_pick(items: list, weights: list, mix: int):
+        """Seeded weighted pick. Weights are 2 x the picker's multiplier (2 normal, 4 x2,
+        1 x1/2, 6 x3, 2/3 x1/3 ...). Only the old 1 / 2 / 4 weights: the original
+        mix % total roll, so existing seeds keep their picks. Any other step: weights
+        scaled to integers and the 16-bit mix spread over the total."""
+        if all(w in (1, 2, 4) for w in weights):
+            ws = [int(w) for w in weights]
+            roll = mix % sum(ws)
+        else:
+            ws = [max(1, int(round(w * 60))) if w > 0 else 0 for w in weights]
+            if sum(ws) <= 0:
+                return items[mix % len(items)]
+            roll = ((mix & 0xFFFF) * sum(ws)) >> 16
+        for item, w in zip(items, ws):
+            if roll < w:
+                return item
+            roll -= w
+        return items[-1]
+
+    @staticmethod
     def _anima_tone_choose(pc: int, slots: list, mix: int):
         """Seeded pick from slots, weighted by the Tone Palettes picks (x2 / x1/2).
         With every weight normal this is slots[mix % len(slots)], as before."""
         ws = [anima_tone_weight(pc, s) for s in slots]
-        if all(w == 2 for w in ws):
+        if all(w == 2 for w in ws) or sum(ws) <= 0:
             return slots[mix % len(slots)]
-        total = sum(ws)
-        if total <= 0:
-            return slots[mix % len(slots)]
-        r = mix % total
-        for s, w in zip(slots, ws):
-            if r < w:
-                return s
-            r -= w
-        return slots[-1]
+        return Duality._anima_weighted_pick(slots, ws, mix)
 
     def _anima_tone_pick(self, ch: int, pc: int):
         """Return (cc00, cc32, pc) or None for capital-as-written."""
@@ -5140,7 +5152,7 @@ class Duality:
         """Keep a player's type when they relocate; new player in same fam gets another row."""
         # Rows are (msb, lsb, name, weight); callers get (msb, lsb, name).
         pal = [
-            (r[0], r[1], r[2], int(r[3]) if len(r) > 3 else 2)
+            (r[0], r[1], r[2], float(r[3]) if len(r) > 3 else 2)
             for r in (ANIMA_EFX_GS.get(fam) or [])
         ]
         if port is not None:
@@ -5224,15 +5236,8 @@ class Duality:
         if cached and (cached[0], cached[1]) not in exclusive_live:
             return cached
         mix = self._anima_mix(sum(ord(c) for c in fam) * 31, 0 if port is None else (port + 1) * 97)
-        # Weighted by the picker: favoured ×2, less often ×½.
-        total = sum(max(1, row[3]) for row in pal)
-        roll = mix % total
-        pick = pal[-1]
-        for row in pal:
-            roll -= max(1, row[3])
-            if roll < 0:
-                pick = row
-                break
+        # Weighted by the picker: favoured x2, x3 ..., less often x1/2, x1/3 ...
+        pick = self._anima_weighted_pick(pal, [row[3] for row in pal], mix)
         used = {
             (v[0], v[1])
             for k, v in self._anima_efx_pick.items()

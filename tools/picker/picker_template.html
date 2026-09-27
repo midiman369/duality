@@ -44,11 +44,13 @@ nav.fams{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);backgroun
 @media (max-width:820px){nav.fams{position:static;max-height:none;flex-direction:row;overflow-x:auto;gap:6px}}
 .navhead{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 8px 4px}
 @media (max-width:820px){.navhead{display:none}}
-.fambtn{all:unset;cursor:pointer;display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;white-space:nowrap}
+.fambtn{all:unset;cursor:pointer;display:grid;grid-template-columns:28px 1fr auto;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;white-space:nowrap}
 .fambtn:hover{background:var(--sunk)}
 .fambtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .fambtn[aria-current="true"]{background:var(--accent-soft);color:var(--accent-ink)}
-.rank{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right}
+.rank{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.prio{font-family:var(--mono);font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:1px}
+.fambtn[aria-current="true"] .prio{color:var(--accent-ink);border-color:var(--accent)}
 .fambtn .cnt{font-family:var(--mono);font-size:12px;color:var(--muted)}
 .fambtn .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--fav);margin-left:6px;vertical-align:middle}
 main{display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -85,6 +87,7 @@ button.act:disabled{opacity:.5;cursor:default}
 .odds-btns{grid-column:2 / 4;display:flex;flex-wrap:wrap;gap:6px}
 .odds-btns .star{grid-column:auto}
 .tag.rare{border-style:dashed;color:var(--muted)}
+.share{font-family:var(--mono);font-size:11px;color:var(--muted);align-self:center;font-variant-numeric:tabular-nums}
 .star:focus-visible{outline:2px solid var(--accent)}
 .foot{color:var(--muted);font-size:13px;max-width:80ch}
 .ro{border:1px dashed var(--warn);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:14px}
@@ -101,10 +104,10 @@ button.act:disabled{opacity:.5;cursor:default}
   </header>
   <div id="ro" class="ro" hidden></div>
   <div class="layout">
-    <nav class="fams" id="fams" aria-label="Families in priority order"></nav>
+    <nav class="fams" id="fams" aria-label="Families in GM order, then the seat unit"></nav>
     <main id="main"></main>
   </div>
-  <p class="foot">Priority order is the order boxes are handed out: a family higher on the list takes an insert box from a lower one. Duality picks one type per box from the ticked list using the song's seed; a favoured type counts twice and a less-often type counts half. Hex pairs are the MSB/LSB written to 40 03 00.</p>
+  <p class="foot">Families are listed in GM order, like the tone picker; the number on the left is the first GM program of each. <b>P</b> is its priority, the order insert boxes are handed out: a family with a lower P number takes a box from one with a higher number. Duality picks one type per box from the ticked list using the song's seed; each press of Favour adds a step (×2, ×3, ×4 …) and each press of Less often takes one away (×½, ×⅓ …), so the opposite button steps back toward normal; the percentage is that type's share of the family's picks, kept between 1% and 99%. Hex pairs are the MSB/LSB written to 40 03 00. <b>Seat unit</b> is not an instrument family: it is the insert a spare unit gets while it carries harmony, and any family takes that unit when it needs it.</p>
 </div>
 
 <script>
@@ -133,6 +136,7 @@ const FAMINFO = {
   piano_acoustic:{label:"Acoustic piano",pcs:"GM 1–3"},
   chromatic:{label:"Chromatic percussion",pcs:"GM 4, 9–15 · Honky-tonk, Celesta … Tubular Bells"},
   fx:{label:"Synth FX",pcs:"GM 97–104 · Rain, Soundtrack, Crystal …"},
+  seat:{label:"Seat unit (harmony)",pcs:"Spare unit carrying harmony · ranks below every family"},
 };
 const GROUPS = [
   ["Filter",1,4],["Distortion",5,6],["Modulation",7,13],["Compressor",14,15],
@@ -166,57 +170,70 @@ const NOTES = {
 };
 for (const n of (DATA.dly||[])) (NOTES[n]=NOTES[n]||[]).push(["Delay on the beat (mallets: note spacing)"]);
 const BY_N = Object.fromEntries(DATA.list.map(x=>[x.n,x]));
-const DEF = Object.fromEntries(DATA.fams.map(f=>[f.id,f.nums]));
-const state = {}; // fam -> {nums:[], fav:[], rare:[]}
-for (const f of DATA.fams) state[f.id] = {nums:[...f.nums], fav:[], rare:[]};
+const DEF = Object.fromEntries(DATA.fams.map(f=>[f.id,{nums:f.nums,step:f.step||{}}]));
+const state = {}; // fam -> {nums:[], step:{n: s}}  s>0 favoured x(s+1), s<0 less often x1/(1-s)
+for (const f of DATA.fams) state[f.id] = {nums:[...f.nums], step:{...(f.step||{})}};
+// Weight steps: ... x1/3, x1/2, normal, x2, x3 ... ; a step is offered while the type's share of
+// its ticked group stays between 1% and 99%.
+const SHARE_MAX = 0.99, SHARE_MIN = 0.01, STEP_MAX = 98;
+function mult(st){return st>0?st+1:(st<0?1/(1-st):1)}
+function multLabel(st){return st>0?`×${st+1}`:(st<0?`×1/${1-st}`:"normal")}
+function stepOf(s,n){return s.step[n]||0}
+function shareAt(s,n,st){let t=0;for(const m of s.nums) t+=mult(m===n?st:stepOf(s,m));return mult(st)/t}
+function canUp(s,n){const st=stepOf(s,n);return st<STEP_MAX&&s.nums.length>1&&shareAt(s,n,st+1)<=SHARE_MAX}
+function canDown(s,n){const st=stepOf(s,n);return st>-STEP_MAX&&s.nums.length>1&&shareAt(s,n,st-1)>=SHARE_MIN}
+function sameStep(a,b){const k=new Set([...Object.keys(a),...Object.keys(b)]);for(const x of k) if((a[x]||0)!==(b[x]||0)) return false;return true}
+function cleanStep(s){const o={};for(const n of s.nums){const v=s.step[n]||0;if(v) o[n]=v;}return o}
 let cur = DATA.fams[0].id;
 let db = null, canWrite = true, loaded = false;
 try { const s = localStorage.getItem("efx-picker-fam"); if (s && DEF[s]) cur = s; } catch(e){}
 
 const $ = s => document.querySelector(s);
 function esc(t){return String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function pct(x){const p=100*x;return (p>=10||p===0?Math.round(p):p.toFixed(1))+"%"}
 function sameSet(a,b){return a.length===b.length && a.every(x=>b.includes(x))}
-function isChanged(id){const s=state[id];return !sameSet(s.nums,DEF[id])||s.fav.length>0||s.rare.length>0}
+function isChanged(id){const s=state[id],d=DEF[id];return !sameSet(s.nums,d.nums)||!sameStep(cleanStep(s),d.step)}
+function rankOf(id){const f=DATA.fams.find(f=>f.id===id);return f&&f.prio?String(f.prio):"S"}
 
 function renderNav(){
   const nav = $("#fams");
-  nav.innerHTML = '<div class="navhead">Priority · family · types</div>' + DATA.fams.map((f,i)=>{
+  nav.innerHTML = '<div class="navhead">GM · family · priority · types</div>' + DATA.fams.map((f,i)=>{
     const s = state[f.id];
     return `<button class="fambtn" data-f="${f.id}" aria-current="${f.id===cur}">
-      <span class="rank">${i+1}</span><span>${esc(FAMINFO[f.id].label)}${isChanged(f.id)?'<span class="dot" title="Changed from current"></span>':''}</span>
+      <span class="rank">${f.gm}</span><span>${esc(FAMINFO[f.id].label)}<span class="prio" title="Priority: P1 takes a unit first">${f.prio?'P'+f.prio:'seat'}</span>${isChanged(f.id)?'<span class="dot" title="Changed from current"></span>':''}</span>
       <span class="cnt">${s.nums.length}</span></button>`;
   }).join("");
   nav.querySelectorAll(".fambtn").forEach(b=>b.onclick=()=>{cur=b.dataset.f;try{localStorage.setItem("efx-picker-fam",cur)}catch(e){};render();});
   const n = DATA.fams.filter(f=>isChanged(f.id)).length;
-  $("#changed").textContent = n ? `${n} famil${n===1?"y":"ies"} changed` : "Matches Duality 0.19.010";
+  $("#changed").textContent = n ? `${n} famil${n===1?"y":"ies"} changed` : "Matches Duality "+DATA.version;
 }
 
 function renderMain(){
   const s = state[cur], info = FAMINFO[cur];
-  const rank = DATA.fams.findIndex(f=>f.id===cur)+1;
+  const rank = rankOf(cur);
   const sorted = [...s.nums].sort((a,b)=>a-b);
-  const weight = n => s.fav.includes(n)?2:(s.rare.includes(n)?0.5:1);
+  const weight = n => mult(stepOf(s,n));
   const total = sorted.reduce((t,n)=>t+weight(n),0);
-  const tags = sorted.length ? sorted.map(n=>`<span class="tag${s.fav.includes(n)?' fav':(s.rare.includes(n)?' rare':'')}">#${n} ${esc(BY_N[n].name)}${total?` · ${Math.round(100*weight(n)/total)}%`:''}</span>`).join("")
-    : '<span class="odds">Nothing ticked: this family plays dry.</span>';
+  const tags = sorted.length ? sorted.map(n=>`<span class="tag${stepOf(s,n)>0?' fav':(stepOf(s,n)<0?' rare':'')}">#${n} ${esc(BY_N[n].name)}${stepOf(s,n)?` ${multLabel(stepOf(s,n))}`:''}${total?` · ${pct(weight(n)/total)}`:''}</span>`).join("")
+    : `<span class="odds">${cur==="seat"?"Nothing ticked: seat units stay plain (no insert).":"Nothing ticked: this family plays dry."}</span>`;
   let html = `<section class="lcd">
-    <div class="top"><h2>${rank}. ${esc(info.label)}</h2><span class="pcs">${esc(info.pcs)}</span></div>
+    <div class="top"><h2>${esc(info.label)}</h2><span class="pcs">${esc(info.pcs)}${rank==="S"?"":" · priority P"+rank}</span></div>
     <div class="picked">${tags}</div>
     <div class="tools">
-      <button class="act" id="rev" ${sameSet(s.nums,DEF[cur])&&!s.fav.length&&!s.rare.length?'disabled':''}>Revert to current</button>
+      <button class="act" id="rev" ${isChanged(cur)?'':'disabled'}>Revert to current</button>
       <button class="act" id="clr" ${s.nums.length?'':'disabled'}>Clear all</button>
     </div></section>`;
   for (const [g,a,b] of GROUPS){
     html += `<section class="group"><h3>${g} · #${a}–${b}</h3><div class="grid">`;
     for (let n=a;n<=b;n++){
-      const x = BY_N[n], on = s.nums.includes(n), fav = s.fav.includes(n), rare = s.rare.includes(n);
+      const x = BY_N[n], on = s.nums.includes(n), st = stepOf(s,n), fav = st>0, rare = st<0;
       const notes = (NOTES[n]||[]).map(([t,k])=>`<span class="note${k?' '+k:''}">${esc(t)}</span>`).join("");
       html += `<label class="fx${on?' on':''}" for="t${n}">
         <input type="checkbox" id="t${n}" data-n="${n}" ${on?'checked':''} ${canWrite?'':'disabled'}>
         <span><span class="num">#${n}</span><span class="nm">${esc(x.name)}</span></span>
         <span class="addr">${x.addr}</span>
         ${notes?`<span class="notes">${notes}</span>`:''}
-        ${on?`<span class="odds-btns"><button class="star" data-s="${n}" aria-pressed="${fav}" ${canWrite?'':'disabled'}>${fav?'★ Favoured (×2)':'☆ Favour'}</button><button class="star rare" data-r="${n}" aria-pressed="${rare}" ${canWrite?'':'disabled'}>${rare?'▾ Less often (×½)':'▿ Less often'}</button></span>`:''}
+        ${on?`<span class="odds-btns"><button class="star" data-s="${n}" aria-pressed="${fav}" ${canWrite&&canUp(s,n)?'':'disabled'} title="${fav?'Favour once more':'Favour'}${rare?' (steps back toward normal)':''}">${fav?'★ Favoured '+multLabel(st):'☆ Favour'}</button><button class="star rare" data-r="${n}" aria-pressed="${rare}" ${canWrite&&canDown(s,n)?'':'disabled'} title="${rare?'Less often once more':'Less often'}${fav?' (steps back toward normal)':''}">${rare?'▾ Less often '+multLabel(st):'▿ Less often'}</button><span class="share">${pct(shareAt(s,n,st))}</span></span>`:''}
       </label>`;
     }
     html += `</div></section>`;
@@ -225,25 +242,25 @@ function renderMain(){
   $("#main").querySelectorAll("input[data-n]").forEach(el=>el.onchange=()=>{
     const n=+el.dataset.n, st=state[cur];
     if (el.checked){ if(!st.nums.includes(n)) st.nums.push(n); }
-    else { st.nums=st.nums.filter(x=>x!==n); st.fav=st.fav.filter(x=>x!==n); st.rare=st.rare.filter(x=>x!==n); }
+    else { st.nums=st.nums.filter(x=>x!==n); delete st.step[n]; }
     save(cur); render();
   });
   $("#main").querySelectorAll("button[data-s]").forEach(el=>el.onclick=(e)=>{
     e.preventDefault();
     const n=+el.dataset.s, st=state[cur];
-    st.fav = st.fav.includes(n) ? st.fav.filter(x=>x!==n) : [...st.fav,n];
-    st.rare = st.rare.filter(x=>x!==n);
+    if (!canUp(st,n)) return;
+    st.step[n] = stepOf(st,n) + 1; if (!st.step[n]) delete st.step[n];
     save(cur); render();
   });
   $("#main").querySelectorAll("button[data-r]").forEach(el=>el.onclick=(e)=>{
     e.preventDefault();
     const n=+el.dataset.r, st=state[cur];
-    st.rare = st.rare.includes(n) ? st.rare.filter(x=>x!==n) : [...st.rare,n];
-    st.fav = st.fav.filter(x=>x!==n);
+    if (!canDown(st,n)) return;
+    st.step[n] = stepOf(st,n) - 1; if (!st.step[n]) delete st.step[n];
     save(cur); render();
   });
-  $("#rev").onclick=()=>{state[cur]={nums:[...DEF[cur]],fav:[],rare:[]};save(cur);render();};
-  $("#clr").onclick=()=>{state[cur]={nums:[],fav:[],rare:[]};save(cur);render();};
+  $("#rev").onclick=()=>{const d=DEF[cur];state[cur]={nums:[...d.nums],step:{...d.step}};save(cur);render();};
+  $("#clr").onclick=()=>{state[cur]={nums:[],step:{}};save(cur);render();};
 }
 function render(){
   // Keep the reader's place: rebuilding the list must not move the page.
@@ -271,7 +288,9 @@ async function flush(fam){
   busy[fam]=true;
   const s = state[fam], mySeq = seq[fam];
   try{
-    await db.doc("palettes/"+fam).set({nums:[...s.nums].sort((a,b)=>a-b), fav:[...s.fav].sort((a,b)=>a-b), rare:[...s.rare].sort((a,b)=>a-b)});
+    const step = cleanStep(s), ks = Object.keys(step).map(Number);
+    await db.doc("palettes/"+fam).set({nums:[...s.nums].sort((a,b)=>a-b), step,
+      fav:ks.filter(n=>step[n]>0).sort((a,b)=>a-b), rare:ks.filter(n=>step[n]<0).sort((a,b)=>a-b)});
     if (seq[fam] === mySeq) dirty[fam] = false;
     $("#sync").textContent="Saved"; $("#sync").className="pill ok";
   }catch(e){
@@ -299,7 +318,11 @@ render();
       if (!DEF[d.id]) continue;
       if (dirty[d.id]) continue;   // your newer click wins until it is saved
       const v = d.data()||{};
-      const next = {nums:Array.isArray(v.nums)?v.nums.filter(n=>BY_N[n]):[], fav:Array.isArray(v.fav)?v.fav.filter(n=>BY_N[n]):[], rare:Array.isArray(v.rare)?v.rare.filter(n=>BY_N[n]):[]};
+      const nums = Array.isArray(v.nums)?v.nums.filter(n=>BY_N[n]):[];
+      const step = {};
+      if (v.step && typeof v.step==="object"){ for (const [k,x] of Object.entries(v.step)){ const n=+k, q=Math.trunc(+x); if (nums.includes(n) && q && Math.abs(q)<=STEP_MAX) step[n]=q; } }
+      else { for (const n of (Array.isArray(v.fav)?v.fav:[])) if (nums.includes(n)) step[n]=1; for (const n of (Array.isArray(v.rare)?v.rare:[])) if (nums.includes(n)) step[n]=-1; }
+      const next = {nums, step};
       if (JSON.stringify(next) !== JSON.stringify(state[d.id])){ state[d.id] = next; changed = true; }
     }
     if (!loaded){ loaded=true; changed=true; if(canWrite){$("#sync").textContent="Saved"; $("#sync").className="pill ok";} }

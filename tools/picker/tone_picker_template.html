@@ -98,6 +98,7 @@ button.act:disabled{opacity:.5;cursor:default}
 .efx button.d[aria-pressed="true"]{background:var(--dry)}
 .efx button.wt[aria-pressed="true"]{background:var(--wet)}
 .efx button:disabled{cursor:default}
+.share{font-family:var(--mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .addnote{all:unset;cursor:pointer;font-size:12px;color:var(--accent-ink);text-decoration:underline;text-underline-offset:2px}
 .addnote:focus-visible{outline:2px solid var(--accent)}
 textarea{font:inherit;font-size:13px;line-height:1.35;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:5px 8px;resize:vertical;min-height:52px;width:100%}
@@ -125,7 +126,7 @@ textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   </div>
   <div class="foot">
     <p><b>How Anima picks today.</b> Per part, the song's seed chooses once per program change: a CM-64 tone about 1 time in 4 when the program has one, otherwise an SC-8850 variation (CC00 ≠ 0) about 2 times in 3, otherwise the capital or an older map's version of it. The file's own bank select always wins; Anima only varies parts the file leaves on the capital.</p>
-    <p><b>Weights</b> work like the EFX picker: favoured counts twice, less often counts half, unticked is never picked. <b>EFX</b> runs from much drier (−2) to much wetter (+2) for the insert when this tone has one. <b>One-shot</b> means every sample in the tone plays once and stops (read from the SC-8850 ROM); <b>attack layer</b> means part of it does.</p>
+    <p><b>Weights</b> work like the EFX picker: each press of Favour adds a step (×2, ×3, ×4 …) and each press of Less often takes one away (×½, ×⅓ …), so the opposite button steps back toward normal. The percentage is the tone's share of its program's picks, kept between 1% and 99%; unticked is never picked. <b>EFX</b> runs from much drier (−2) to much wetter (+2) for the insert when this tone has one. <b>One-shot</b> means every sample in the tone plays once and stops (read from the SC-8850 ROM); <b>attack layer</b> means part of it does.</p>
   </div>
 </div>
 
@@ -137,12 +138,22 @@ const GROUPS = [
   ["Synth lead",80,87],["Synth pad",88,95],["Synth FX",96,103],["Ethnic",104,111],["Percussive",112,119],
 ];
 const MAPS = {4:"8850",3:"88Pro",2:"SC-88",1:"SC-55"};
-const DEFW = 2;
+// Weight steps: ... x1/3, x1/2, normal, x2, x3 ... (st<0 / 0 / st>0); w = 2 x multiplier for Duality.
+// A step is offered while the tone's share of its program's ticked tones stays within 1%..99%.
+const SHARE_MAX = 0.99, SHARE_MIN = 0.01, STEP_MAX = 98;
+function mult(st){return st>0?st+1:(st<0?1/(1-st):1)}
+function multLabel(st){return st>0?`×${st+1}`:(st<0?`×1/${1-st}`:"normal")}
+function stFromW(w){const m=(+w||2)/2;return m>=1?Math.round(m-1):-Math.round(1/m-1)}
+function pct(x){const p=100*x;return (p>=10||p===0?Math.round(p):p.toFixed(1))+"%"}
+function shareAt(pc,k,st){let t=0;for(const m of PROGS[pc]){const x=state[pc][m];if(x.on) t+=mult(m===k?st:x.st);}return t?mult(st)/t:0}
+function ticked(pc){return PROGS[pc].filter(m=>state[pc][m].on).length}
+function canUp(pc,k){const x=state[pc][k];return x.st<STEP_MAX&&ticked(pc)>1&&shareAt(pc,k,x.st+1)<=SHARE_MAX}
+function canDown(pc,k){const x=state[pc][k];return x.st>-STEP_MAX&&ticked(pc)>1&&shareAt(pc,k,x.st-1)>=SHARE_MIN}
 const INFO = DATA.info;              // "cc0-cc32-pc" -> [name, oneshot 0/1/2, voices]
 const PROGS = DATA.progs;            // pc -> [keys]
 const DEF = DATA.defp;               // pc -> {key -> {on,w,efx,note}} (only non-default)
 const state = {};                    // pc -> {key -> {on,w,efx,note}}
-function blank(){return {on:true,w:DEFW,efx:0,note:""}}
+function blank(){return {on:true,st:0,efx:0,note:""}}
 function defOf(pc,k){return Object.assign(blank(), (DEF[pc]||{})[k]||{})}
 for (const pc in PROGS){ state[pc] = {}; for (const k of PROGS[pc]) state[pc][k] = defOf(pc,k); }
 let cur = 0, query = "";
@@ -153,7 +164,7 @@ try { const s = localStorage.getItem("tone-picker-group"); if (s !== null && GRO
 const $ = s => document.querySelector(s);
 function esc(t){return String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 function pad3(n){return String(n).padStart(3,"0")}
-function same(a,b){return a.on===b.on&&a.w===b.w&&a.efx===b.efx&&(a.note||"")===(b.note||"")}
+function same(a,b){return a.on===b.on&&a.st===b.st&&a.efx===b.efx&&(a.note||"")===(b.note||"")}
 function slotChanged(pc,k){return !same(state[pc][k], defOf(pc,k))}
 function progChanged(pc){return PROGS[pc].some(k=>slotChanged(pc,k))}
 function groupChanged(g){const [,a,b]=GROUPS[g];for(let p=a;p<=b;p++) if(PROGS[p]&&progChanged(p)) return true;return false}
@@ -196,7 +207,7 @@ function toneCard(pc,k){
     </div>
     ${badges.length?`<div class="badges">${badges.map(([t,c])=>`<span class="note${c?' '+c:''}">${esc(t)}</span>`).join("")}</div>`:''}
     <div class="ctl">
-      ${s.on?`<button class="star" data-s="${k}" data-p="${pc}" aria-pressed="${s.w>=4}" ${dis}>${s.w>=4?'★ Favoured (×2)':'☆ Favour'}</button><button class="star rare" data-r="${k}" data-p="${pc}" aria-pressed="${s.w<=1}" ${dis}>${s.w<=1?'▾ Less often (×½)':'▿ Less often'}</button>`:''}
+      ${s.on?`<button class="star" data-s="${k}" data-p="${pc}" aria-pressed="${s.st>0}" ${canWrite&&canUp(pc,k)?'':'disabled'}>${s.st>0?'★ Favoured '+multLabel(s.st):'☆ Favour'}</button><button class="star rare" data-r="${k}" data-p="${pc}" aria-pressed="${s.st<0}" ${canWrite&&canDown(pc,k)?'':'disabled'}>${s.st<0?'▾ Less often '+multLabel(s.st):'▿ Less often'}</button><span class="share" title="Share of this program's picks">${pct(shareAt(pc,k,s.st))}</span>`:''}
       <span class="efx" role="group" aria-label="EFX level"><span class="lab">dry</span>${efxBtns}<span class="lab">wet</span></span>
       ${showNote?'':`<button class="addnote" data-n="${pc}_${k}" data-p="${pc}" ${dis}>Add note</button>`}
     </div>
@@ -241,14 +252,14 @@ function renderMain(){
   qi.oninput = ()=>{ query = qi.value; clearTimeout(qi._t); qi._t = setTimeout(()=>{ render(); const e=$("#q"); if(e){e.focus({preventScroll:true}); e.setSelectionRange(e.value.length,e.value.length);} },180); };
   const M = $("#main");
   M.querySelectorAll("input[type=checkbox][data-k]").forEach(el=>el.onchange=()=>{
-    const s = state[el.dataset.p][el.dataset.k]; s.on = el.checked; if (!s.on) s.w = DEFW;
+    const s = state[el.dataset.p][el.dataset.k]; s.on = el.checked; if (!s.on) s.st = 0;
     save(el.dataset.p); render();
   });
   M.querySelectorAll("button[data-s]").forEach(el=>el.onclick=()=>{
-    const s = state[el.dataset.p][el.dataset.s]; s.w = s.w>=4 ? DEFW : 4; save(el.dataset.p); render();
+    const pc = el.dataset.p, k = el.dataset.s; if (!canUp(pc,k)) return; state[pc][k].st += 1; save(pc); render();
   });
   M.querySelectorAll("button[data-r]").forEach(el=>el.onclick=()=>{
-    const s = state[el.dataset.p][el.dataset.r]; s.w = s.w<=1 ? DEFW : 1; save(el.dataset.p); render();
+    const pc = el.dataset.p, k = el.dataset.r; if (!canDown(pc,k)) return; state[pc][k].st -= 1; save(pc); render();
   });
   M.querySelectorAll("button[data-e]").forEach(el=>el.onclick=()=>{
     const s = state[el.dataset.p][el.dataset.k]; s.efx = +el.dataset.e; save(el.dataset.p); render();
@@ -276,7 +287,7 @@ function render(){
 const dirty = {}, seq = {}, pending = {}, busy = {};
 function docOf(pc){
   const slots = {};
-  for (const k of PROGS[pc]) if (slotChanged(pc,k) || (DEF[pc]||{})[k]) { const s = state[pc][k]; slots[k] = {on:s.on, w:s.w, efx:s.efx, note:s.note||""}; }
+  for (const k of PROGS[pc]) if (slotChanged(pc,k) || (DEF[pc]||{})[k]) { const s = state[pc][k]; slots[k] = {on:s.on, st:s.st, w:2*mult(s.st), efx:s.efx, note:s.note||""}; }
   return {pc:+pc, slots};
 }
 function save(pc){
@@ -304,9 +315,10 @@ function readOnly(msg){
   $("#sync").textContent="Read only"; $("#sync").className="pill"; render();
 }
 function clampSlot(v){
-  const w = [1,2,4].includes(v&&v.w) ? v.w : DEFW;
+  let st = v && Number.isInteger(v.st) ? v.st : (v && +v.w > 0 ? stFromW(v.w) : 0);
+  st = Math.max(-STEP_MAX, Math.min(STEP_MAX, st));
   const efx = Number.isInteger(v&&v.efx) ? Math.max(-2,Math.min(2,v.efx)) : 0;
-  return {on: !(v && v.on===false), w, efx, note: typeof (v&&v.note)==="string" ? v.note.slice(0,600) : ""};
+  return {on: !(v && v.on===false), st, efx, note: typeof (v&&v.note)==="string" ? v.note.slice(0,600) : ""};
 }
 
 render();
