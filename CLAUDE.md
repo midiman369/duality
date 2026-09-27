@@ -8,6 +8,8 @@
   `recordings/`, songs in `tests/midi/` (original names are fine; both are git-ignored).
 - Duality writes `--log` to `logs/duality-<stamp>.log` (one per run, one per `--record` take with the
   take's stamp; C starts a new one) and `--record` takes to `recordings/` by default.
+- EFX palette picker (published page "Anima EFX Palettes"): rebuild with `tools/picker/build_picker.py`
+  after palette changes; the user's picks live in its database (`palettes/<family>`).
 - Anima GS EFX addresses and parameters come from the SC-8850 manual's Insertion Effect List
   (p.216-223) and MIDI Implementation (p.237); see comments in `tables_gs.py`.
 
