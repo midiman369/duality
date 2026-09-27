@@ -32,7 +32,7 @@ The file's own insert always wins its home unit.
 
 - **EFX preset library**: named parameter sets per family + insert type (beyond the type's defaults).
 - **Parameter randomisation**: seed-driven values inside a floor/ceiling per parameter.
-- **More live parameter control**: the wah now follows the player (0.19.029) and rotary flips on held
+- **More live parameter control**: the wah now follows the player (0.19.029), a file's set-and-left wah is played too (0.19.032, handed back on any later file EFX write), and rotary flips on held
   chords; next could be other knobs (flanger rate on held notes, drive on accents). Note: a Control
   Source ADDS to the stored value (Depth +100% ~ base + CC), and the LCD shows only the SysEx value.
 - **Subtler orchestral inserts**: lower wet/dry Balance on strings / brass / pads, and bring Stereo Delay

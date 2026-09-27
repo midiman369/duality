@@ -48,6 +48,8 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `grabbag.mid` | `01_GRABBAG.MID` (non-stop distorted rhythm guitars; seed 50FC deals both to GTR Multi 3) | sent on its own | 14287 | `928e50554b7e6682` |
 | `death-gate-09.mid` | `09_-_Death_Gate.MID` (xylophone on ch2; for listening to mallet sticking) | sent on its own | 12943 | `c526c54a47b9fd14` |
 | `lotr-8850.mid` | `LotR_8850.mid` (Lord of the Rings medley, 16 orchestral parts, 3 families) | sent on its own | 115132 | `9572b49f62912118` |
+| `phobos-8850.mid` | `18_-_phobos_anomaly_8850.mid` (bulk dump sets GTR Multi 3, never touched again) | sent on its own | 65567 | `ac68f826d380875c` |
+| `rose-gun-sight.mid` | `rose_in_the_gun_sight.mid` (performs its own wah: live Wah Man writes from 6:43) | sent on its own | 205850 | `c5d45c95b713db4b` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
@@ -82,6 +84,7 @@ GTR Multi 3 (wah on Control 1) with the 0.19.028 palettes: `08BA`, `0BC2`, `153B
 | `cc16_test.py` | EFX Control via CC16 per unit, no song: Control Source/Depth routing per the Effect List, rotary speed flips on a held organ chord and back, wah follows the playing (low Manual base, Peak, held notes open wider than fast notes, heel after the part stops), a power-chord part on GTR Multi 3 gets the rhythm Peak and no screamer, one channel switching chords → lead → chords opens up within 0.6 s and drops back only after a slower glide, no CC16 to other units (even with a seat unit written last) |
 | `seat_test.py` | Seat units: harmony on the spare unit with mirrored pan (built-in tune, always runs), file pan moves mirrored, panic restores pans, the seat insert is set and a guitar arriving mid-song takes the unit over without a type write under sounding harmony; with `LotR_8850.mid`, five units share families over two spares |
 | `mallet_test.py` | Mallet sticking, no song: chords struck by hands, doubles / triplets / rolls only where the part leaves room, cancelled by an early note or a program change, rolls alternate hands, nothing left hanging; a delay insert on the marimba is timed from its note spacing (Tm Ctrl Delay lands on the next chord, Stereo Delay folds into its 500 ms) |
+| `file_wah_test.py` | A file's own wah (built-in, always runs): set and left → adopted (C.Src1 = CC16, Manual 30 below the file's, Peak untouched, rest in silence); a later file write hands it back at once; wah switch Off or a file-routed Control Source → left alone. With the songs: Phobos Anomaly adopted, Rose in the Gun Sight never |
 | `tempo_test.py` | Beat tracker: exact on MIDI clock, musical relative on note onsets |
 
 Timing check: a note within 100 ms of its unit's insert type change or its

@@ -31,6 +31,8 @@ ORIGINAL = {
     "death-gate-09.mid": "09_-_Death_Gate.MID",
     "lotr-8850.mid": "LotR_8850.mid",
     "grabbag.mid": "01_GRABBAG.MID",
+    "phobos-8850.mid": "18_-_phobos_anomaly_8850.mid",
+    "rose-gun-sight.mid": "rose_in_the_gun_sight.mid",
 }
 
 if REPO not in sys.path:
