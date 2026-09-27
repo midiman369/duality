@@ -8,7 +8,10 @@ Rotary Multi, a clean guitar forced onto Auto Wah, strings. Checks:
     the other
   - the organ's unit gets a speed CC16 on the organ channel, which flips
     while a chord is held and flips back after it
-  - the guitar's unit gets a moving CC16 while the guitar plays, none after
+  - the guitar's unit gets a wah that follows the playing: Manual set to the
+    low base (CC16 adds to it) and GTR Multi 3's Peak raised; picks move it,
+    held notes open it more than fast notes; after the guitar stops it falls
+    back to the heel and goes quiet
   - no CC16 to units without a wah/rotary insert
 """
 import sys
@@ -63,10 +66,19 @@ for k in range(4):                       # organ: short stabs, then a long held 
         msg(t + 1.8, mido.Message("note_off", channel=STR, note=n, velocity=0))
     t += 2.5
 gtr_end = t
-for k in range(int((t - 1.0) / 0.25)):   # guitar plays throughout, then stops
-    tk = 1.0 + k * 0.25
-    msg(tk, mido.Message("note_on", channel=GTR, note=64 + (k % 5), velocity=85))
-    msg(tk + 0.2, mido.Message("note_off", channel=GTR, note=64 + (k % 5), velocity=0))
+held_t = []
+k, tk = 0, 1.0
+while tk < t:                            # guitar: fast 8ths, every 4th bar one long held note
+    if k % 16 == 12:
+        msg(tk, mido.Message("note_on", channel=GTR, note=76, velocity=100))
+        msg(tk + 1.6, mido.Message("note_off", channel=GTR, note=76, velocity=0))
+        held_t.append((tk + 0.9, tk + 1.6))
+        tk += 2.0
+    else:
+        msg(tk, mido.Message("note_on", channel=GTR, note=64 + (k % 5), velocity=85))
+        msg(tk + 0.2, mido.Message("note_off", channel=GTR, note=64 + (k % 5), velocity=0))
+        tk += 0.25
+    k += 1
 end = t + 2.0
 ev.sort(key=lambda e: e[0])
 i, tt = 0, 0.0
@@ -131,12 +143,26 @@ if po is not None:
 if pg is not None:
     g = [(t0, v) for t0, c, v in cc16.get(pg, []) if c == GTR]
     vals = {v for t0, v in g if t0 < gtr_end}
-    late = [t0 for t0, v in g if t0 > gtr_end + 0.5]
+    late = [t0 for t0, v in g if t0 > gtr_end + 1.5]
     if len(vals) < 10:
         fails.append(f"wah CC16 barely moved while the guitar played ({len(vals)} values)")
     if late:
         fails.append(f"wah CC16 kept running after the guitar stopped ({late[:3]})")
-    print(f"wah CC16 on ch{GTR+1}: {len(g)} messages, {len(vals)} distinct values")
+    if g and g[-1][1] > D.ANIMA_WAH_REST + 6:
+        fails.append(f"wah did not fall back to the heel: last CC16 {g[-1][1]}")
+    held = [v for t0, v in g if any(a <= t0 <= b for a, b in held_t)]
+    fastv = [v for t0, v in g if t0 < gtr_end and not any(a - 0.9 <= t0 <= b + 0.3 for a, b in held_t)]
+    if held and fastv and max(held) <= sum(fastv) / len(fastv) + 15:
+        fails.append(f"held notes do not open the wah (held max {max(held)}, fast mean {sum(fastv)/len(fastv):.0f})")
+    r = dt1(pg)
+    man = D.ANIMA_EFX_WAH_MAN.get(tg)
+    if man is not None and r.get(man) not in (D.ANIMA_WAH_MAN_BASE, D.ANIMA_WAH_MAN_SCREAM):
+        fails.append(f"wah Manual {r.get(man)}, want the base {D.ANIMA_WAH_MAN_BASE}")
+    pk = D.ANIMA_EFX_WAH_PEAK.get(tg)
+    if pk and r.get(pk[0]) != pk[1]:
+        fails.append(f"wah Peak {r.get(pk[0])}, want {pk[1]}")
+    print(f"wah CC16 on ch{GTR+1}: {len(g)} messages, {len(vals)} distinct values, "
+          f"held max {max(held) if held else '-'}, fast mean {sum(fastv)/len(fastv) if fastv else 0:.0f}")
 if fails:
     print(f"FAILS ({len(fails)}):")
     for f in fails:

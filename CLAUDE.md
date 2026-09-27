@@ -32,8 +32,9 @@ The file's own insert always wins its home unit.
 
 - **EFX preset library**: named parameter sets per family + insert type (beyond the type's defaults).
 - **Parameter randomisation**: seed-driven values inside a floor/ceiling per parameter.
-- **More live parameter control**: now that EFX Control 1/2 routing is right, drive more than drive
-  level / rotary speed / wah manual.
+- **More live parameter control**: the wah now follows the player (0.19.029) and rotary flips on held
+  chords; next could be other knobs (flanger rate on held notes, drive on accents). Note: a Control
+  Source ADDS to the stored value (Depth +100% ~ base + CC), and the LCD shows only the SysEx value.
 - **Subtler orchestral inserts**: lower wet/dry Balance on strings / brass / pads, and bring Stereo Delay
   back to strings with low feedback. Confirmed from the Effect List (p.217): Balance is `40 03 12` on the
   chorus types (#16-20) and Stereo Flanger, 00 = D>0E, 40 = D=E, 7F = D0<E (LCD "D>nE" = value n).
