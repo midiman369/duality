@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.027"
+VERSION = "0.19.028"
 
 
 """
@@ -47,7 +47,9 @@ Anima (opt-in)
     follow the beat (MIDI clock, else note onsets) with feedback ≤ 50 %;
     pitch shifters get a doubler / octave / fifth; Gate Reverb uses Sweep;
     dirt inserts' Level follows a CC7/CC11 fade-out. CC16 drives only wah
-    and rotary types (on EFX Control 1 or 2, whichever holds the knob).
+    and rotary types (on EFX Control 1 or 2, whichever holds the knob),
+    each unit on its own: wah sweeps while its players play, rotary flips
+    speed on a held chord.
   • Foley: shared ch16 8850 SFX (PC 121/122 variations)
   • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
     dist-guitar unison on a spare GS unit (inherits EFX)
@@ -742,7 +744,7 @@ ANIMA_EFX_PAN_OFF = 20        # |CC10-64| beyond this = a placed guitar (keep a 
 ANIMA_EFX_BIG_BURST = 4       # this many PC channels in one burst = song setup (short DUMP grace)
 ANIMA_HARM_TOP = 96          # no chord-tone harmony ghost above C7
 ANIMA_EFX_WET_SEC = 0.15      # after a type/Part On change, that part's notes use another box this long
-ANIMA_EFX_CTRL_CC = 16    # 8850 EFX C.Src1 → CC16 after one SysEx bind
+ANIMA_EFX_CTRL_CC = 16    # Anima writes EFX C.Src1/2 (40 03 1B/1D, default Off) = CC16; not built in
 ANIMA_WAH_LFO_HZ = 0.55
 ANIMA_ROTARY_HOLD_SEC = 0.60
 
@@ -4310,6 +4312,7 @@ class Duality:
         self._anima_efx_sent = None
         self._anima_efx_hero = None
         self._anima_efx_label = ""
+        self._anima_cc16_state = {}
         self._gs_efx_parts_on = [False] * 16
         self._anima_slots = [{} for _ in range(self.n_ports)]
         self._anima_settle_q = []
@@ -5426,66 +5429,70 @@ class Duality:
         for i in ports:
             for m in msgs:
                 self._safe_out_send(i, m)
-        self._anima_efx_lfo_ph = 0.0
         self._anima_efx_cc16 = -1
-        self._anima_rot_flipped = False
-        self._anima_rot_fast = bool(seed & 1)
-        if key in ANIMA_EFX_ROTARY:
-            hero = self._anima_efx_hero if self._anima_efx_hero is not None else 0
-            self._anima_send_cc(ports, hero, ANIMA_EFX_CTRL_CC, 127 if self._anima_rot_fast else 0)
+        for i in ports:   # the per-unit CC16 tick re-reads this unit's type and speed
+            (getattr(self, "_anima_cc16_state", None) or {}).pop(i, None)
 
     def _anima_efx_param_tick(self, dt: float) -> None:
-        """CC16 wah LFO / rotary slow-fast while the insertion type supports it."""
-        sent = self._anima_efx_sent
-        if not sent or not self.anima:
-            return
-        ports = [
-            i for i, sl in enumerate(self._anima_slots)
-            if sl.get("typ") == sent
-        ] or self._anima_gs_ports()
-        if not ports:
-            return
-        hero = self._anima_efx_hero if self._anima_efx_hero is not None else 0
-        now = time.monotonic()
-        if sent in ANIMA_EFX_WAH:
-            live = any(
-                k[0] != 9 and self._anima_efx_family(k[0]) == self._anima_efx_key
-                for k in self.active
-            )
-            if not live:
-                return
-            self._anima_efx_lfo_ph += dt * ANIMA_WAH_LFO_HZ * 6.28318530718
-            val = int(64 + 48 * math.sin(self._anima_efx_lfo_ph))
-            val = max(0, min(127, val))
-            self._anima_send_cc(ports, hero, ANIMA_EFX_CTRL_CC, val)
-            return
-        if sent in ANIMA_EFX_ROTARY:
-            longest = 0.0
-            for key, info in self.active.items():
-                ch = key[0]
-                if ch == 9:
-                    continue
-                if self._anima_efx_family(ch) not in ("organ",):
-                    # still allow rotary types on whatever family owns the slot
-                    if self._anima_efx_family(ch) != self._anima_efx_key:
-                        continue
-                t0 = info.get("time") or 0.0
-                if t0:
-                    longest = max(longest, now - t0)
-            want_flip = longest >= ANIMA_ROTARY_HOLD_SEC
-            if want_flip and not self._anima_rot_flipped:
-                self._anima_rot_flipped = True
-                self._anima_send_cc(
-                    ports, hero, ANIMA_EFX_CTRL_CC,
-                    0 if self._anima_rot_fast else 127,
-                )
-            elif not want_flip and self._anima_rot_flipped:
-                self._anima_rot_flipped = False
-                self._anima_send_cc(
-                    ports, hero, ANIMA_EFX_CTRL_CC,
-                    127 if self._anima_rot_fast else 0,
-                )
+        """CC16 per unit: wah LFO / rotary slow-fast wherever a unit's insert has one.
 
+        Each GS unit is driven on its own from its slot (type, owner channels),
+        with its own LFO phase and rotary state. CC16 goes to that unit only, on
+        its owner channels (the parts wired into its insert). The file's own
+        insert (file_park) is left to the file.
+        """
+        if not self.anima:
+            return
+        states = getattr(self, "_anima_cc16_state", None)
+        if states is None:
+            states = self._anima_cc16_state = {}
+        now = time.monotonic()
+        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        for port, sl in enumerate(self._anima_slots):
+            typ = tuple((sl or {}).get("typ") or ())[:2]
+            wah, rot = typ in ANIMA_EFX_WAH, typ in ANIMA_EFX_ROTARY
+            if not (wah or rot) or sl.get("fam") in ("file_park", "seat"):
+                states.pop(port, None)
+                continue
+            owners = [c for c in (sl.get("chs") or []) if not self._anima_is_rhythm(c)]
+            if not owners:
+                continue
+            st = states.get(port)
+            if st is None or st["typ"] != typ:
+                st = states[port] = {
+                    "typ": typ, "ph": 0.0, "flipped": False, "sent": {},
+                    "fast": bool(self._anima_mix(seed, 31 + port) & 1),
+                }
+                if rot:
+                    self._anima_cc16_send(port, owners, 127 if st["fast"] else 0, st)
+            playing = [
+                info for (c, _n), info in self.active.items()
+                if c in owners and port in (info.get("ports") or [info.get("port")])
+            ]
+            if wah:
+                if not playing:
+                    continue
+                st["ph"] += dt * ANIMA_WAH_LFO_HZ * 6.28318530718
+                val = max(0, min(127, int(64 + 48 * math.sin(st["ph"]))))
+                self._anima_cc16_send(port, owners, val, st)
+                continue
+            longest = max((now - float(i.get("time") or now) for i in playing), default=0.0)
+            want = longest >= ANIMA_ROTARY_HOLD_SEC
+            if want != st["flipped"]:
+                st["flipped"] = want
+                fast = st["fast"] != want      # a held chord flips the speed
+                self._anima_cc16_send(port, owners, 127 if fast else 0, st)
+
+    def _anima_cc16_send(self, port: int, owners, value: int, st: dict) -> None:
+        """CC16 to one unit on its owner channels; skip only an unchanged value."""
+        for c in owners:
+            if st["sent"].get(c) == value:
+                continue
+            st["sent"][c] = value
+            self._safe_out_send(
+                port, mido.Message("control_change", channel=c, control=ANIMA_EFX_CTRL_CC, value=value)
+            )
+        self._anima_efx_cc16 = value
 
     def _anima_chs_conflict(self, chs: list) -> bool:
         sets = [self._anima_channel_pcs(c) for c in chs]

@@ -13,6 +13,7 @@ RUNS = [
     ("tempo", "tempo_test.py", {}),
     ("mallet sticking", "mallet_test.py", {}),
     ("seat units", "seat_test.py", {}),
+    ("EFX control CC16", "cc16_test.py", {}),
     ("onestop 22:00", "onestop_replay.py", {}),
     ("onestop 22:16", "onestop_replay2.py", {}),
     ("onestop 22:29", "onestop_replay4.py", {}),
