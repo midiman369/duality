@@ -10,10 +10,13 @@
 - Duality writes `--log` to `logs/duality-<stamp>.log` (one per run, one per `--record` take with the
   take's stamp; C starts a new one) and `--record` takes to `recordings/` by default.
 - EFX palette picker (published page "Anima EFX Palettes"): rebuild with `tools/picker/build_picker.py`
-  after palette changes; the user's picks live in its database (`palettes/<family>`).
+  after palette changes; the user's picks live in its database (`palettes/<family>`: nums, step {type: n}).
+- Both pickers use weight steps (0.19.037): +1 = x2, +2 = x3 ..., -1 = x1/2, -2 = x1/3 ...; a step is
+  offered while that entry's share of its group stays within 1%..99%. In the tables a weight is 2 x the
+  multiplier (EFX rows' 4th field, `ANIMA_TONE_PREFS` "w"); old 1/2/4 weights keep their seeded picks.
 - Tone palette picker (published page "Anima Tone Palettes"): rebuild with `tools/picker/build_tone_picker.py`
   (names / one-shot flags / voices in `tools/picker/tone_info.json`). Picks live in its database
-  (`tones/p001`..`p120`: per tone on, weight, EFX level -2..+2, note); copy them into
+  (`tones/p001`..`p120`: per tone on, st (step), w, EFX level -2..+2, note); copy them into
   `tables_8850.ANIMA_TONE_PREFS`. Weights and on/off are honoured; EFX level and notes are not wired yet
   (read the notes and propose how to act on them).
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their

@@ -9,8 +9,9 @@ once, 1 = an attack layer does), extracted from shingo45endo/tone-browser sc-885
 (sample byte 10: 0 = loop, 2 = no loop). Rebuild tone_info.json with --info <sc-8850.json>.
 
 The published page saves to its own database: collection "tones", one doc per program
-("p001".."p120"): {pc, slots: {"cc00-cc32-pc": {on, w, efx, note}}}, only tones that differ
-from the defaults. Copy them into tables_8850.ANIMA_TONE_PREFS (w 0 when on is false).
+("p001".."p120"): {pc, slots: {"cc00-cc32-pc": {on, st, w, efx, note}}}, only tones that differ
+from the defaults. st is the weight step (1 = x2, 2 = x3, -1 = x1/2, -2 = x1/3); w = 2 x that
+multiplier. Copy them into tables_8850.ANIMA_TONE_PREFS as {"w": w} (w 0 when on is false).
 """
 import json
 import os
@@ -100,11 +101,12 @@ def main(argv):
             pref = T.anima_tone_pref(pc, k)
             d = {}
             if pref:
-                w = int(pref.get("w", 2))
+                w = float(pref.get("w", 2))
                 if w <= 0:
                     d["on"] = False
-                else:
-                    d["w"] = w
+                elif w != 2:
+                    m = w / 2.0
+                    d["st"] = int(round(m - 1)) if m >= 1 else -int(round(1 / m - 1))
                 if pref.get("efx"):
                     d["efx"] = int(pref["efx"])
                 if pref.get("note"):
@@ -112,7 +114,7 @@ def main(argv):
             elif ks(k) in blocked:
                 d["on"] = False
             elif (k[0], k[2]) in T.ANIMA_TONE_RARE:
-                d["w"] = 1
+                d["st"] = -1
             if d:
                 default.setdefault(pc, {})[ks(k)] = d
     used = {ks(k) for keys in progs.values() for k in keys} | {f"0-4-{pc}" for pc in range(120)}

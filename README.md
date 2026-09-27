@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.036** (`python duality.py --version`).
+Current development line: **v0.19.037** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 

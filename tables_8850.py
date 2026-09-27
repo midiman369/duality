@@ -351,8 +351,8 @@ ANIMA_TONE_BLOCK = {
 }
 
 # The user's picks from the "Anima Tone Palettes" page (tools/picker/build_tone_picker.py),
-# per GM program (0-based): {(cc00, cc32, pc): {"w": 0|1|2|4, "efx": -2..2, "note": "..."}}.
-# w 0 = never pick, 1 = less often (x1/2), 2 = normal, 4 = favoured (x2). A listed tone
+# per GM program (0-based): {(cc00, cc32, pc): {"w": w, "efx": -2..2, "note": "..."}}.
+# w = 2 x the page's multiplier: 0 never, 2 normal, 4 x2, 6 x3 ..., 1 x1/2, 2/3 x1/3 .... A listed tone
 # overrides ANIMA_TONE_RARE / ANIMA_TONE_BLOCK. efx and note are recorded for Anima's
 # insert balance and phrasing; a program with no entry picks exactly as before.
 ANIMA_TONE_PREFS: dict = {}
@@ -363,10 +363,10 @@ def anima_tone_pref(gm_pc: int, key) -> dict:
     return (ANIMA_TONE_PREFS.get(int(gm_pc) & 0x7F) or {}).get(tuple(key)) or {}
 
 
-def anima_tone_weight(gm_pc: int, key) -> int:
-    """Pick weight: 0 never, 1 less often, 2 normal, 4 favoured."""
+def anima_tone_weight(gm_pc: int, key) -> float:
+    """Pick weight, 2 x the multiplier: 0 never, 2 normal, 4 x2, 1 x1/2 ..."""
     w = anima_tone_pref(gm_pc, key).get("w")
-    return 2 if w is None else max(0, int(w))
+    return 2 if w is None else max(0.0, float(w))
 
 
 def anima_tone_slots(pc: int) -> list[tuple[int, int, int]]:
