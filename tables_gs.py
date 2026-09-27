@@ -708,8 +708,9 @@ ANIMA_EFX_DIRT_LEVEL = {
     (0x11, 0x03): 127, (0x11, 0x04): 127, (0x11, 0x05): 127, (0x11, 0x06): 127,  # OD1/OD2, OD/…
 }
 
-# Gate Reverb: Type at 0x03, 02 = Sweep1, 03 = Sweep2 (they pop more).
-ANIMA_EFX_GATE_TYPE = {(0x01, 0x56): (0x03, (0x02, 0x03))}
+# Gate Reverb: Type at 0x03: 00 Normal, 01 Reverse, 02 Sweep1, 03 Sweep2; the seed picks one.
+ANIMA_EFX_GATE_TYPE = {(0x01, 0x56): (0x03, (0x00, 0x01, 0x02, 0x03))}
+ANIMA_EFX_GATE_NAMES = ("normal", "reverse", "sweep 1", "sweep 2")
 # Mono signature types: at most one live copy across all GS ports.
 ANIMA_EFX_EXCLUSIVE = frozenset({
     (0x04, 0x00),  # GTR Multi 1

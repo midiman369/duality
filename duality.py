@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.038"
+VERSION = "0.19.039"
 
 
 """
@@ -45,7 +45,8 @@ Anima (opt-in)
     p.216), picked per family with weights (favoured ×2, less often ×½).
     After the pick: pan-capable types follow the file's CC10; delay times
     follow the beat (MIDI clock, else note onsets) with feedback ≤ 50 %;
-    pitch shifters get a doubler / octave / fifth; Gate Reverb uses Sweep;
+    pitch shifters get a doubler / octave / fifth; Gate Reverb gets a seeded type
+    (Normal, Reverse, Sweep 1 or 2);
     dirt inserts' Level follows a CC7/CC11 fade-out. CC16 drives only wah
     and rotary types (on EFX Control 1 or 2, whichever holds the knob),
     each unit on its own: the wah follows the player (picks quack, held
@@ -743,6 +744,14 @@ ANIMA_GAME_SNAP_DIFF = 3       # channels whose PC changed vs last cue
 ANIMA_EFX_IDLE_SEC = 15.0   # keep current EFX this long after hero goes quiet
 ANIMA_EFX_HOLD_SEC = 5.0    # family stays "sounding" this long after last note
 ANIMA_EFX_ARM_SEC = 12.0    # unused by the 0.19 planner; kept so older logs stay readable
+# Hero split: a featured line whose family shares one unit gets a spare unit of its own
+# with a different type of the same family (only when every family is placed and no
+# part makes harmony, since seat units then want every spare). Type goes onto the empty unit first; the hero moves over
+# in a breath at least PREP_SEC later (Part On there, unpin + Part Off on the old unit).
+ANIMA_HERO_SPLIT_PREP_SEC = 0.30
+ANIMA_HERO_SPLIT_BREATH = 0.25   # the hero has been silent this long (notes, ghosts, strums)
+ANIMA_HERO_SPLIT_WAIT = 10.0     # give a prepared unit back once the hero is no longer featured past this
+ANIMA_HERO_SPLIT_SKIP = frozenset({"guitar_dist", "seat", "file_park"})
 ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX type/owner changes on one unit
 ANIMA_EFX_FLUSH_GAP = 0.18  # unused; 166 flush applies on the part's own note-off
 ANIMA_EFX_SETTLE_SEC = 0.060  # unused; notes are not delayed
@@ -4316,6 +4325,7 @@ class Duality:
         self._anima_efx_dly_upkeep()
         if not getattr(self, "_anima_efx_burst_dirty", False) and any(self._file_used_ch):
             self._anima_seat_efx()   # never ahead of the planner's setup pass
+            self._anima_hero_split_tick()
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
@@ -5148,13 +5158,20 @@ class Duality:
             self._log_line(f"ANIMA seed unlock {seed:04X}")
             self._set_status(f"Anima seed unlock {seed:04X} — X/idle will reroll", duration=3.0)
 
-    def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None):
-        """Keep a player's type when they relocate; new player in same fam gets another row."""
+    def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None, avoid=None):
+        """Keep a player's type when they relocate; new player in same fam gets another row.
+        avoid: types to skip when the palette has others (a hero unit differs from its family's)."""
         # Rows are (msb, lsb, name, weight); callers get (msb, lsb, name).
         pal = [
             (r[0], r[1], r[2], float(r[3]) if len(r) > 3 else 2)
             for r in (ANIMA_EFX_GS.get(fam) or [])
         ]
+        if avoid:
+            rest = [row for row in pal if (row[0], row[1]) not in avoid]
+            if rest:
+                pal = rest
+                if port is not None and tuple((self._anima_efx_pick.get((fam, port)) or ())[:2]) in avoid:
+                    self._anima_efx_pick.pop((fam, port), None)
         if port is not None:
             tags = self.out_formats[port] if port < len(self.out_formats) else set()
             cls = self._gs_canvas_class(tags)
@@ -5202,6 +5219,8 @@ class Duality:
         def _from_typ(typ):
             if not typ:
                 return None
+            if avoid and tuple(typ)[:2] in avoid:
+                return None   # a hero unit takes a different type, not the family's
             if want_pan and tuple(typ)[:2] not in ANIMA_EFX_PAN_SLOT:
                 return None
             for row in pal:
@@ -5472,9 +5491,11 @@ class Duality:
         gate = ANIMA_EFX_GATE_TYPE.get(typ)
         if gate:
             addr, vals = gate
-            v = vals[self._anima_mix(seed, port + 7) % len(vals)]
+            # _anima_mix already adds the seed once; adding it again made the roll
+            # even-only per port (two of the four types could never come up).
+            v = vals[self._anima_mix(0x4A7 + port * 131) % len(vals)]
             msgs.append(self._gs_dt1([0x40, 0x03, addr], [v]))
-            notes.append("sweep " + str(v - 1))
+            notes.append("gate " + ("normal", "reverse", "sweep 1", "sweep 2")[v & 3])
         if not msgs:
             return
         self._anima_efx_ours = True
@@ -5896,12 +5917,12 @@ class Duality:
             return pri.get(fam, 99)
 
         def _take(for_fam: str):
-            # 1) this family already lives here
+            # 1) this family already lives here (its main unit, not a hero's)
             for p in gs:
                 if p in used_ports:
                     continue
                 sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
-                if sl.get("fam") == for_fam:
+                if sl.get("fam") == for_fam and not sl.get("hero"):
                     used_ports.add(p)
                     return p
             # 2) empty box
@@ -5926,8 +5947,8 @@ class Duality:
                     if fam == "seat":
                         sl["yield"] = True   # stop new harmony there; it quiets
                     continue
-                r = _rank(fam)
-                if sl.get("heard_t") and r <= _rank(for_fam):
+                r = 98 if sl.get("hero") else _rank(fam)   # a hero unit yields to any family
+                if sl.get("heard_t") and r <= _rank(for_fam) and not sl.get("hero"):
                     continue
                 if r > steal_rank:
                     steal, steal_rank = p, r
@@ -5936,8 +5957,19 @@ class Duality:
                 return steal
             return None
 
+        # Hero-split units keep their hero across later bursts; the family plans
+        # without it, and any family that needs the unit may still take it.
+        heroes = {}
+        for p in gs:
+            sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
+            hf = sl.get("fam")
+            if sl.get("hero") and hf in fam_chs:
+                hc = [c for c in (sl.get("chs") or []) if c in fam_chs[hf]]
+                if hc:
+                    heroes[p] = (hf, hc)
+        hero_chs = {c for _f, hc in heroes.values() for c in hc}
         for fam in ANIMA_EFX_PRIORITY:
-            chs = [c for c in fam_chs.get(fam, []) if c not in used_chs]
+            chs = [c for c in fam_chs.get(fam, []) if c not in used_chs and c not in hero_chs]
             if not chs:
                 continue
             if fam == "guitar_dist":
@@ -6001,6 +6033,17 @@ class Duality:
                     "split": bool(sl.get("split")) if sl.get("fam") == fam else False,
                 })
                 used_chs.update(chs)
+        for p, (hf, hc) in heroes.items():
+            if p not in used_ports:
+                used_ports.add(p)
+                plan.append({"port": p, "fam": hf, "chs": hc, "split": False, "hero": True})
+            else:
+                # Another family took the unit: the hero rejoins its family's unit.
+                for item in plan:
+                    if item["fam"] == hf and item["port"] not in heroes:
+                        item["chs"] = list(item["chs"]) + [c for c in hc if c not in item["chs"]]
+                        break
+            used_chs.update(hc)
         return plan
 
     def _anima_ch_has_notes(self, ch: int) -> bool:
@@ -6329,8 +6372,8 @@ class Duality:
             return True
         if fam == "file_park":
             return False
-        if fam == "seat":
-            return True   # a seat insert never holds a unit against a real family
+        if fam == "seat" or sl.get("hero"):
+            return True   # a seat or hero-split unit never holds a unit against a real family
         heard = float(sl.get("heard_t") or 0)
         if heard:
             return (now - heard) >= ANIMA_EFX_IDLE_SEC
@@ -6411,6 +6454,8 @@ class Duality:
             before = set(old.get("chs") or [])   # old IS the live slot dict
             self._anima_slots[port]["chs"] = list(set(chs) | before)
             self._anima_slots[port]["split"] = bool(old.get("split"))
+            if item.get("hero"):
+                self._anima_slots[port]["hero"] = True
             for c in chs:
                 if self._anima_efx_on[port][c]:
                     continue
@@ -6472,7 +6517,7 @@ class Duality:
                     self._anima_efx_wet_mark(port, c)
             self._anima_unpin_others(port, fam, chs, list(old.get("chs") or []))
             return
-        pick = self._anima_palette_pick(fam, port, chs)
+        pick = self._anima_palette_pick(fam, port, chs, avoid=item.get("avoid"))
         if not pick:
             return
         msb, lsb, label = pick
@@ -6542,6 +6587,8 @@ class Duality:
             "heard_t": float(old.get("heard_t") or 0) if old.get("fam") == fam else 0.0,
             "grace": float(getattr(self, "_anima_efx_grace", ANIMA_EFX_DUMP_SEC)),
         }
+        if item.get("hero"):
+            self._anima_slots[port]["hero"] = True
         if old.get("typ") != typ:
             # Type write reset Level to default: re-apply a fade in progress.
             self._anima_dirt_level(port, force=True)
@@ -6668,6 +6715,114 @@ class Duality:
                 continue
             out.append(p)
         return out
+
+    def _anima_hero_quiet(self, ch: int, now: float) -> bool:
+        """The hero is between phrases: nothing of it sounding or queued, for a breath."""
+        if any(k[0] == ch for k in self.active):
+            return False
+        for ghosts in (self._anima_ghosts or {}).values():
+            if any(g and (g[1] & 0x0F) == ch for g in ghosts or []):
+                return False
+        for _when, _p, msg in self._anima_strum_q or []:
+            if (getattr(msg, "channel", -1) & 0x0F) == ch:
+                return False
+        if any(item[3] == ch for item in (self._anima_mallet_q or [])):
+            return False
+        hist = self._anima_line_hist.get(ch) or []
+        last = max(hist[-1][0] if hist else 0.0, float(self._anima_line_off.get(ch) or 0.0))
+        return now - last >= ANIMA_HERO_SPLIT_BREATH
+
+    def _anima_hero_split_tick(self) -> None:
+        """Give a featured line (the hero) a spare unit of its own with a different
+        type of its family, when its family shares one unit and nothing else needs
+        the spare. Two steps, neither on a note (rule 8), no note delayed (rule 6):
+        the type goes onto the empty unit first (no player there, rule 1); in the
+        hero's next breath, at least PREP_SEC later, it moves over: Part On and pin
+        there, unpin and Part Off on the old unit together (rule 2)."""
+        now = time.monotonic()
+        if now - float(getattr(self, "_anima_hero_t", 0.0) or 0.0) < 0.1:
+            return
+        self._anima_hero_t = now
+        home = self._anima_file_home_port()
+        gs = [p for p in self._anima_gs_ports() if p != home and p < len(self._anima_slots)]
+        slots = self._anima_slots
+        # 1) a prepared unit: move the hero over in a breath, or give it back
+        for p in gs:
+            sl = slots[p]
+            ch = sl.get("hero_prep")
+            if ch is None:
+                continue
+            fam = sl.get("fam")
+            src = self._anima_ch_port.get(ch)
+            gone = ch not in (self._anima_line or {}) and now - float(sl.get("t") or 0) > ANIMA_HERO_SPLIT_WAIT
+            if fam != self._anima_efx_family(ch) or src is None or src == p or gone:
+                if not self._anima_port_players_sounding(p):
+                    self._anima_clear_slot(p)
+                continue
+            if now - float(sl.get("t") or 0) < ANIMA_HERO_SPLIT_PREP_SEC or not self._anima_hero_quiet(ch, now):
+                continue
+            self._anima_efx_ours = True
+            self._safe_out_send(p, self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x01]))
+            self._anima_efx_on[p][ch] = True
+            self._anima_efx_wet_mark(p, ch)
+            sl["chs"] = [ch]
+            sl.pop("hero_prep", None)
+            self._anima_ch_port[ch] = p
+            old = slots[src]
+            old["chs"] = [c for c in (old.get("chs") or []) if c != ch]
+            if self._anima_efx_on[src][ch]:
+                self._safe_out_send(src, self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x00]))
+                self._anima_efx_on[src][ch] = False
+            typ = tuple(sl.get("typ") or ())[:2]
+            self._anima_efx_shape(p, typ, [ch], fam)
+            self._anima_efx_apply_pan(p, typ, [ch])
+            self._anima_feedback(
+                "efx", f"P{p + 1} ch{ch + 1} hero split from P{src + 1} ({fam} → GS {GS_EFX_TYPES.get(typ, typ)})",
+                status=True,
+            )
+            return
+        if any(slots[p].get("hero_prep") is not None for p in gs):
+            return
+        # 2) a featured line on a shared unit, every family placed, a spare the seats can give
+        for ch, info in list((self._anima_line or {}).items()):
+            if now - info[2] > info[4]:
+                continue
+            fam = self._anima_efx_family(ch)
+            src = self._anima_ch_port.get(ch)
+            if not fam or fam in ANIMA_HERO_SPLIT_SKIP or src is None or src not in gs:
+                continue
+            ssl = slots[src]
+            if ssl.get("fam") != fam or ssl.get("hero") or not [c for c in ssl.get("chs") or [] if c != ch]:
+                continue
+            if any(slots[p].get("hero") and slots[p].get("fam") == fam for p in gs):
+                continue
+            reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
+            unplaced = any(
+                self._file_used_ch[c] and not self._anima_is_rhythm(c) and c not in reserved
+                and self._anima_efx_family(c) and c not in self._anima_ch_port
+                for c in range(16)
+            )
+            if unplaced:
+                return
+            pool = [p for p in gs if not slots[p].get("fam") and not slots[p].get("chs")]
+            pool += [p for p in gs if slots[p].get("fam") == "seat" and not slots[p].get("yield")
+                     and not self._anima_port_players_sounding(p)]
+            harmony = any(
+                self._file_used_ch[c] and not self._anima_is_rhythm(c) and self._anima_efx_family(c)
+                and self._anima_category(c) in ANIMA_HARM_CATS
+                for c in range(16)
+            )
+            if harmony or not pool:
+                return   # seat units carry the harmony on every spare; they come first
+            p = pool[-1]
+            self._anima_commit_slot({
+                "port": p, "fam": fam, "chs": [], "split": False, "hero": True,
+                "avoid": {tuple(ssl.get("typ") or ())[:2]},
+            })
+            if slots[p].get("fam") == fam:
+                slots[p]["hero_prep"] = ch
+                slots[p]["hero"] = True
+            return
 
     def _anima_seat_efx(self, force: bool = False) -> None:
         """Give each quiet seat unit the gentle "seat" insert, and wire the
