@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.025"
+VERSION = "0.19.026"
 
 
 """
@@ -64,7 +64,9 @@ Anima (opt-in)
     channel panned to the mirror of its hero (±5% seeded); two or more
     spares are shared out by family. No spare: the hero's unit. With a seat,
     "both sides" allows up to 3 other voices and seat ghosts get +5% (not
-    for a part that is already the loudest playing).
+    for a part that is already the loudest playing). A quiet seat gets a
+    gentle insert (tables_gs "seat": Space D, choruses, reverb); it ranks
+    below every family, which takes the unit once its harmony is quiet.
   • Mallet sticking (glock, vibes, marimba, xylophone, bells, dulcimer, steel
     drums): chords struck by hands (2/4 mallets); where the part leaves room
     the seed adds a double, a triplet or a fading hand-to-hand roll. A new
@@ -4232,6 +4234,8 @@ class Duality:
         self._anima_park_idle_poll()
         self._anima_efx_burst_poll()
         self._anima_efx_dly_upkeep()
+        if not getattr(self, "_anima_efx_burst_dirty", False) and any(self._file_used_ch):
+            self._anima_seat_efx()   # never ahead of the planner's setup pass
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
@@ -5641,6 +5645,8 @@ class Duality:
                 if not fam or fam == "file_park":
                     continue
                 if not self._anima_slot_evictable(p, now):
+                    if fam == "seat":
+                        sl["yield"] = True   # stop new harmony there; it quiets
                     continue
                 r = _rank(fam)
                 if sl.get("heard_t") and r <= _rank(for_fam):
@@ -6045,6 +6051,8 @@ class Duality:
             return True
         if fam == "file_park":
             return False
+        if fam == "seat":
+            return True   # a seat insert never holds a unit against a real family
         heard = float(sl.get("heard_t") or 0)
         if heard:
             return (now - heard) >= ANIMA_EFX_IDLE_SEC
@@ -6356,14 +6364,55 @@ class Duality:
     # Seat units: harmony ghosts on a spare unit, mirrored pan
     # ------------------------------------------------------------------
     def _anima_seat_units(self) -> list:
-        """GS units no family and no file insert has claimed."""
+        """GS units no family and no file insert has claimed (or a seat insert holds).
+
+        A seat a real family is waiting for ("yield") takes no new harmony, so
+        it goes quiet and the planner can hand it over (rule 1).
+        """
         out = []
+        home = self._anima_file_home_port()   # the file's own insert lives there
         for p in self._anima_gs_ports():
+            if p == home:
+                continue
             sl = (self._anima_slots[p] if p < len(self._anima_slots) else {}) or {}
+            if sl.get("fam") == "seat":
+                if not sl.get("yield"):
+                    out.append(p)
+                continue
             if sl.get("fam") or sl.get("chs"):
                 continue
             out.append(p)
         return out
+
+    def _anima_seat_efx(self, force: bool = False) -> None:
+        """Give each quiet seat unit the gentle "seat" insert, and wire the
+        channels whose harmony it carries (type and Part EFX together, rule 7).
+
+        Runs after the setup burst settles and then about once a second; never
+        on a unit with a sounding player (rule 1), never per note (rule 8).
+        """
+        now = time.monotonic()
+        if not force and now - float(getattr(self, "_anima_seat_efx_t", 0.0) or 0.0) < 1.0:
+            return
+        self._anima_seat_efx_t = now
+        if not ANIMA_EFX_GS.get("seat"):
+            return
+        chs = sorted(
+            c for c in range(16)
+            if self._file_used_ch[c]
+            and not self._anima_is_rhythm(c)
+            and self._anima_efx_family(c)
+            and self._anima_category(c) in ANIMA_HARM_CATS
+        )
+        if not chs:
+            return
+        for p in self._anima_seat_units():
+            sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
+            if sl.get("fam") == "seat" and set(chs) <= set(sl.get("chs") or []):
+                continue
+            if self._anima_port_players_sounding(p, chs):
+                continue
+            self._anima_commit_slot({"port": p, "fam": "seat", "chs": chs, "split": False})
 
     def _anima_seat_port(self, ch: int, hero: int):
         """Seat unit for this channel's harmony, or None (then the hero's unit)."""
@@ -6382,7 +6431,7 @@ class Duality:
                         load[p] += 1
                 pick = min(seats, key=lambda p: (load[p], p))
                 self._anima_seat_fam[fam] = pick
-        if not self._anima_ghost_poly_ok(pick):
+        if not self._anima_ghost_poly_ok(pick) or self._anima_efx_wet_blocked(pick, ch):
             return None
         # A unit where this channel plays real notes keeps the file's pan.
         for (c, _n), info in self.active.items():
@@ -7759,6 +7808,7 @@ class Duality:
         plan = self._anima_build_plan()
         self._anima_commit_plan(plan)
         self._anima_efx_grace = ANIMA_EFX_DUMP_SEC
+        self._anima_seat_efx(force=True)
 
     def _anima_efx_burst_poll(self) -> None:
         if not getattr(self, "_anima_efx_burst_dirty", False):

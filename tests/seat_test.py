@@ -8,6 +8,10 @@ horn ch6 pan 64, strings ch12 pan 96), so one unit is spare. Checks:
   - a file pan move later in the song is mirrored on the spare too
   - no real (file) note of a seated channel plays on the spare
   - panic() gives the spare unit the file's pans back
+  - the spare gets the gentle "seat" insert with the harmony channels wired
+    in; when a guitar arrives mid-song it takes the unit over, never with a
+    type write while seat harmony is sounding there, and harmony then goes
+    back to the heroes' units
 LotR medley (if present, tests/README.md): five GS units, two spares, each
 family's harmony keeps to one spare and families are shared out.
 """
@@ -135,6 +139,70 @@ for ch in sorted({c for p, c in d._anima_seat_pan}):
         fails.append(f"ch{ch+1} file pan {fp}: seat pan {got}, want {w if w is not None else 'a side'} ±{JIT}")
 if (3, 0) in d._anima_seat_pan and abs(last_pan(3, 0) - (128 - 20)) > JIT:
     fails.append(f"flute pan move not mirrored: {last_pan(3, 0)}")
+sl4 = d._anima_slots[3]
+if sl4.get("fam") != "seat" or not sl4.get("typ"):
+    fails.append(f"P4 slot {sl4.get('fam')} {sl4.get('typ')}, want a seat insert")
+elif not all(d._anima_efx_on[3][c] for c in (0, 5, 11)):
+    fails.append("seat insert: harmony channels not wired (Part EFX) on P4")
+
+# A guitar arrives: the seat must hand P4 over, quietly.
+t0 = end + 0.5
+pc_t = t0 + 2.02                 # while seat harmony is sounding
+ev2 = [(pc_t, mido.Message("program_change", channel=2, program=25)),
+       (pc_t + 0.01, mido.Message("control_change", channel=2, control=10, value=64))]
+for k in range(40):
+    tk = t0 + 0.5 + k * 0.25
+    if tk >= pc_t + 0.4:
+        for n in (52, 59, 64):
+            ev2.append((tk, mido.Message("note_on", channel=2, note=n, velocity=80)))
+            ev2.append((tk + 0.2, mido.Message("note_off", channel=2, note=n, velocity=0)))
+    if k < 30:
+        ev2.append((tk, mido.Message("note_on", channel=0, note=tune[k % 8], velocity=95)))
+        ev2.append((tk + 0.22, mido.Message("note_off", channel=0, note=tune[k % 8], velocity=0)))
+        if k % 8 == 0:
+            for q in (48, 55, 64):
+                ev2.append((tk, mido.Message("note_on", channel=11, note=q, velocity=80)))
+                ev2.append((tk + 1.9, mido.Message("note_off", channel=11, note=q, velocity=0)))
+n0 = len(REC)
+ev2.sort(key=lambda e: e[0])
+i, tt = 0, end
+sound4 = collections.Counter()
+late_flute = set()
+bad_type = []
+handover_t = None
+while tt <= t0 + 12.0:
+    CLOCK[0] = 1000.0 + tt
+    while i < len(ev2) and ev2[i][0] <= tt + 1e-9:
+        d.process(ev2[i][1]); i += 1
+    d._anima_tick()
+    d._check_anima_session_idle()
+    for _t, p, m in REC[n0:]:
+        if p != 3:
+            continue
+        if m.type == "note_on" and m.velocity:
+            sound4[(m.channel, m.note)] += 1
+        elif m.type in ("note_on", "note_off"):
+            sound4[(m.channel, m.note)] = 0
+        elif m.type == "sysex" and list(m.data[4:7]) == [0x40, 0x03, 0x00]:
+            live = [k for k, v in sound4.items() if v > 0 and d._anima_efx_on[3][k[0]]]
+            if live:
+                bad_type.append(f"t={tt:.2f} P4 type write under sounding {live}")
+    n0 = len(REC)
+    if handover_t is None and d._anima_slots[3].get("fam") not in ("seat", None):
+        handover_t = tt
+    if handover_t is not None and tt > handover_t + 0.5:
+        for _t, p, m in REC[-50:]:
+            if p == 3 and _t >= 1000.0 + handover_t + 0.5 and m.type == "note_on" and m.velocity \
+                    and m.channel == 0:
+                late_flute.add(round(_t - 1000.0, 2))
+    tt = round(tt + 0.005, 3)
+fails += bad_type[:5]
+if handover_t is None:
+    fails.append(f"guitar never took P4 over (P4 {d._anima_slots[3].get('fam')})")
+else:
+    print(f"handover: P4 → {d._anima_slots[3].get('fam')} {handover_t - pc_t:.2f}s after the guitar's PC")
+    if late_flute:
+        fails.append(f"flute harmony still on P4 after the handover at {sorted(late_flute)[:4]}")
 d.panic()
 for (p, ch) in [(3, 0), (3, 5), (3, 11)]:
     lp = last_pan(p, ch)

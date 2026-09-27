@@ -464,6 +464,15 @@ ANIMA_EFX_GS = {
         (0x01, 0x60, "2 Pitch Shifter", 1),  # #29
         (0x01, 0x61, "Fb P.Shifter", 1),  # #30
     ],
+    # Seat unit (not an instrument family): a spare unit carrying harmony
+    # ghosts gets a gentle ensemble colour. Lowest rank; any family takes it.
+    "seat": [
+        (0x01, 0x43, "Space D", 4),  # #19
+        (0x01, 0x40, "Hexa Chorus", 2),  # #16
+        (0x01, 0x42, "Stereo Chorus", 2),  # #18
+        (0x01, 0x44, "3D Chorus", 2),  # #20
+        (0x01, 0x55, "Reverb", 1),  # #26
+    ],
 }
 ANIMA_EFX_PRIORITY = (
     "guitar_dist", "guitar_mute", "guitar_clean", "guitar_acoustic",
