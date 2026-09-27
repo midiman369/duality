@@ -54,6 +54,13 @@ The file's own insert always wins its home unit.
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).
+- **Alchemy revival (GS<->XG)**: it broke because Duality could not set EFX properly back then; the insert
+  work since 0.19 (per-unit placement, parameter addresses, Control Sources, Balance, reading the file's
+  own EFX) removes that cause. Idea: on SC-8850 only, use the User Instrument banks (CC00 64/65) and user
+  drum sets to hold the nearest GS tone reshaped toward the XG voice (filter / envelope; no new waveforms).
+  Opt-in and limited to slots the user sets aside (they are persistent memory on a real unit); write in
+  the setup burst with real-hardware pacing; check SC-VA / 88Emu50 support first. Needs the manual's User
+  Instrument / User Drum MIDI Implementation pages.
 
 ## Out of scope unless the user asks
 
@@ -61,4 +68,4 @@ Seat units (0.19.024) only carry Anima's own harmony ghosts on a spare unit; gen
 there (players, motifs) is still out of scope.
 Percussion / atonal mapping, SCPOP + Anima bypass, beat grid / motifs, extra orchestral players,
 multi-input, a built-in file player. Keep seed performance, tone lock, ghosts, foley and the widened
-family tables. Alchemy (GS↔XG rewrite) stays marked broken. Anima is "for fun": a live stream player.
+family tables. Alchemy (GS↔XG rewrite) stays marked broken until the revival above is taken up. Anima is "for fun": a live stream player.
