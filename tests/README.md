@@ -60,6 +60,14 @@ Rhodes comping and an alto sax melody in the bridge, a breakdown with the muted 
 Seeds that deal both a rotary organ and a wah guitar with the 0.19.028 palettes: `359A` (both
 guitars on wah types, OD/Rotary), `5419` (Auto Wah, Rotary Multi on Control 2), `286A`, `0772`.
 
+`python tests/make_metal_test.py` writes `tests/midi/anima_metal_test.mid`: an original heavy
+metal piece (~106 s) for distorted-guitar EFX. Doom intro at 72 BPM (tritone riff), Priest-style
+gallop and twin harmony leads at 168 BPM, a 16-bar solo (runs, two-handed tapping, whammy vibrato,
+two dive bombs; bend range one octave), riff reprise and a doom outro with a final dive. Rhythm
+guitars hard left/right, lead centre so it can get a GTR Multi. Seeds that put the lead on
+GTR Multi 3 (wah on Control 1) with the 0.19.028 palettes: `08BA`, `0BC2`, `153B`, `2E9E`,
+`31A6`, `0249`, `1233`, `1BAC` (about 8% of seeds).
+
 ## Tests
 
 | Script | Checks |
