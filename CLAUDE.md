@@ -54,6 +54,15 @@ The file's own insert always wins its home unit.
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).
+- **Anima on XG outputs (before the Alchemy revival)**: give Anima's tone, EFX and articulation layers an
+  XG target, the way GS / SC-8850 has one now. Four capability targets: (1) the baseline XG spec, (2)
+  S-YXG50 / S-YXG100 (soft synths), (3) MU128, (4) MU2000. Per target, confirm from its own voice list and
+  manual (don't trust memory): voice and drum-kit counts and bank layout (MSB 0 normal / 64 SFX / 126-127
+  drums, LSB variations, per-model extras such as MU-basic / PLG banks), polyphony, and the effect blocks:
+  the Variation effect (System or Insertion, per part), and the number of Insertion effects on MU128 /
+  MU2000, their types and parameter addresses (the XG counterpart of the GS insert planner and its 8
+  rules). Pickers like the GS ones would follow (XG tone palettes from each voice list; XG EFX palettes).
+  `tables_xg.py` already has the XG effect type lists (MU128-based) used by Alchemy.
 - **Alchemy revival (GS<->XG)**: it broke because Duality could not set EFX properly back then; the insert
   work since 0.19 (per-unit placement, parameter addresses, Control Sources, Balance, reading the file's
   own EFX) removes that cause. Idea: on SC-8850 only, use the User Instrument banks (CC00 64/65) and user
