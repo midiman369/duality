@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.024"
+VERSION = "0.19.025"
 
 
 """
@@ -62,7 +62,9 @@ Anima (opt-in)
     sounds within an octave (its notes decay, theirs hold).
   • Seat units: harmony plays on a GS unit no family has claimed, each
     channel panned to the mirror of its hero (±5% seeded); two or more
-    spares are shared out by family. No spare: the hero's unit.
+    spares are shared out by family. No spare: the hero's unit. With a seat,
+    "both sides" allows up to 3 other voices and seat ghosts get +5% (not
+    for a part that is already the loudest playing).
   • Mallet sticking (glock, vibes, marimba, xylophone, bells, dulcimer, steel
     drums): chords struck by hands (2/4 mallets); where the part leaves room
     the seed adds a double, a triplet or a fading hand-to-hand roll. A new
@@ -585,6 +587,9 @@ ANIMA_HARM_LOW_VEL = 0.45   # lower voice when a thin source gets both sides
 ANIMA_HARM_RECENT = 0.60    # a part that struck within this still counts as sounding
 ANIMA_HARM_FLOOR = 48       # no lower harmony ghost below C3 (mud)
 ANIMA_HARM_CTX = 0.8        # notes struck this recently still colour the chord (picked arpeggios)
+ANIMA_HARM_RUB_CTX = 0.25   # ... but only notes this recent can still rub against a harmony
+ANIMA_HARM_THIN_SEAT = 3    # with a seat unit (harmony on the other side) "thin" allows more voices
+ANIMA_SEAT_VEL_ADD = 0.05   # a harmony on a seat unit is heard apart from its hero: a touch louder
 ANIMA_HARM_ACC_UP_MIN = 52  # accompaniment below this gets no ghost above (bass lines stay low)
 # Seat units ("second desk"): a GS unit no family or file insert has claimed
 # plays the harmony ghosts, each channel panned to the mirror of its hero
@@ -6622,7 +6627,7 @@ class Duality:
         finally:
             self._anima_rehome_guard = False
 
-    def _anima_chord_guess(self, extra=None):
+    def _anima_chord_guess(self, extra=None, ctx=True):
         """Held pitch-classes → (root, name, tone_pcs) or None.
 
         extra = (ch, note) not yet in self.active. Passing tones younger
@@ -6634,7 +6639,7 @@ class Duality:
         pcs = set()
         if extra is not None:
             pcs.add(int(extra[1]) & 0x7F)
-            for t0, c, n in list(getattr(self, "_anima_harm_ctx", None) or []):
+            for t0, c, n in (list(getattr(self, "_anima_harm_ctx", None) or []) if ctx else []):
                 if c != (int(extra[0]) & 0x0F) and now - t0 <= ANIMA_HARM_CTX:
                     pcs.add(int(n) & 0x7F)
         for (c, n), info in list(self.active.items()):
@@ -6671,12 +6676,12 @@ class Duality:
         tones = frozenset((root + i) % 12 for i in siv)
         return root, name, tones
 
-    def _anima_harm_sounding(self, ch: int):
-        """Real pitches sounding now, plus notes other parts struck within ANIMA_HARM_CTX."""
+    def _anima_harm_sounding(self, ch: int, window: float = ANIMA_HARM_RUB_CTX):
+        """Real pitches sounding now, plus notes other parts struck within `window`."""
         now = time.monotonic()
         notes = {int(n) for (c, n) in self.active if not self._anima_is_rhythm(c)}
         for t0, c, n in list(getattr(self, "_anima_harm_ctx", None) or []):
-            if c != ch and now - t0 <= ANIMA_HARM_CTX:
+            if c != ch and now - t0 <= window:
                 notes.add(int(n))
         return notes
 
@@ -6799,8 +6804,9 @@ class Duality:
           mel  - top of the texture: hero x0.90, ghost above x0.50 (below if no room)
           acc  - another part sounds above, or this is the top of a held chord
                  while another part moves: hero x0.85, ghost below x0.45
-          both - thin source (at most ANIMA_HARM_THIN other voices): above x0.50,
-                 below x0.45, hero x0.90
+          both - thin source (at most ANIMA_HARM_THIN other voices, or
+                 ANIMA_HARM_THIN_SEAT with a seat unit): above x0.50, below x0.45,
+                 hero x0.90
         """
         ch, note = ch & 0x0F, int(note) & 0x7F
         key = (ch, note)
@@ -6824,7 +6830,13 @@ class Duality:
                 return None
         chord = self._anima_chord_guess(extra=(ch, note))
         if chord is not None and (note % 12) not in chord[2]:
-            return None   # a passing tone: harmonising it doubles the rub
+            # Right after a chord change the recent notes still hold the old
+            # chord; what is held now may already show the new one.
+            held = self._anima_chord_guess(extra=(ch, note), ctx=False)
+            if held is not None and (note % 12) in held[2]:
+                chord = held
+            else:
+                return None   # a passing tone: harmonising it doubles the rub
         near = self._anima_harm_sounding(ch)
         near.discard(note)
         if chord is None and any(abs(note - n) in (1, 11, 13) for n in near):
@@ -6853,6 +6865,8 @@ class Duality:
                 up = None
             if down and lo - 2 <= note - down <= hi + 2:
                 down = None
+        thin = ANIMA_HARM_THIN_SEAT if self._anima_seat_units() else ANIMA_HARM_THIN
+        loudest = self._anima_harm_loudest(ch, note)
         if above or (chordal and busy):
             mode, hero = "acc", ANIMA_HARM_ACC_HERO
             if down:
@@ -6861,7 +6875,7 @@ class Duality:
                 ivs = [(up, ANIMA_HARM_ACC_VEL)]
             else:
                 ivs = []
-        elif voices <= ANIMA_HARM_THIN and up and down:
+        elif voices <= thin and up and down and not loudest:
             mode, hero = "both", ANIMA_HARM_HERO
             ivs = [(up, ANIMA_HARM_VEL), (-down, ANIMA_HARM_LOW_VEL)]
         else:
@@ -6876,7 +6890,24 @@ class Duality:
             hero = 1.0   # a buried line is lifted, not lowered
         if not ivs:
             return None
-        return {"mode": mode, "hero": hero, "ivs": ivs, "chord": chord}
+        return {"mode": mode, "hero": hero, "ivs": ivs, "chord": chord, "loudest": loudest}
+
+    def _anima_harm_loudest(self, ch: int, note: int) -> bool:
+        """True if this part already out-sounds every other part playing (vel x CC7 x CC11).
+
+        "Both sides" fills out a lackluster part; a melody that is already the
+        loudest thing playing only gets its one ghost (07 wind, 03 flute).
+        """
+        info_v = {}
+        for (c, _n), info in list(self.active.items()):
+            if c == ch or self._anima_is_rhythm(c):
+                continue
+            lvl = int(info.get("velocity") or 0) * self._anima_gain(c)
+            info_v[c] = max(info_v.get(c, 0.0), lvl)
+        if not info_v:
+            return False
+        last = self._anima_last_vel[ch] if self._anima_last_vel[ch] >= 0 else 100
+        return last * self._anima_gain(ch) >= max(info_v.values())
 
     def _anima_harm_crosses(self, ch: int, note: int, gnote: int) -> bool:
         """True if a ghost at gnote would reach (within a tone) a part sounding above note."""
@@ -7237,7 +7268,8 @@ class Duality:
                         self._anima_ghost_kill(owner)
         if plan:
             dest = self._anima_seat_port(ch, hero)
-            if dest is not None:
+            seat = dest is not None
+            if seat:
                 self._anima_seat_take(dest, ch)
             elif self._anima_ghost_poly_ok(hero):
                 dest = hero
@@ -7261,6 +7293,8 @@ class Duality:
                     continue
                 if dest != hero and not self._anima_ghost_poly_ok(dest):
                     break
+                if seat and not plan.get("loudest"):
+                    scale += ANIMA_SEAT_VEL_ADD
                 gvel = max(1, min(127, int(plan.get("vel", vel) * scale)))
                 try:
                     self._send_routed(
