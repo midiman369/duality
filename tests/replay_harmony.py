@@ -103,7 +103,10 @@ while tt <= end:
                     if x.type == "note_on" and x.velocity and x.channel == m.channel]
             hero = [x.velocity for p, x in outs if x.note == m.note]
             ghosts = [x for p, x in outs if x.note != m.note]
+            on_seat = any((p, m.channel) in d._anima_seat_pan for p, x in outs if x.note != m.note)
             cap = {"acc": D.ANIMA_HARM_ACC_VEL}.get(mode, D.ANIMA_HARM_VEL)
+            if on_seat:
+                cap += D.ANIMA_SEAT_VEL_ADD   # heard apart from its hero
             # Humanize may lift a repeated note before harmony scales it.
             lift = max(D.ANIMA_HUMANIZE_UP, D.ANIMA_HUMANIZE_HOT_UP)
             held = [n for (c, n) in d.active if not d._anima_is_rhythm(c) and (c, n) != (m.channel, m.note)]
