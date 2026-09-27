@@ -45,6 +45,7 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `death-gate-03.mid` | `03_-_Death_Gate.MID` | sent on its own | 10979 | `ea51ce60bb29345b` |
 | `death-gate-07.mid` | `07_-_Death_Gate.MID` | sent on its own (plus take `duality-20260926-105647.zip`) | 16475 | `273e78ce59e18479` |
 | `death-gate-97.mid` | `97_-_Death_Gate.MID` | sent on its own | 29260 | `52c4adef9c67f8a7` |
+| `grabbag.mid` | `01_GRABBAG.MID` (non-stop distorted rhythm guitars; seed 50FC deals both to GTR Multi 3) | sent on its own | 14287 | `928e50554b7e6682` |
 | `death-gate-09.mid` | `09_-_Death_Gate.MID` (xylophone on ch2; for listening to mallet sticking) | sent on its own | 12943 | `c526c54a47b9fd14` |
 | `lotr-8850.mid` | `LotR_8850.mid` (Lord of the Rings medley, 16 orchestral parts, 3 families) | sent on its own | 115132 | `9572b49f62912118` |
 
@@ -78,7 +79,7 @@ GTR Multi 3 (wah on Control 1) with the 0.19.028 palettes: `08BA`, `0BC2`, `153B
 | `replay_bulk_dump.py` | A bulk-dump file keeps its own insert (P1 never retyped, ch7 on it) |
 | `replay_file_efx_echo.py` | File Part EFX On is not swallowed as Anima's own echo; `GAME=0/1`, `PRE=0/12` (another song first) |
 | `replay_harmony.py` | Harmony balance (`SONG=03/07/97`): ghost and hero velocity scales, tonal intervals (no 2nd/tritone/7th against the hero, no semitone rub with a held note), no upper ghost left over a line that starts above it, harmony count kept; 97 also checks the ch3 string solo (fast line) and the ch4 Metal Pad tune at 2:50 (slow line) are spotlit |
-| `cc16_test.py` | EFX Control via CC16 per unit, no song: Control Source/Depth routing per the Effect List, rotary speed flips on a held organ chord and back, wah follows the playing (low Manual base, Peak, held notes open wider than fast notes, heel after the part stops), no CC16 to other units (even with a seat unit written last) |
+| `cc16_test.py` | EFX Control via CC16 per unit, no song: Control Source/Depth routing per the Effect List, rotary speed flips on a held organ chord and back, wah follows the playing (low Manual base, Peak, held notes open wider than fast notes, heel after the part stops), a power-chord part on GTR Multi 3 gets the rhythm Peak and no screamer, no CC16 to other units (even with a seat unit written last) |
 | `seat_test.py` | Seat units: harmony on the spare unit with mirrored pan (built-in tune, always runs), file pan moves mirrored, panic restores pans, the seat insert is set and a guitar arriving mid-song takes the unit over without a type write under sounding harmony; with `LotR_8850.mid`, five units share families over two spares |
 | `mallet_test.py` | Mallet sticking, no song: chords struck by hands, doubles / triplets / rolls only where the part leaves room, cancelled by an early note or a program change, rolls alternate hands, nothing left hanging; a delay insert on the marimba is timed from its note spacing (Tm Ctrl Delay lands on the next chord, Stereo Delay folds into its 500 ms) |
 | `tempo_test.py` | Beat tracker: exact on MIDI clock, musical relative on note onsets |
