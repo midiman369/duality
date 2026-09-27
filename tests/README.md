@@ -71,6 +71,16 @@ guitars hard left/right, lead centre so it can get a GTR Multi. Seeds that put t
 GTR Multi 3 (wah on Control 1) with the 0.19.028 palettes: `08BA`, `0BC2`, `153B`, `2E9E`,
 `31A6`, `0249`, `1233`, `1BAC` (about 8% of seeds).
 
+`python tests/make_island_test.py` writes `tests/midi/anima_island_test.mid`: an original calypso piece
+(108 BPM, ~88 s) for hearing mallet sticking. Steel drums lead with chord hits in the intro, marimba
+ostinato and off-beat chords, a vibraphone melody in a minor cove section with xylophone answers, a
+xylophone break (runs, then held notes), glockenspiel sparkles, tubular bells at each section and a
+dulcimer harmony in the last chorus, over calypso bass, nylon skank and Latin percussion. Every mallet
+program is present (steel drums have no EFX family, so they stay dry). Seeds that put the mallets
+(marimba, vibes, xylophone, glockenspiel, bells share the chromatic unit) on a delay timed to their
+spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho→Delay), `08CA` (Tm Ctrl Delay),
+`4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
+
 ## Tests
 
 | Script | Checks |
