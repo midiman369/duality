@@ -38,10 +38,14 @@ The file's own insert always wins its home unit.
   allows (today: key-safe doubler / octave / fifth only).
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
+- **Seat unit insert**: give an unclaimed seat unit a gentle ensemble insert (Space D / hall) as a
+  lowest-priority planner family that any real family evicts (must keep the 8 EFX rules).
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).
 
 ## Out of scope unless the user asks
 
+Seat units (0.19.024) only carry Anima's own harmony ghosts on a spare unit; generating new lines
+there (players, motifs) is still out of scope.
 Percussion / atonal mapping, SCPOP + Anima bypass, beat grid / motifs, extra orchestral players,
 multi-input, a built-in file player. Keep seed performance, tone lock, ghosts, foley and the widened
 family tables. Alchemy (GS↔XG rewrite) stays marked broken. Anima is "for fun": a live stream player.
