@@ -25,7 +25,8 @@ for fid in list(T.ANIMA_EFX_PRIORITY) + ["seat"]:
         if w >= 4: fav.append(n)
         elif w <= 1: rare.append(n)
     fams.append({"id": fid, "nums": nums, "fav": fav, "rare": rare, "ranked": fid != "seat"})
-data = json.dumps({"list": lst, "fams": fams, "version": ver})
+dly = sorted(num[k] for k, v in T.ANIMA_EFX_DELAY.items() if v.get("times"))
+data = json.dumps({"list": lst, "fams": fams, "version": ver, "dly": dly})
 
 def rep(a, b):
     global src

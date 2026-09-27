@@ -143,19 +143,28 @@ const GROUPS = [
 const NOTES = {
   5:[["Pan follows lone guitar"],["Drive seeded"]],
   6:[["Pan follows lone guitar"],["Drive seeded"]],
-  8:[["CC16 wah LFO"]], 50:[["CC16 wah LFO"],["One unit at a time"]], 52:[["CC16 wah LFO"]],
-  62:[["CC16 wah LFO"]], 64:[["CC16 wah LFO"]],
-  9:[["Slow/fast on held notes"]], 47:[["Slow/fast on held notes"]],
-  60:[["Slow/fast on held notes"]], 63:[["Slow/fast on held notes"]],
+  8:[["Wah follows the player (CC16)"],["Plays a file's set-and-left wah"]],
+  50:[["Wah follows the player (CC16)"],["Peak 127 lead / 48 rhythm"],["Screamer lifts Manual"],["Plays a file's set-and-left wah"],["One unit at a time"]],
+  52:[["Wah follows the player (CC16)"],["Plays a file's set-and-left wah"]],
+  62:[["Wah follows the player (CC16)"],["Plays a file's set-and-left wah"]],
+  64:[["Wah follows the player (CC16)"],["Plays a file's set-and-left wah"]],
+  9:[["Speed flips on held chords (CC16)"]], 47:[["Speed flips on held chords (CC16)"]],
+  60:[["Speed flips on held chords (CC16)"]], 63:[["Speed flips on held chords (CC16)"]],
+  19:[["Seat unit: Balance D>50E"]],
   35:[["Drive seeded"]],36:[["Drive seeded"]],37:[["Drive seeded"]],
   38:[["Drive seeded"]],39:[["Drive seeded"]],40:[["Drive seeded"]],
   48:[["One unit at a time"]],49:[["One unit at a time"]],
   53:[["Drive lowered for F.Bass/Harm."]],
   59:[["Only for two guitars panned apart","w"]],
-  21:[["Feedback builds on held notes","w"]],22:[["Feedback builds on held notes","w"]],
-  23:[["Feedback builds on held notes","w"]],24:[["Feedback builds on held notes","w"]],
-  25:[["Feedback builds on held notes","w"]],28:[["Feedback builds on held notes","w"]],
+  21:[["Feedback builds on held notes","w"]],
+  22:[["Feedback builds on held notes","w"]],
+  23:[["Feedback builds on held notes","w"]],
+  24:[["Feedback builds on held notes","w"]],
+  25:[["Feedback builds on held notes","w"]],
+  28:[["Feedback builds on held notes","w"]],
+  29:[["Mallets: doubler / octave; a fifth thins rolls"]],30:[["Mallets: doubler / octave; a fifth thins rolls"]],
 };
+for (const n of (DATA.dly||[])) (NOTES[n]=NOTES[n]||[]).push(["Delay on the beat (mallets: note spacing)"]);
 const BY_N = Object.fromEntries(DATA.list.map(x=>[x.n,x]));
 const DEF = Object.fromEntries(DATA.fams.map(f=>[f.id,f.nums]));
 const state = {}; // fam -> {nums:[], fav:[], rare:[]}

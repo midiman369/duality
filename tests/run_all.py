@@ -15,6 +15,7 @@ RUNS = [
     ("seat units", "seat_test.py", {}),
     ("EFX control CC16", "cc16_test.py", {}),
     ("file wah", "file_wah_test.py", {}),
+    ("tone palettes", "tone_prefs_test.py", {}),
     ("onestop 22:00", "onestop_replay.py", {}),
     ("onestop 22:16", "onestop_replay2.py", {}),
     ("onestop 22:29", "onestop_replay4.py", {}),

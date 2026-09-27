@@ -10,6 +10,11 @@
   take's stamp; C starts a new one) and `--record` takes to `recordings/` by default.
 - EFX palette picker (published page "Anima EFX Palettes"): rebuild with `tools/picker/build_picker.py`
   after palette changes; the user's picks live in its database (`palettes/<family>`).
+- Tone palette picker (published page "Anima Tone Palettes"): rebuild with `tools/picker/build_tone_picker.py`
+  (names / one-shot flags / voices in `tools/picker/tone_info.json`). Picks live in its database
+  (`tones/p001`..`p120`: per tone on, weight, EFX level -2..+2, note); copy them into
+  `tables_8850.ANIMA_TONE_PREFS`. Weights and on/off are honoured; EFX level and notes are not wired yet
+  (read the notes and propose how to act on them).
 - Anima GS EFX addresses and parameters come from the SC-8850 manual's Insertion Effect List
   (p.216-223) and MIDI Implementation (p.237); see comments in `tables_gs.py`.
 

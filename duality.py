@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.033"
+VERSION = "0.19.034"
 
 
 """
@@ -397,7 +397,7 @@ from tables_anima import (
     ANIMA_MOD_CATS,
     ANIMA_TONE_VARS,
 )
-from tables_8850 import anima_cm_to_gm, anima_tone_slots, anima_combo_ok, ANIMA_TONE_RARE
+from tables_8850 import anima_cm_to_gm, anima_tone_slots, anima_combo_ok, ANIMA_TONE_RARE, anima_tone_pref, anima_tone_weight
 
 
 def _roland_checksum(body: list[int]) -> int:
@@ -3923,6 +3923,23 @@ class Duality:
             return other
         return None
 
+    @staticmethod
+    def _anima_tone_choose(pc: int, slots: list, mix: int):
+        """Seeded pick from slots, weighted by the Tone Palettes picks (x2 / x1/2).
+        With every weight normal this is slots[mix % len(slots)], as before."""
+        ws = [anima_tone_weight(pc, s) for s in slots]
+        if all(w == 2 for w in ws):
+            return slots[mix % len(slots)]
+        total = sum(ws)
+        if total <= 0:
+            return slots[mix % len(slots)]
+        r = mix % total
+        for s, w in zip(slots, ws):
+            if r < w:
+                return s
+            r -= w
+        return slots[-1]
+
     def _anima_tone_pick(self, ch: int, pc: int):
         """Return (cc00, cc32, pc) or None for capital-as-written."""
         cached = self._anima_tone_slot[ch]
@@ -3967,16 +3984,16 @@ class Duality:
             varied = [s for s in same if s[0] != 0]
             # Official CM-64 PCM/LA (CC00 126/127, SC-55 map) ~1 in 4.
             if cm and (mix % 4 == 0):
-                slot = cm[(mix // 4) % len(cm)]
+                slot = self._anima_tone_choose(pc, cm, mix // 4)
             elif varied and (mix % 3 != 0):
-                slot = varied[mix % len(varied)]
+                slot = self._anima_tone_choose(pc, varied, mix)
                 rare_n = ANIMA_TONE_RARE.get((slot[0], slot[2]))
-                if rare_n and (mix % rare_n) != 0:
+                if rare_n and not anima_tone_pref(pc, slot) and (mix % rare_n) != 0:
                     alt = [s for s in varied if (s[0], s[2]) != (slot[0], slot[2])]
                     if alt:
                         slot = alt[mix % len(alt)]
             elif same:
-                slot = same[mix % len(same)]
+                slot = self._anima_tone_choose(pc, same, mix)
             else:
                 slot = (0, 4, pc & 0x7F)
         self._anima_tone_slot[ch] = slot
