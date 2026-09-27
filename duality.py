@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.023"
+VERSION = "0.19.024"
 
 
 """
@@ -60,6 +60,9 @@ Anima (opt-in)
     chord includes notes struck in the last 0.8 s (picked arpeggios).
   • Acoustic guitar plays at 112% while a sustained part at least as loud
     sounds within an octave (its notes decay, theirs hold).
+  • Seat units: harmony plays on a GS unit no family has claimed, each
+    channel panned to the mirror of its hero (±5% seeded); two or more
+    spares are shared out by family. No spare: the hero's unit.
   • Mallet sticking (glock, vibes, marimba, xylophone, bells, dulcimer, steel
     drums): chords struck by hands (2/4 mallets); where the part leaves room
     the seed adds a double, a triplet or a fading hand-to-hand roll. A new
@@ -583,6 +586,14 @@ ANIMA_HARM_RECENT = 0.60    # a part that struck within this still counts as sou
 ANIMA_HARM_FLOOR = 48       # no lower harmony ghost below C3 (mud)
 ANIMA_HARM_CTX = 0.8        # notes struck this recently still colour the chord (picked arpeggios)
 ANIMA_HARM_ACC_UP_MIN = 52  # accompaniment below this gets no ghost above (bass lines stay low)
+# Seat units ("second desk"): a GS unit no family or file insert has claimed
+# plays the harmony ghosts, each channel panned to the mirror of its hero
+# (flute at 44 → harmony at 84). One spare takes every family; two or more are
+# shared out by family. A claimed unit stops being a seat. No spare: the
+# hero's unit, as before. Sub-octaves, mallet strokes and dirt unisons stay put.
+ANIMA_SEAT_JITTER = 0.05      # ± share of the pan range added to the mirror (seeded per channel)
+ANIMA_SEAT_CENTRE = 8         # a hero within this of 64 counts as centred ...
+ANIMA_SEAT_CENTRE_SPREAD = 32 # ... and its harmony goes this far to a seeded side
 ANIMA_HARM_THIN = 1         # other voices at most this many: thin source, harmony on both sides
 ANIMA_HARM_CHORD_SEC = 1.0  # a channel that held a chord this recently is chordal
 ANIMA_HARM_QUIET_CATS = frozenset({"sfx", "percussive", "fx", "bass"})  # not "another part"
@@ -952,6 +963,8 @@ class Duality:
         self._anima_line_off = {}        # ch -> time of its last note-off
         self._anima_line_vel = {}        # ch -> the featured line's last sent level (vel x CC7 x CC11)
         self._anima_harm_ctx = []        # [(t, ch, note)] recent pitched onsets (chord context)
+        self._anima_seat_pan = {}        # (port, ch) -> mirrored pan sent to a seat unit
+        self._anima_seat_fam = {}        # family -> seat unit, when there are several
         self._anima_line = {}            # ch -> (lo, hi, last_t, rate, hold) while it is a featured line
         self._anima_bass_sub_choice = None  # (cc0, cc32, pc, name) for this seed
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
@@ -3173,6 +3186,7 @@ class Duality:
         if isinstance(out_msg, list):
             for m in out_msg:
                 m = self._apply_mt32_pan_invert(port, m)
+                m = self._anima_seat_pan_fix(port, m)
                 fixed = self._gs_keyshift_fixup(port, m)
                 if fixed is None:
                     self._send(port, m)
@@ -3185,6 +3199,7 @@ class Duality:
                 self._set_status(f"Alchemy: {label} → out {port + 1}", duration=2.5)
             return
         out_msg = self._apply_mt32_pan_invert(port, out_msg)
+        out_msg = self._anima_seat_pan_fix(port, out_msg)
         fixed = self._gs_keyshift_fixup(port, out_msg)
         if fixed is None:
             self._send(port, out_msg)
@@ -6332,6 +6347,91 @@ class Duality:
         lim = self.poly_limits[port] or 1
         return self.voice_counts[port] < int(lim * ANIMA_GHOST_POLY_FRAC)
 
+    # ------------------------------------------------------------------
+    # Seat units: harmony ghosts on a spare unit, mirrored pan
+    # ------------------------------------------------------------------
+    def _anima_seat_units(self) -> list:
+        """GS units no family and no file insert has claimed."""
+        out = []
+        for p in self._anima_gs_ports():
+            sl = (self._anima_slots[p] if p < len(self._anima_slots) else {}) or {}
+            if sl.get("fam") or sl.get("chs"):
+                continue
+            out.append(p)
+        return out
+
+    def _anima_seat_port(self, ch: int, hero: int):
+        """Seat unit for this channel's harmony, or None (then the hero's unit)."""
+        seats = [p for p in self._anima_seat_units() if p != hero]
+        if not seats:
+            return None
+        if len(seats) == 1:
+            pick = seats[0]
+        else:
+            fam = self._anima_efx_family(ch) or self._anima_category(ch)
+            pick = self._anima_seat_fam.get(fam)
+            if pick not in seats:
+                load = {p: 0 for p in seats}
+                for f, p in self._anima_seat_fam.items():
+                    if p in load:
+                        load[p] += 1
+                pick = min(seats, key=lambda p: (load[p], p))
+                self._anima_seat_fam[fam] = pick
+        if not self._anima_ghost_poly_ok(pick):
+            return None
+        # A unit where this channel plays real notes keeps the file's pan.
+        for (c, _n), info in self.active.items():
+            if c == ch and pick in (info.get("ports") or [info["port"]]):
+                return None
+        return pick
+
+    def _anima_seat_mirror(self, ch: int, pan: int) -> int:
+        """Mirror of the hero's pan, with a seeded ±ANIMA_SEAT_JITTER."""
+        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        span = int(round(127 * ANIMA_SEAT_JITTER))
+        jit = (self._anima_mix(seed, 977 + ch) % (2 * span + 1)) - span if span else 0
+        pan = int(pan)
+        if abs(pan - 64) <= ANIMA_SEAT_CENTRE:
+            side = 1 if (self._anima_mix(seed, 409 + ch) & 1) else -1
+            mirror = 64 + side * ANIMA_SEAT_CENTRE_SPREAD
+        else:
+            mirror = 128 - pan
+        return max(0, min(127, mirror + jit))
+
+    def _anima_seat_pan_fix(self, port: int, msg):
+        """A file CC10 heading to a seat unit is mirrored there."""
+        if msg.type != "control_change" or msg.control != 10:
+            return msg
+        seats = getattr(self, "_anima_seat_pan", None)
+        key = (port, msg.channel & 0x0F)
+        if not seats or key not in seats:
+            return msg
+        val = self._anima_seat_mirror(msg.channel & 0x0F, msg.value)
+        seats[key] = val
+        return msg.copy(value=val)
+
+    def _anima_seat_take(self, port: int, ch: int) -> None:
+        """Mirror this channel's pan on a seat unit (once, then the send hook keeps it)."""
+        key = (port, ch)
+        if key in self._anima_seat_pan:
+            return
+        self._anima_seat_pan[key] = -1
+        file_pan = int(self.pan[ch]) if self.pan[ch] is not None else 64
+        self._send_routed(port, mido.Message("control_change", channel=ch, control=10, value=file_pan))
+        self._anima_feedback(
+            "seat",
+            f"ch{ch + 1} harmony → P{port + 1} pan {self._anima_seat_pan[key]} (file {file_pan})",
+        )
+
+    def _anima_seat_release(self, port: int, ch: int) -> None:
+        """A real note of this channel is about to play here: give it the file's pan back."""
+        key = (port, ch & 0x0F)
+        if key not in self._anima_seat_pan:
+            return
+        self._anima_seat_pan.pop(key, None)
+        file_pan = int(self.pan[ch]) if self.pan[ch] is not None else 64
+        self._send_routed(port, mido.Message("control_change", channel=ch, control=10, value=file_pan))
+
     def _anima_ghost_fam(self, ch: int):
         """bass / organ family key for one-sub-per-family, else None."""
         ch = ch & 0x0F
@@ -7136,8 +7236,12 @@ class Duality:
                     else:
                         self._anima_ghost_kill(owner)
         if plan:
-            dest = hero if self._anima_ghost_poly_ok(hero) else None
-            if dest is None:
+            dest = self._anima_seat_port(ch, hero)
+            if dest is not None:
+                self._anima_seat_take(dest, ch)
+            elif self._anima_ghost_poly_ok(hero):
+                dest = hero
+            else:
                 for p in self._anima_gs_ports():
                     if p != hero and self._anima_ghost_poly_ok(p):
                         dest = p
@@ -8902,6 +9006,9 @@ class Duality:
                     )
 
                 sent_ports = []
+                if self.anima and self._anima_seat_pan:
+                    for port in targets:
+                        self._anima_seat_release(port, note_msg.channel & 0x0F)
                 for port in targets:
                     real_count = _notes_on_port(port)
                     if real_count >= self.poly_limits[port]:
@@ -9491,6 +9598,14 @@ class Duality:
         self._anima_line_off = {}
         self._anima_line_vel = {}
         self._anima_harm_ctx = []
+        for (sp, sc) in list((getattr(self, "_anima_seat_pan", None) or {}).keys()):
+            try:   # a seat unit gets the file's pan back (CC121 leaves pan alone)
+                fp = int(self.pan[sc]) if self.pan[sc] is not None else 64
+                self.outs[sp].send(mido.Message("control_change", channel=sc, control=10, value=fp))
+            except Exception:
+                pass
+        self._anima_seat_pan = {}
+        self._anima_seat_fam = {}
         self._anima_line = {}
         self._anima_bass_sub_choice = None
         self.active.clear()
