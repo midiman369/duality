@@ -182,7 +182,9 @@ function toneCard(pc,k){
   else if (inf[1]===1) badges.push(['Attack layer']);
   if (inf[2]>1) badges.push([`${inf[2]} voices`]);
   if (DATA.blocked.includes(k)) badges.push(['Reserved: one-shot articulation','w']);
-  if (+k.split("-")[2]!==pc) badges.push([`Clean Gt color`]);
+  const kp = +k.split("-")[2];
+  if (c0===126 || c0===127) badges.push([`CM-64 ${c0===126?"PCM":"LA"} #${pad3(kp+1)}`]);
+  else if (kp!==+pc) badges.push([`Clean Gt color (from ${pad3(kp+1)})`]);
   const dis = canWrite?'':'disabled';
   const showNote = s.note || openNotes.has(pc+"_"+k);
   const efxBtns = [-2,-1,0,1,2].map(v=>`<button data-e="${v}" data-k="${k}" data-p="${pc}" class="${v<0?'d':(v>0?'wt':'')}" aria-pressed="${s.efx===v}" aria-label="EFX ${v>0?'+':''}${v}" ${dis}>${v===0?'·':(v<0?'−'.repeat(-v):'+'.repeat(v))}</button>`).join("");
