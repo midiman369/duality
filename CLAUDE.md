@@ -38,8 +38,6 @@ The file's own insert always wins its home unit.
   allows (today: key-safe doubler / octave / fifth only).
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
-- **Seat unit insert**: give an unclaimed seat unit a gentle ensemble insert (Space D / hall) as a
-  lowest-priority planner family that any real family evicts (must keep the 8 EFX rules).
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).
 
 ## Out of scope unless the user asks
