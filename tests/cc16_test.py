@@ -14,6 +14,9 @@ Rotary Multi, a clean guitar forced onto Auto Wah, strings. Checks:
     back to the heel and goes quiet
   - a muted guitar forced onto GTR Multi 3 playing power chords is heard as
     rhythm: its Peak drops to ANIMA_WAH_PEAK_RHYTHM and the screamer stays off
+  - one channel going from chords to a lead line opens up (Peak 127) within
+    ANIMA_WAH_ROLE_LEAD_SEC-ish, and drops back to rhythm only after the chords
+    have been back a while (one-sided glide)
   - no CC16 to units without a wah/rotary insert
 """
 import sys
@@ -182,6 +185,51 @@ else:
     if r.get(0x04) != D.ANIMA_WAH_MAN_BASE:
         fails.append(f"rhythm wah screamed: Manual {r.get(0x04)}")
     print(f"rhythm guitar P{pc+1} GTR Multi 3: Peak {r.get(0x05)}, Manual {r.get(0x04)}")
+# --- one channel: chords -> lead line -> chords (fresh instance) ---------------------
+REC.clear()
+CLOCK[0] = 1000.0
+D.ANIMA_EFX_GS["guitar_dist"] = [(0x04, 0x02, "GTR Multi 3", 2)]
+d = D.Duality("in", [f"P{i+1}" for i in range(4)], anima=True, show_status=False,
+              out_formats=[frozenset({"gs"})] * 4, anima_seed=0x6BA1, poly_limits=[64] * 4)
+ev = [(0.0, mido.Message("program_change", channel=1, program=30)),
+      (0.01, mido.Message("control_change", channel=1, control=10, value=64))]
+t = 1.0
+while t < 6.0:
+    for n in (40, 47):
+        ev += [(t, mido.Message("note_on", channel=1, note=n, velocity=105)),
+               (t + 0.2, mido.Message("note_off", channel=1, note=n, velocity=0))]
+    t += 0.25
+lead_t = t
+for n in [76, 79, 81, 83, 84, 83, 81, 79] * 2:
+    ev += [(t, mido.Message("note_on", channel=1, note=n, velocity=110)),
+           (t + 0.3, mido.Message("note_off", channel=1, note=n, velocity=0))]
+    t += 0.33
+chords_t = t
+while t < chords_t + 4.0:
+    for n in (40, 47):
+        ev += [(t, mido.Message("note_on", channel=1, note=n, velocity=105)),
+               (t + 0.2, mido.Message("note_off", channel=1, note=n, velocity=0))]
+    t += 0.25
+ev.sort(key=lambda e: e[0])
+i, tt = 0, 0.0
+while tt <= t + 1.0:
+    CLOCK[0] = 1000.0 + tt
+    while i < len(ev) and ev[i][0] <= tt + 1e-9:
+        d.process(ev[i][1]); i += 1
+    d._anima_tick()
+    d._check_anima_session_idle()
+    tt = round(tt + 0.005, 3)
+ps = [q for q, sl in enumerate(d._anima_slots) if 1 in (sl.get("chs") or [])]
+peaks = [(t0 - 1000.0, m.data[7]) for t0, p, m in REC if ps and p == ps[0] and m.type == "sysex"
+         and list(m.data[4:7]) == [0x40, 0x03, 0x05] and t0 - 1000.0 > 0.5]
+up = [t0 for t0, v in peaks if v == 127 and t0 >= lead_t]
+down = [t0 for t0, v in peaks if v == D.ANIMA_WAH_PEAK_RHYTHM and t0 >= chords_t]
+if not up or up[0] - lead_t > 0.6:
+    fails.append(f"lead line did not open the wah quickly (Peak 127 at {up[:1]}, lead at {lead_t:.2f})")
+if not down or down[0] - chords_t < 0.5:
+    fails.append(f"back to chords: rhythm Peak at {down[:1]}, chords at {chords_t:.2f} (want a slower glide)")
+print(f"switch: lead at {lead_t:.2f}s -> Peak 127 at {up[0] if up else '-'}; "
+      f"chords at {chords_t:.2f}s -> Peak {D.ANIMA_WAH_PEAK_RHYTHM} at {down[0] if down else '-'}")
 if fails:
     print(f"FAILS ({len(fails)}):")
     for f in fails:
