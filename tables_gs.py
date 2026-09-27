@@ -467,11 +467,12 @@ ANIMA_EFX_GS = {
     # Seat unit (not an instrument family): a spare unit carrying harmony
     # ghosts gets a gentle ensemble colour. Lowest rank; any family takes it.
     "seat": [
-        (0x01, 0x43, "Space D", 4),  # #19
         (0x01, 0x40, "Hexa Chorus", 2),  # #16
         (0x01, 0x42, "Stereo Chorus", 2),  # #18
-        (0x01, 0x44, "3D Chorus", 2),  # #20
-        (0x01, 0x55, "Reverb", 1),  # #26
+        (0x01, 0x43, "Space D", 2),  # #19
+        (0x01, 0x44, "3D Chorus", 1),  # #20
+        (0x01, 0x55, "Reverb", 4),  # #26
+        (0x01, 0x56, "Gate Reverb", 2),  # #27
     ],
 }
 # Seat-unit wet/dry per type: Balance (param #, EFX C.Src2-modulatable; Anima

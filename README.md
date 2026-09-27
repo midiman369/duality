@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.027** (`python duality.py --version`).
+Current development line: **v0.19.028** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -309,7 +309,7 @@ Family is tracked so a later PC stays in brass / organ / strings / …. A *real*
 - **Pitch shifters as free harmony.** 2 Pitch Shifter, Fb P.Shifter and Keyboard Multi play a doubler, an octave or a fifth (by family and seed) — harmony that costs no polyphony.
 - **Gate Reverb** uses its Sweep 1 / 2 modes.
 - **Dirt fades out.** A part's volume sits *before* its insert, so a fade into Overdrive used to stay loud. Dirt inserts now drop their own Level with the file's CC7 / CC11 once it falls below 75 %.
-- **CC16** (the insert's control source) only moves wah and rotary types, on EFX Control 1 or 2 — whichever holds the wah or speed knob on that type.
+- **CC16** (the insert's control source) only moves wah and rotary types, on EFX Control 1 or 2 — whichever holds the wah or speed knob on that type. The SC-8850 has no built-in controller for this: EFX Control Source 1/2 (`40 03 1B`/`1D`) default to Off, and Anima sets the one that carries the knob to CC16 at +100% depth (the other at 0%). Each unit is driven on its own (0.19.028; before that only the most recently written insert was followed, so with several units the wah and rotary rarely moved): a wah sweeps while its players play, and a rotary flips speed while a chord is held and flips back on release, with CC16 sent only to that unit on its own players' channels.
 
 ![Anima insert shaping](docs/images/anima-efx-shaping.svg)
 
