@@ -244,6 +244,24 @@ ANIMA_TONE_BLOCK = {
     (17, 61),   # UI 062 / CC00 017  Trumpet Fall
 }
 
+# The user's picks from the "Anima Tone Palettes" page (tools/picker/build_tone_picker.py),
+# per GM program (0-based): {(cc00, cc32, pc): {"w": 0|1|2|4, "efx": -2..2, "note": "..."}}.
+# w 0 = never pick, 1 = less often (x1/2), 2 = normal, 4 = favoured (x2). A listed tone
+# overrides ANIMA_TONE_RARE / ANIMA_TONE_BLOCK. efx and note are recorded for Anima's
+# insert balance and phrasing; a program with no entry picks exactly as before.
+ANIMA_TONE_PREFS: dict = {}
+
+
+def anima_tone_pref(gm_pc: int, key) -> dict:
+    """The user's pick for one tone slot under a GM program ({} = default)."""
+    return (ANIMA_TONE_PREFS.get(int(gm_pc) & 0x7F) or {}).get(tuple(key)) or {}
+
+
+def anima_tone_weight(gm_pc: int, key) -> int:
+    """Pick weight: 0 never, 1 less often, 2 normal, 4 favoured."""
+    w = anima_tone_pref(gm_pc, key).get("w")
+    return 2 if w is None else max(0, int(w))
+
 
 def anima_tone_slots(pc: int) -> list[tuple[int, int, int]]:
     """Unique (cc00, cc32, pc) choices for a GM program (0-based). Empty = leave capital."""
@@ -253,7 +271,7 @@ def anima_tone_slots(pc: int) -> list[tuple[int, int, int]]:
     slots = []
     seen = set()
     for cc0 in _C00.get(p, [0]):
-        if (cc0, p) in ANIMA_TONE_BLOCK:
+        if (cc0, p) in ANIMA_TONE_BLOCK and not anima_tone_pref(p, (cc0, 4, p)).get("w"):
             continue
         key = (cc0, 4, p)
         if key not in seen:
@@ -273,6 +291,8 @@ def anima_tone_slots(pc: int) -> list[tuple[int, int, int]]:
             if key not in seen:
                 seen.add(key)
                 slots.append(key)
+    if ANIMA_TONE_PREFS.get(p):
+        slots = [k for k in slots if anima_tone_weight(p, k) > 0]
     return slots
 
 
