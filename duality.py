@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.029"
+VERSION = "0.19.030"
 
 
 """
@@ -50,8 +50,9 @@ Anima (opt-in)
     and rotary types (on EFX Control 1 or 2, whichever holds the knob),
     each unit on its own: the wah follows the player (picks quack, held
     notes cry open, bends open it, fast runs stay narrow, silence = heel)
-    over a low Manual base (20; a held screaming high note lifts it to 48),
-    GTR Multi 3 Peak 127; rotary flips speed on a held chord.
+    over a low Manual base (20; a held screaming high note lifts it to 48);
+    lead lines get GTR Multi 3 Peak 127, rhythm parts (chords, low notes)
+    Peak 48 and 60% of the pedal; rotary flips speed on a held chord.
   • Foley: shared ch16 8850 SFX (PC 121/122 variations)
   • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
     dist-guitar unison on a spare GS unit (inherits EFX)
@@ -340,6 +341,7 @@ from tables_gs import (
     ANIMA_EFX_WAH,
     ANIMA_EFX_WAH_MAN,
     ANIMA_EFX_WAH_PEAK,
+    ANIMA_WAH_PEAK_RHYTHM,
     ANIMA_WAH_MAN_BASE,
     ANIMA_WAH_MAN_SCREAM,
     ANIMA_EFX_CTRL2,
@@ -767,6 +769,12 @@ ANIMA_WAH_SCREAM_NOTE = 84   # scream: a note this high ...
 ANIMA_WAH_SCREAM_VEL = 105   # ... this hard ...
 ANIMA_WAH_SCREAM_HELD = 0.30 # ... held this long raises the Manual base (SysEx)
 ANIMA_WAH_BASE_GAP = 0.30    # at most one Manual write per unit this often
+# Lead or rhythm? Two or more notes at once, or a low register, is rhythm; single
+# high notes are lead. The role glides (seconds) so it does not flicker.
+ANIMA_WAH_LEAD_NOTES = (55, 67)     # single notes from G3 (rhythm) .. G4 (lead)
+ANIMA_WAH_ROLE_SEC = 1.5
+ANIMA_WAH_RHYTHM_AMOUNT = 0.60      # a rhythm part's pedal moves this much of the lead's
+ANIMA_WAH_PEAK_GAP = 1.0            # at most one Peak write per unit this often
 ANIMA_ROTARY_HOLD_SEC = 0.60
 
 class Duality:
@@ -5527,6 +5535,19 @@ class Duality:
         st["seen"] = {k: tv[0] for k, tv in notes.items()}
         st["ons"] = ons
         st["env"] = env
+        # Role: chords / low notes = rhythm (0), single high notes = lead (1).
+        if notes:
+            lo_n, hi_n = ANIMA_WAH_LEAD_NOTES
+            top_now = max(n for (_c, n) in notes)
+            if len(notes) >= 2:
+                ev = 0.0
+            else:
+                ev = min(1.0, max(0.0, (top_now - lo_n) / max(1, hi_n - lo_n)))
+            role = float(st.get("role", ev if "role" not in st else st["role"]))
+            role += (ev - role) * min(1.0, dt / ANIMA_WAH_ROLE_SEC)
+            st["role"] = role
+        role = float(st.get("role", 1.0))
+        amount = ANIMA_WAH_RHYTHM_AMOUNT + (1.0 - ANIMA_WAH_RHYTHM_AMOUNT) * role
         if notes:
             newest = max(t0 for t0, _v in notes.values())
             age = now - newest
@@ -5544,8 +5565,11 @@ class Duality:
             fast = min(1.0, max(0.0, (len(ons) - f0) / max(0.1, f1 - f0)))
             x = (0.20 + ANIMA_WAH_PICK * env * (1.0 - 0.5 * fast) + ANIMA_WAH_HOLD_OPEN * hold
                  + ANIMA_WAH_REGISTER * reg + ANIMA_WAH_BEND_OPEN * bend_up + rock)
+            rest = ANIMA_WAH_REST / 127.0
+            x = rest + (x - rest) * amount
             target = max(0.0, min(1.0, x)) * 127.0
-            scream = top >= ANIMA_WAH_SCREAM_NOTE and vel >= ANIMA_WAH_SCREAM_VEL and age >= ANIMA_WAH_SCREAM_HELD
+            scream = (top >= ANIMA_WAH_SCREAM_NOTE and vel >= ANIMA_WAH_SCREAM_VEL
+                      and age >= ANIMA_WAH_SCREAM_HELD and role >= 0.5)
         else:
             target = float(ANIMA_WAH_REST)
             scream = False
@@ -5558,6 +5582,15 @@ class Duality:
         if last is None or abs(val - last) >= 2 or (val in (0, 127) and val != last):
             st["last_val"] = val
             self._anima_cc16_send(port, owners, val, st)
+        # Peak follows the role (a screaming Peak belongs to a lead line).
+        peak = ANIMA_EFX_WAH_PEAK.get(typ)
+        if peak is not None:
+            want_pk = peak[1] if role >= 0.5 else ANIMA_WAH_PEAK_RHYTHM
+            if st.get("peak", peak[1]) != want_pk and now - float(st.get("peak_t") or 0.0) >= ANIMA_WAH_PEAK_GAP:
+                st["peak"], st["peak_t"] = want_pk, now
+                self._anima_efx_ours = True
+                self._safe_out_send(port, self._gs_dt1([0x40, 0x03, peak[0]], [want_pk]))
+                self._anima_feedback("efx-param", f"P{port + 1} wah {'lead' if role >= 0.5 else 'rhythm'} Peak {want_pk}")
         # Screamer: the Manual base itself (SysEx), rate-limited.
         man = ANIMA_EFX_WAH_MAN.get(typ)
         want = ANIMA_WAH_MAN_SCREAM if scream else ANIMA_WAH_MAN_BASE

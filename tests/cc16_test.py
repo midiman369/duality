@@ -12,6 +12,8 @@ Rotary Multi, a clean guitar forced onto Auto Wah, strings. Checks:
     low base (CC16 adds to it) and GTR Multi 3's Peak raised; picks move it,
     held notes open it more than fast notes; after the guitar stops it falls
     back to the heel and goes quiet
+  - a muted guitar forced onto GTR Multi 3 playing power chords is heard as
+    rhythm: its Peak drops to ANIMA_WAH_PEAK_RHYTHM and the screamer stays off
   - no CC16 to units without a wah/rotary insert
 """
 import sys
@@ -42,14 +44,15 @@ D.mido.open_output = lambda n, *a, **k: FakeOut(int(n[1:]) - 1)
 D.mido.open_input = lambda *a, **k: FakeIn()
 # Force the clean guitar onto Auto Wah so the wah path is always exercised.
 D.ANIMA_EFX_GS["guitar_clean"] = [(0x01, 0x21, "Auto Wah", 2)]
+D.ANIMA_EFX_GS["guitar_mute"] = [(0x04, 0x02, "GTR Multi 3", 2)]
 
 fails = []
 d = D.Duality("in", [f"P{i+1}" for i in range(4)], anima=True, show_status=False,
               out_formats=[frozenset({"gs"})] * 4, anima_seed=0x6BA1, poly_limits=[64] * 4)
 ev = []
 def msg(t, m): ev.append((t, m))
-ORGAN, GTR, STR = 0, 2, 4
-for ch, prog in ((ORGAN, 16), (GTR, 27), (STR, 48)):
+ORGAN, GTR, STR, CHUG = 0, 2, 4, 6
+for ch, prog in ((ORGAN, 16), (GTR, 27), (STR, 48), (CHUG, 28)):
     msg(0.0, mido.Message("program_change", channel=ch, program=prog))
     msg(0.01, mido.Message("control_change", channel=ch, control=7, value=100))
 chord_t = []
@@ -66,6 +69,11 @@ for k in range(4):                       # organ: short stabs, then a long held 
         msg(t + 1.8, mido.Message("note_off", channel=STR, note=n, velocity=0))
     t += 2.5
 gtr_end = t
+for k in range(int((t - 1.0) / 0.25)):   # rhythm: power chords on 8ths
+    tk = 1.0 + k * 0.25
+    for n in (40, 47):
+        msg(tk, mido.Message("note_on", channel=CHUG, note=n + (5 if (k // 8) % 2 else 0), velocity=105))
+        msg(tk + 0.18, mido.Message("note_off", channel=CHUG, note=n + (5 if (k // 8) % 2 else 0), velocity=0))
 held_t = []
 k, tk = 0, 1.0
 while tk < t:                            # guitar: fast 8ths, every 4th bar one long held note
@@ -125,8 +133,9 @@ cc16 = collections.defaultdict(list)
 for t0, p, m in REC:
     if m.type == "control_change" and m.control == D.ANIMA_EFX_CTRL_CC:
         cc16[p].append((t0 - 1000.0, m.channel, m.value))
+pc, tc = port_of(CHUG)
 for p in range(4):
-    if p not in (po, pg) and cc16.get(p):
+    if p not in (po, pg, pc) and cc16.get(p):
         fails.append(f"CC16 sent to P{p+1}, which has no wah/rotary insert: {cc16[p][:3]}")
 if po is not None:
     org = [(t0, v) for t0, c, v in cc16.get(po, []) if c == ORGAN]
@@ -163,6 +172,16 @@ if pg is not None:
         fails.append(f"wah Peak {r.get(pk[0])}, want {pk[1]}")
     print(f"wah CC16 on ch{GTR+1}: {len(g)} messages, {len(vals)} distinct values, "
           f"held max {max(held) if held else '-'}, fast mean {sum(fastv)/len(fastv) if fastv else 0:.0f}")
+pc, tc = port_of(CHUG)
+if tc != (0x04, 0x02):
+    fails.append(f"rhythm guitar unit type {tc}, want GTR Multi 3 (forced)")
+else:
+    r = dt1(pc)
+    if r.get(0x05) != D.ANIMA_WAH_PEAK_RHYTHM:
+        fails.append(f"rhythm GTR Multi 3 Peak {r.get(0x05)}, want {D.ANIMA_WAH_PEAK_RHYTHM}")
+    if r.get(0x04) != D.ANIMA_WAH_MAN_BASE:
+        fails.append(f"rhythm wah screamed: Manual {r.get(0x04)}")
+    print(f"rhythm guitar P{pc+1} GTR Multi 3: Peak {r.get(0x05)}, Manual {r.get(0x04)}")
 if fails:
     print(f"FAILS ({len(fails)}):")
     for f in fails:
