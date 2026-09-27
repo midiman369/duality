@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.028"
+VERSION = "0.19.029"
 
 
 """
@@ -48,8 +48,10 @@ Anima (opt-in)
     pitch shifters get a doubler / octave / fifth; Gate Reverb uses Sweep;
     dirt inserts' Level follows a CC7/CC11 fade-out. CC16 drives only wah
     and rotary types (on EFX Control 1 or 2, whichever holds the knob),
-    each unit on its own: wah sweeps while its players play, rotary flips
-    speed on a held chord.
+    each unit on its own: the wah follows the player (picks quack, held
+    notes cry open, bends open it, fast runs stay narrow, silence = heel)
+    over a low Manual base (20; a held screaming high note lifts it to 48),
+    GTR Multi 3 Peak 127; rotary flips speed on a held chord.
   • Foley: shared ch16 8850 SFX (PC 121/122 variations)
   • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
     dist-guitar unison on a spare GS unit (inherits EFX)
@@ -337,6 +339,9 @@ from tables_gs import (
     ANIMA_EFX_DRIVE_03,
     ANIMA_EFX_WAH,
     ANIMA_EFX_WAH_MAN,
+    ANIMA_EFX_WAH_PEAK,
+    ANIMA_WAH_MAN_BASE,
+    ANIMA_WAH_MAN_SCREAM,
     ANIMA_EFX_CTRL2,
     ANIMA_EFX_ROTARY,
     ANIMA_HETFIELD_PC,
@@ -745,7 +750,23 @@ ANIMA_EFX_BIG_BURST = 4       # this many PC channels in one burst = song setup 
 ANIMA_HARM_TOP = 96          # no chord-tone harmony ghost above C7
 ANIMA_EFX_WET_SEC = 0.15      # after a type/Part On change, that part's notes use another box this long
 ANIMA_EFX_CTRL_CC = 16    # Anima writes EFX C.Src1/2 (40 03 1B/1D, default Off) = CC16; not built in
-ANIMA_WAH_LFO_HZ = 0.55
+ANIMA_WAH_LFO_HZ = 0.55      # (legacy steady sweep; the wah now follows the phrasing)
+# Wah follows the player: CC16 0..127 on top of the Manual base.
+ANIMA_WAH_REST = 10          # silence: heel down
+ANIMA_WAH_PICK = 0.45        # a pick's quack, x velocity/127
+ANIMA_WAH_QUACK_SEC = 0.12   # quack decay
+ANIMA_WAH_HOLD_OPEN = 0.40   # a held note sweeps open by this much ...
+ANIMA_WAH_HOLD_SEC = (0.20, 0.80)   # ... starting after 0.2 s, fully open at 0.8 s
+ANIMA_WAH_ROCK = (0.10, 1.6)        # then rocks: depth, Hz
+ANIMA_WAH_BEND_OPEN = 0.35   # a bend up opens it this much more at full bend
+ANIMA_WAH_REGISTER = 0.15    # high notes sit this much more open (E4 .. A6)
+ANIMA_WAH_FAST_RATE = (5.0, 10.0)   # notes/s where runs start / finish narrowing the quack
+ANIMA_WAH_ATTACK_SEC = 0.03  # pedal speed toward open ...
+ANIMA_WAH_RELEASE_SEC = 0.18 # ... and back toward the heel
+ANIMA_WAH_SCREAM_NOTE = 84   # scream: a note this high ...
+ANIMA_WAH_SCREAM_VEL = 105   # ... this hard ...
+ANIMA_WAH_SCREAM_HELD = 0.30 # ... held this long raises the Manual base (SysEx)
+ANIMA_WAH_BASE_GAP = 0.30    # at most one Manual write per unit this often
 ANIMA_ROTARY_HOLD_SEC = 0.60
 
 class Duality:
@@ -5424,7 +5445,11 @@ class Duality:
             msgs.append(self._gs_dt1([0x40, 0x03, 0x03], [drive]))
         man = ANIMA_EFX_WAH_MAN.get(key)
         if man is not None:
-            msgs.append(self._gs_dt1([0x40, 0x03, man], [0x40]))  # Wah Man center
+            # CC16 adds to Manual (Control Depth +100%): a low base leaves it room.
+            msgs.append(self._gs_dt1([0x40, 0x03, man], [ANIMA_WAH_MAN_BASE]))
+        peak = ANIMA_EFX_WAH_PEAK.get(key)
+        if peak is not None:
+            msgs.append(self._gs_dt1([0x40, 0x03, peak[0]], [peak[1]]))
         self._anima_efx_ours = True
         for i in ports:
             for m in msgs:
@@ -5470,11 +5495,7 @@ class Duality:
                 if c in owners and port in (info.get("ports") or [info.get("port")])
             ]
             if wah:
-                if not playing:
-                    continue
-                st["ph"] += dt * ANIMA_WAH_LFO_HZ * 6.28318530718
-                val = max(0, min(127, int(64 + 48 * math.sin(st["ph"]))))
-                self._anima_cc16_send(port, owners, val, st)
+                self._anima_wah_follow(port, typ, owners, st, dt, now)
                 continue
             longest = max((now - float(i.get("time") or now) for i in playing), default=0.0)
             want = longest >= ANIMA_ROTARY_HOLD_SEC
@@ -5482,6 +5503,70 @@ class Duality:
                 st["flipped"] = want
                 fast = st["fast"] != want      # a held chord flips the speed
                 self._anima_cc16_send(port, owners, 127 if fast else 0, st)
+
+    def _anima_wah_follow(self, port: int, typ: tuple, owners, st: dict, dt: float, now: float) -> None:
+        """Wah pedal that follows the player (CC16 on top of the Manual base).
+
+        Each pick quacks (by velocity); a held note sweeps from heel to toe and
+        then rocks, like a crying note; a bend up opens it further and high notes
+        sit a little more open; fast runs stay narrower; silence falls back to
+        the heel. A hard-played high note held a moment raises the Manual base
+        itself by SysEx (the whole wah drives higher), then it comes back down.
+        """
+        notes = {}
+        for (c, n), info in self.active.items():
+            if c in owners and port in (info.get("ports") or [info.get("port")]):
+                notes[(c, n)] = (float(info.get("time") or now), int(info.get("velocity") or 90))
+        seen = st.get("seen") or {}
+        ons = [t for t in (st.get("ons") or []) if now - t <= 1.0]
+        env = float(st.get("env") or 0.0) * math.exp(-dt / ANIMA_WAH_QUACK_SEC)
+        for k, (t0, v) in notes.items():
+            if seen.get(k) != t0:
+                ons.append(t0)
+                env = max(env, v / 127.0)
+        st["seen"] = {k: tv[0] for k, tv in notes.items()}
+        st["ons"] = ons
+        st["env"] = env
+        if notes:
+            newest = max(t0 for t0, _v in notes.values())
+            age = now - newest
+            top = max(n for (_c, n) in notes)
+            vel = max(v for _t, v in notes.values())
+            lo, hi = ANIMA_WAH_HOLD_SEC
+            hold = min(1.0, max(0.0, (age - lo) / max(0.01, hi - lo)))
+            st["ph"] = (float(st.get("ph") or 0.0) + dt * ANIMA_WAH_ROCK[1] * 6.28318530718) if hold >= 1.0 else 0.0
+            rock = ANIMA_WAH_ROCK[0] * math.sin(st["ph"]) if hold >= 1.0 else 0.0
+            reg = min(1.0, max(0.0, (top - 64) / 29.0))
+            bend = max((self.pitch[c] or 0) for c in owners if self.pitch[c] is not None) \
+                if any(self.pitch[c] is not None for c in owners) else 0
+            bend_up = max(0.0, bend / 63.0)
+            f0, f1 = ANIMA_WAH_FAST_RATE
+            fast = min(1.0, max(0.0, (len(ons) - f0) / max(0.1, f1 - f0)))
+            x = (0.20 + ANIMA_WAH_PICK * env * (1.0 - 0.5 * fast) + ANIMA_WAH_HOLD_OPEN * hold
+                 + ANIMA_WAH_REGISTER * reg + ANIMA_WAH_BEND_OPEN * bend_up + rock)
+            target = max(0.0, min(1.0, x)) * 127.0
+            scream = top >= ANIMA_WAH_SCREAM_NOTE and vel >= ANIMA_WAH_SCREAM_VEL and age >= ANIMA_WAH_SCREAM_HELD
+        else:
+            target = float(ANIMA_WAH_REST)
+            scream = False
+        cur = float(st.get("cur", ANIMA_WAH_REST))
+        tau = ANIMA_WAH_ATTACK_SEC if target > cur else ANIMA_WAH_RELEASE_SEC
+        cur += (target - cur) * min(1.0, dt / max(0.005, tau))
+        st["cur"] = cur
+        val = int(round(cur))
+        last = st.get("last_val")
+        if last is None or abs(val - last) >= 2 or (val in (0, 127) and val != last):
+            st["last_val"] = val
+            self._anima_cc16_send(port, owners, val, st)
+        # Screamer: the Manual base itself (SysEx), rate-limited.
+        man = ANIMA_EFX_WAH_MAN.get(typ)
+        want = ANIMA_WAH_MAN_SCREAM if scream else ANIMA_WAH_MAN_BASE
+        if man is not None and want != st.get("base", ANIMA_WAH_MAN_BASE) \
+                and now - float(st.get("base_t") or 0.0) >= ANIMA_WAH_BASE_GAP:
+            st["base"], st["base_t"] = want, now
+            self._anima_efx_ours = True
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, man], [want]))
+            self._anima_feedback("efx-param", f"P{port + 1} wah {'scream' if scream else 'base'} Manual {want}")
 
     def _anima_cc16_send(self, port: int, owners, value: int, st: dict) -> None:
         """CC16 to one unit on its owner channels; skip only an unchanged value."""

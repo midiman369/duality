@@ -522,6 +522,17 @@ ANIMA_EFX_WAH_MAN = {
     (0x11, 0x06): 0x0A,  # OD/AutoWah: # AW Man
     (0x11, 0x08): 0x0A,  # PH/AutoWah: # AW Man
 }
+# Wah stacking (Effect List p.217-223): a Control Source ADDS to the stored
+# value (Depth +100% ~ Manual + CC16), so the Manual base sits low and CC16
+# sweeps up from it. On-screen 20 was the sweet spot by ear (SC-VA).
+ANIMA_WAH_MAN_BASE = 20
+ANIMA_WAH_MAN_SCREAM = 48   # a hard-played high note held: the whole wah drives higher
+# Peak (resonance) per wah type: (address, value). GTR Multi 3 is a pedal wah
+# whose default Peak 10 barely speaks; 127 by ear. The auto-wah types keep
+# their defaults (40-62), which already give a vowel, and their own LFO / Sens.
+ANIMA_EFX_WAH_PEAK = {
+    (0x04, 0x02): (0x05, 127),  # GTR Multi 3: Wah Peak (default 10)
+}
 # Types whose wah/rotary-speed knob is on EFX Control 2 (# in the OM list);
 # their Control 1 (+) is OD Drive or PH Rate, which CC16 must not move.
 ANIMA_EFX_CTRL2 = frozenset({
