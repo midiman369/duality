@@ -76,10 +76,10 @@ GTR Multi 3 (wah on Control 1) with the 0.19.028 palettes: `08BA`, `0BC2`, `153B
 ostinato and off-beat chords, a vibraphone melody in a minor cove section with xylophone answers, a
 xylophone break (runs, then held notes), glockenspiel sparkles, tubular bells at each section and a
 dulcimer harmony in the last chorus, over calypso bass, nylon skank and Latin percussion. Every mallet
-program is present (steel drums have no EFX family, so they stay dry). Seeds that put the mallets
-(marimba, vibes, xylophone, glockenspiel, bells share the chromatic unit) on a delay timed to their
-spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho→Delay), `08CA` (Tm Ctrl Delay),
-`4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
+program is present; steel drums join the chromatic family (0.19.038), so they share a unit with the
+marimba, vibes, xylophone, glockenspiel and bells. Seeds that put that unit on a delay timed to the
+mallets' spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho→Delay), `08CA`
+(Tm Ctrl Delay), `4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
 
 ## Tests
 
