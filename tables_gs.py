@@ -477,9 +477,10 @@ ANIMA_EFX_GS = {
 }
 # Seat-unit wet/dry per type: Balance (param #, EFX C.Src2-modulatable; Anima
 # leaves Control 2 depth at 0 so nothing moves it). OM p.217: 40 03 12,
-# 00 = D>0E ... 40 = D=E (default) ... 7F = D0<E. Display "D>nE" = value n.
+# 00 = D>0E ... 40 = D=E (default) ... 7F = D0<E. Display "D>nE" is the effect at n% of the
+# dry signal, about value x 100/64 (checked on SC-VA: value 50 shows D>77E).
 ANIMA_SEAT_BALANCE = {
-    (0x01, 0x43): (0x12, 0x32),   # Space D: D>50E (default D=E)
+    (0x01, 0x43): (0x12, 0x20),   # Space D: D>50E (value 32; default D=E)
 }
 ANIMA_EFX_BALANCE_DEFAULT = 0x40  # D=E: what a family gets back on a type it keeps
 
