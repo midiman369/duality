@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.039"
+VERSION = "0.19.040"
 
 
 """
@@ -366,6 +366,13 @@ from tables_gs import (
     ANIMA_EFX_PITCH_FAM_MODES,
     ANIMA_EFX_PITCH_DEFAULT_MODES,
     ANIMA_EFX_GATE_TYPE,
+    ANIMA_EFX_BALANCE_ADDR,
+    ANIMA_EFX_BALANCE_TYPES,
+    ANIMA_EFX_LEVEL_DRY,
+    ANIMA_EFX_LEVEL_WET,
+    ANIMA_EFX_LFO_TYPES,
+    ANIMA_EFX_ROTARY_TYPES,
+    ANIMA_EFX_PITCH_TYPES,
     ANIMA_EFX_DIRT_LEVEL,
     ANIMA_EFX_EXCLUSIVE,
     GS_EFX_PARAMS,
@@ -398,7 +405,7 @@ from tables_anima import (
     ANIMA_MOD_CATS,
     ANIMA_TONE_VARS,
 )
-from tables_8850 import anima_cm_to_gm, anima_tone_slots, anima_combo_ok, ANIMA_TONE_RARE, anima_tone_pref, anima_tone_weight
+from tables_8850 import anima_cm_to_gm, anima_tone_slots, anima_combo_ok, ANIMA_TONE_RARE, anima_tone_pref, anima_tone_weight, anima_tone_traits
 
 
 def _roland_checksum(body: list[int]) -> int:
@@ -752,6 +759,16 @@ ANIMA_HERO_SPLIT_PREP_SEC = 0.30
 ANIMA_HERO_SPLIT_BREATH = 0.25   # the hero has been silent this long (notes, ghosts, strums)
 ANIMA_HERO_SPLIT_WAIT = 10.0     # give a prepared unit back once the hero is no longer featured past this
 ANIMA_HERO_SPLIT_SKIP = frozenset({"guitar_dist", "seat", "file_park"})
+# Tone traits (tables_8850.ANIMA_TONE_TRAITS): a marked tone the part does not suit goes back
+# to the capital once, at a rest (never under a note). Counts since the program change.
+ANIMA_TRAIT_LONG_SEC = 0.60     # "short" stab: notes held longer than this ...
+ANIMA_TRAIT_LONG_N = 2          # ... this many times
+ANIMA_TRAIT_QUICK_SEC = 0.25    # "slow" attack: notes shorter than this, onsets closer than
+ANIMA_TRAIT_QUICK_GAP = 0.35    # this ...
+ANIMA_TRAIT_QUICK_N = 4         # ... this many times
+ANIMA_TRAIT_HIGH_NOTE = 67      # "low" register: notes at or above G4 ...
+ANIMA_TRAIT_HIGH_N = 2          # ... this many times
+ANIMA_TRAIT_REST_SEC = 0.12     # the part has been silent this long before the swap
 ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX type/owner changes on one unit
 ANIMA_EFX_FLUSH_GAP = 0.18  # unused; 166 flush applies on the part's own note-off
 ANIMA_EFX_SETTLE_SEC = 0.060  # unused; notes are not delayed
@@ -4326,6 +4343,7 @@ class Duality:
         if not getattr(self, "_anima_efx_burst_dirty", False) and any(self._file_used_ch):
             self._anima_seat_efx()   # never ahead of the planner's setup pass
             self._anima_hero_split_tick()
+        self._anima_trait_tick()
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
@@ -5158,6 +5176,67 @@ class Duality:
             self._log_line(f"ANIMA seed unlock {seed:04X}")
             self._set_status(f"Anima seed unlock {seed:04X} — X/idle will reroll", duration=3.0)
 
+    def _anima_ch_tone(self, ch: int):
+        """(GM program the pick was for, (cc00, cc32, pc) sounding) for a part, or (None, None)."""
+        ch = ch & 0x0F
+        if self._anima_is_rhythm(ch):
+            return None, None
+        gm = int(self._file_pc[ch] if self._file_used_ch[ch] else self._anima_prog[ch]) & 0x7F
+        slot = self._anima_tone_slot[ch]
+        if slot:
+            return gm, tuple(slot)
+        try:
+            c0 = int(self.bank_msb[ch]) & 0x7F
+            c32 = int(self.bank_lsb[ch]) & 0x7F
+        except Exception:
+            return gm, None
+        return gm, (c0, c32, int(self._anima_prog[ch]) & 0x7F)
+
+    def _anima_ch_traits(self, ch: int) -> frozenset:
+        _gm, key = self._anima_ch_tone(ch)
+        return anima_tone_traits(key) if key else frozenset()
+
+    def _anima_ch_efx_level(self, ch: int) -> int:
+        gm, key = self._anima_ch_tone(ch)
+        if gm is None or not key:
+            return 0
+        return int(anima_tone_pref(gm, key).get("efx") or 0)
+
+    def _anima_efx_level_apply(self, port: int, typ=None, chs=None, fam=None, fresh: bool = False) -> None:
+        """Wet/dry Balance from the players' tones (Tone Palettes EFX level). The driest
+        level on the unit wins; a parameter write, never a type change. fresh: the type
+        was just written, so the unit sits at the type's default."""
+        if not (0 <= port < len(self._anima_slots)):
+            return
+        sl = self._anima_slots[port] or {}
+        typ = tuple(typ or sl.get("typ") or ())[:2]
+        fam = fam or sl.get("fam")
+        chs = list(sl.get("chs") or []) if chs is None else list(chs)
+        bal = getattr(self, "_anima_efx_bal", None)
+        if bal is None:
+            bal = self._anima_efx_bal = {}
+        default = ANIMA_EFX_BALANCE_TYPES.get(typ)
+        if fresh:
+            bal[port] = default
+        if default is None or fam in ("seat", "file_park"):
+            return
+        levels = [self._anima_ch_efx_level(c) for c in chs]
+        levels = [v for v in levels if v]
+        lvl = min(levels) if levels and min(levels) < 0 else (max(levels) if levels else 0)
+        if lvl < 0:
+            val = int(round(default * ANIMA_EFX_LEVEL_DRY.get(max(-2, lvl), 0.35)))
+        elif lvl > 0:
+            val = int(round(default + (127 - default) * ANIMA_EFX_LEVEL_WET.get(min(2, lvl), 0.65)))
+        else:
+            val = default
+        val = max(0, min(127, val))
+        if bal.get(port, default) == val:
+            return
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, ANIMA_EFX_BALANCE_ADDR], [val]))
+        bal[port] = val
+        self._anima_feedback("efx-param", f"P{port + 1} balance {val} (tone EFX level {lvl:+d})", status=False)
+
     def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None, avoid=None):
         """Keep a player's type when they relocate; new player in same fam gets another row.
         avoid: types to skip when the palette has others (a hero unit differs from its family's)."""
@@ -5200,21 +5279,24 @@ class Duality:
                     pal = panned
                 else:
                     want_pan = False
-        # MandolinTrem already has a built-in tremolo — no delay/echo insert.
-        trem = False
+        # Tone traits: a sample that already moves gets no LFO insert, a built-in rotary
+        # no rotary, "echo" no delays, extra pitches no pitch shifter (Tone Palettes notes).
+        traits = set()
         for c in chs_set:
-            sl = self._anima_tone_slot[c] if c < 16 else None
-            if sl and sl[0] == 17 and sl[2] == 25:
-                trem = True
-                break
-        if trem:
-            pal = [
-                row for row in pal
-                if "delay" not in str(row[2]).lower()
-                and "echo" not in str(row[2]).lower()
-            ]
-            if not pal:
-                pal = [(0x01, 0x02, "Enhancer", 2)]
+            traits |= self._anima_ch_traits(c)
+        if traits:
+            def _keep(row):
+                typ = (row[0], row[1])
+                if "lfo" in traits and typ in ANIMA_EFX_LFO_TYPES:
+                    return False
+                if "rotary" in traits and typ in ANIMA_EFX_ROTARY_TYPES:
+                    return False
+                if "interval" in traits and typ in ANIMA_EFX_PITCH_TYPES:
+                    return False
+                if "echo" in traits and ("delay" in str(row[2]).lower() or "echo" in str(row[2]).lower()):
+                    return False
+                return True
+            pal = [row for row in pal if _keep(row)] or [(0x01, 0x02, "Enhancer", 2)]
 
         def _from_typ(typ):
             if not typ:
@@ -5496,12 +5578,12 @@ class Duality:
             v = vals[self._anima_mix(0x4A7 + port * 131) % len(vals)]
             msgs.append(self._gs_dt1([0x40, 0x03, addr], [v]))
             notes.append("gate " + ("normal", "reverse", "sweep 1", "sweep 2")[v & 3])
-        if not msgs:
-            return
-        self._anima_efx_ours = True
-        for m in msgs:
-            self._safe_out_send(port, m)
-        self._anima_feedback("efx-param", f"P{port + 1} {' · '.join(notes)}", status=False)
+        if msgs:
+            self._anima_efx_ours = True
+            for m in msgs:
+                self._safe_out_send(port, m)
+            self._anima_feedback("efx-param", f"P{port + 1} {' · '.join(notes)}", status=False)
+        self._anima_efx_level_apply(port, typ, chs, fam)
 
     def _anima_efx_bind_and_seed(self, msb: int, lsb: int, ports=None) -> None:
         """One-shot: bind CC16 to EFX Ctrl1, seed drive, set rotary/wah base."""
@@ -5563,7 +5645,8 @@ class Duality:
             if not (wah or rot) or sl.get("fam") in ("file_park", "seat"):
                 states.pop(port, None)
                 continue
-            owners = [c for c in (sl.get("chs") or []) if not self._anima_is_rhythm(c)]
+            owners = [c for c in (sl.get("chs") or []) if not self._anima_is_rhythm(c)
+                      and not (rot and "rotary" in self._anima_ch_traits(c))]
             if not owners:
                 continue
             st = states.get(port)
@@ -6470,6 +6553,7 @@ class Duality:
             self._anima_unpin_others(port, fam, merged, list(old.get("chs") or []))
             if set(merged) != before:
                 self._anima_efx_apply_pan(port, old.get("typ"), merged)
+                self._anima_efx_level_apply(port)
             return
         # Same family, type already sent — do not flap GTR Multi ↔ OD1/OD2
         # inside the switch window unless we are latching split ON.
@@ -6550,6 +6634,7 @@ class Duality:
             self._anima_efx_label = label
             self._anima_efx_hero = chs[0] if chs else None
             self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_efx_level_apply(port, typ, [], "seat", fresh=True)   # type write reset Balance
             self._anima_efx_shape(port, typ, chs, fam)
             self._anima_efx_apply_pan(port, typ, chs)
             self._anima_organ_vol_lift(port, chs, label)
@@ -6716,6 +6801,93 @@ class Duality:
             out.append(p)
         return out
 
+    def _anima_trait_state(self, ch: int):
+        """Watch state for a part whose Anima-picked tone has a short / slow / low trait."""
+        tw = getattr(self, "_anima_tw", None)
+        if tw is None:
+            tw = self._anima_tw = {}
+        slot = self._anima_tone_slot[ch]
+        st = tw.get(ch)
+        if st is None or st.get("slot") != slot:
+            traits = (anima_tone_traits(slot) & {"short", "slow", "low"}) if slot else frozenset()
+            if not traits or tuple(slot)[0] == 0:
+                tw.pop(ch, None)
+                return None
+            st = tw[ch] = {"slot": slot, "traits": traits, "on": {}, "long": 0, "quick": 0, "high": 0,
+                           "last_on": 0.0, "last_off": 0.0, "due": None}
+        return st
+
+    def _anima_trait_on(self, ch: int, note: int) -> None:
+        st = self._anima_trait_state(ch & 0x0F)
+        if not st or st["due"]:
+            return
+        now = time.monotonic()
+        st["on"][note] = (now, bool(st["last_on"]) and now - st["last_on"] <= ANIMA_TRAIT_QUICK_GAP)
+        st["last_on"] = now
+        if "low" in st["traits"] and note >= ANIMA_TRAIT_HIGH_NOTE:
+            st["high"] += 1
+            if st["high"] >= ANIMA_TRAIT_HIGH_N:
+                st["due"] = "the part plays high"
+
+    def _anima_trait_off(self, ch: int, note: int, now: float) -> None:
+        st = (getattr(self, "_anima_tw", None) or {}).get(ch & 0x0F)
+        if not st:
+            return
+        st["last_off"] = now
+        t0 = st["on"].pop(note, None)
+        if not t0 or st["due"]:
+            return
+        dur, quick = now - t0[0], t0[1]
+        if "short" in st["traits"] and dur > ANIMA_TRAIT_LONG_SEC:
+            st["long"] += 1
+            if st["long"] >= ANIMA_TRAIT_LONG_N:
+                st["due"] = "the part holds notes"
+        if "slow" in st["traits"] and dur < ANIMA_TRAIT_QUICK_SEC and quick:
+            st["quick"] += 1
+            if st["quick"] >= ANIMA_TRAIT_QUICK_N:
+                st["due"] = "the part plays short quick notes"
+
+    def _anima_trait_tick(self) -> None:
+        """A due fallback goes out at the part's next rest: capital tone, once per program."""
+        tw = getattr(self, "_anima_tw", None)
+        if not tw:
+            return
+        now = time.monotonic()
+        for ch, st in list(tw.items()):
+            if not st.get("due") or st.get("done"):
+                continue
+            if any(k[0] == ch for k in self.active) or now - st["last_off"] < ANIMA_TRAIT_REST_SEC:
+                continue
+            if any(item[3] == ch for item in (self._anima_mallet_q or [])):
+                continue
+            if any((getattr(m, "channel", -1) & 0x0F) == ch for _w, _p, m in (self._anima_strum_q or [])):
+                continue
+            gm, key = self._anima_ch_tone(ch)
+            if gm is None:
+                continue
+            slot = (0, 4, gm)
+            for i in range(self.n_ports):
+                if not self._anima_port_8850(i):
+                    continue
+                adapted = self._anima_adapt_tone_slot(i, slot)
+                if not adapted:
+                    continue
+                cc0, cc32, pc_out = adapted
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                self._send_routed(i, mido.Message("program_change", channel=ch, program=pc_out))
+            st["done"] = True
+            self._anima_tone_slot[ch] = slot
+            self._anima_tone_cc0[ch] = 0
+            self._anima_cm64[ch] = False
+            self._anima_feedback(
+                "tone", f"ch{ch + 1} back to the capital GM{gm + 1}: {st['due']} "
+                        f"(CC00={key[0]:03d} is marked {'/'.join(sorted(st['traits']))})", status=True,
+            )
+            port = self._anima_ch_port.get(ch)
+            if port is not None:
+                self._anima_efx_level_apply(port)
+
     def _anima_hero_quiet(self, ch: int, now: float) -> bool:
         """The hero is between phrases: nothing of it sounding or queued, for a breath."""
         if any(k[0] == ch for k in self.active):
@@ -6776,6 +6948,7 @@ class Duality:
             typ = tuple(sl.get("typ") or ())[:2]
             self._anima_efx_shape(p, typ, [ch], fam)
             self._anima_efx_apply_pan(p, typ, [ch])
+            self._anima_efx_level_apply(src)
             self._anima_feedback(
                 "efx", f"P{p + 1} ch{ch + 1} hero split from P{src + 1} ({fam} → GS {GS_EFX_TYPES.get(typ, typ)})",
                 status=True,
@@ -6970,6 +7143,8 @@ class Duality:
         """Thin-mix only. Skip if the arrangement already has bottom."""
         if self._anima_bass_slot_is_multi(hero):
             return False
+        if "interval" in self._anima_ch_traits(ch):
+            return False   # sub-octave / fifths / thirds already in the tone
         others = 0
         for (c, _n) in self.active:
             if c != ch and self._anima_ghost_fam(c) == "bass":
@@ -7298,6 +7473,8 @@ class Duality:
                  hero x0.90
         """
         ch, note = ch & 0x0F, int(note) & 0x7F
+        if "interval" in self._anima_ch_traits(ch):
+            return None   # the tone already plays extra pitches (Tone Palettes note)
         key = (ch, note)
         if self.scpop_mode or getattr(self, "voodoo_active", False) or getattr(self, "voodoo_loading", False):
             return None   # no ghosts there, so no room to make
@@ -9494,6 +9671,7 @@ class Duality:
                     self._anima_ghost_release_pitch(note_msg.channel & 0x0F, note_msg.note)
                     # Harmony is decided now so the hero itself can make room.
                     self._anima_harm_next = None
+                    self._anima_trait_on(note_msg.channel & 0x0F, note_msg.note)
                     try:
                         self._anima_harm_onset(note_msg.channel & 0x0F, note_msg.note)
                         hplan = self._anima_harm_plan(note_msg.channel & 0x0F, note_msg.note)
@@ -9655,6 +9833,7 @@ class Duality:
                     if self.anima:
                         still_held = key in self.active
                         self._anima_line_off[ch_off] = now
+                        self._anima_trait_off(ch_off, msg.note, now)
                         if not still_held:
                             self._anima_mod_on.discard(key)
                             self._anima_ghost_kill(key)

@@ -16,9 +16,13 @@
   multiplier (EFX rows' 4th field, `ANIMA_TONE_PREFS` "w"); old 1/2/4 weights keep their seeded picks.
 - Tone palette picker (published page "Anima Tone Palettes"): rebuild with `tools/picker/build_tone_picker.py`
   (names / one-shot flags / voices in `tools/picker/tone_info.json`). Picks live in its database
-  (`tones/p001`..`p120`: per tone on, st (step), w, EFX level -2..+2, note); copy them into
-  `tables_8850.ANIMA_TONE_PREFS`. Weights and on/off are honoured; EFX level and notes are not wired yet
-  (read the notes and propose how to act on them).
+  (`tones/p001`..`p120`: per tone on, st (step), w, EFX level -2..+2, note). Apply with
+  `tools/picker/apply_tone_picks.py <dir>` (generated block `ANIMA_TONE_PREFS` in `tables_8850.py`) and
+  `tools/picker/apply_efx_picks.py <dir>` (rows of `tables_gs.ANIMA_EFX_GS`); the dir is an ArtifactData
+  list with out_dir. EFX level moves the insert's wet/dry Balance (`40 03 12`, types in
+  `ANIMA_EFX_BALANCE_TYPES`; driest part on a unit wins). Notes are read by Claude and turned into
+  `tables_8850.ANIMA_TONE_TRAITS` (lfo / rotary / echo / interval / short / slow / low): propose new
+  lines for new notes before adding them.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
   tone data (voices, waveforms, parameters) is an exact copy of an 8850 tone or of one already offered
   (by waveform alone was too strict: the 88Pro Piano 1 reuses samples yet is a different piano). The lists in

@@ -13,6 +13,7 @@ import duality as D
 
 fails = []
 choose = D.Duality._anima_tone_choose
+T.ANIMA_TONE_PREFS.clear()   # these checks start from no picks (the real ones live in tables_8850)
 
 # 1. no picks
 for pc in range(120):

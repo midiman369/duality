@@ -140,7 +140,7 @@ ANIMA_EFX_GS = {
         (0x02, 0x05, "DS→Delay", 2),  # #40
         (0x04, 0x00, "GTR Multi 1", 2),  # #48
         (0x04, 0x01, "GTR Multi 2", 1),  # #49
-        (0x04, 0x02, "GTR Multi 3", 2),  # #50
+        (0x04, 0x02, "GTR Multi 3", 4),  # #50
         (0x11, 0x03, "OD1/OD2", 4),  # #59
     ],
     "guitar_mute": [
@@ -417,10 +417,10 @@ ANIMA_EFX_GS = {
         (0x01, 0x56, "Gate Reverb", 2),  # #27
     ],
     "piano_acoustic": [
-        (0x01, 0x00, "Stereo-EQ", 2),  # #1
+        (0x01, 0x00, "Stereo-EQ", 1),  # #1
         (0x01, 0x02, "Enhancer", 2),  # #3
-        (0x01, 0x43, "Space D", 1),  # #19
-        (0x01, 0x44, "3D Chorus", 1),  # #20
+        (0x01, 0x43, "Space D", 2 / 3),  # #19
+        (0x01, 0x44, "3D Chorus", 2 / 3),  # #20
         (0x01, 0x55, "Reverb", 2),  # #26
         (0x01, 0x56, "Gate Reverb", 4),  # #27
     ],
@@ -472,7 +472,7 @@ ANIMA_EFX_GS = {
         (0x01, 0x43, "Space D", 2),  # #19
         (0x01, 0x44, "3D Chorus", 1),  # #20
         (0x01, 0x55, "Reverb", 4),  # #26
-        (0x01, 0x56, "Gate Reverb", 2),  # #27
+        (0x01, 0x56, "Gate Reverb", 4),  # #27
     ],
 }
 # Seat-unit wet/dry per type: Balance (param #, EFX C.Src2-modulatable; Anima
@@ -707,6 +707,40 @@ ANIMA_EFX_DIRT_LEVEL = {
     (0x04, 0x05): 76,   # Bass Multi (OD on)
     (0x11, 0x03): 127, (0x11, 0x04): 127, (0x11, 0x05): 127, (0x11, 0x06): 127,  # OD1/OD2, OD/…
 }
+
+# Wet/dry Balance at 40 03 12 (Effect List p.216-223) and each type's default value.
+# The LCD shows "D>nE" with the effect at n% of the dry signal (D=E = 64, D0<E = 127),
+# so D>74E is about 47. A tone's EFX level (Tone Palettes page) moves Balance from this
+# default: toward dry by ANIMA_EFX_LEVEL_DRY, toward wet by ANIMA_EFX_LEVEL_WET.
+ANIMA_EFX_BALANCE_ADDR = 0x12
+ANIMA_EFX_BALANCE_TYPES = {
+    (0x01, 0x23): 64, (0x01, 0x24): 64,                      # Stereo / Step Flanger
+    (0x01, 0x40): 64, (0x01, 0x41): 127, (0x01, 0x42): 64,   # Hexa / Tremolo / Stereo Chorus
+    (0x01, 0x43): 64, (0x01, 0x44): 64,                      # Space D, 3D Chorus
+    (0x01, 0x50): 47, (0x01, 0x51): 39, (0x01, 0x52): 47,   # Stereo / Mod / 3 Tap Delay
+    (0x01, 0x53): 47, (0x01, 0x54): 47,                      # 4 Tap, Tm Ctrl Delay
+    (0x01, 0x55): 64, (0x01, 0x56): 42, (0x01, 0x57): 47,   # Reverb, Gate Reverb, 3D Delay
+    (0x01, 0x60): 47, (0x01, 0x61): 64,                      # 2 Pitch Shifter, Fb P.Shifter
+    (0x01, 0x72): 127, (0x01, 0x73): 127,                    # Lo-Fi 1 / 2
+}
+ANIMA_EFX_LEVEL_DRY = {-1: 0.60, -2: 0.35}   # x the default
+ANIMA_EFX_LEVEL_WET = {1: 0.40, 2: 0.65}     # of the way from the default to full wet
+
+# Tone traits (tables_8850.ANIMA_TONE_TRAITS) keep these types off a tone:
+# "lfo" = the sample already moves (vibrato, tremolo, rotary, strummed or arpeggiated sustain);
+# "rotary" = a rotary speaker is in the sample; "echo" = no delays; "interval" = no pitch shifter.
+ANIMA_EFX_LFO_TYPES = frozenset({
+    (0x01, 0x20), (0x01, 0x21), (0x01, 0x22), (0x01, 0x23), (0x01, 0x24), (0x01, 0x25),
+    (0x01, 0x26), (0x01, 0x40), (0x01, 0x41), (0x01, 0x42), (0x01, 0x43), (0x01, 0x44),
+    (0x01, 0x51), (0x01, 0x70),
+    (0x02, 0x00), (0x02, 0x01), (0x02, 0x03), (0x02, 0x04), (0x02, 0x06), (0x02, 0x07),
+    (0x02, 0x09), (0x02, 0x0A), (0x02, 0x0B),
+    (0x03, 0x00), (0x04, 0x03), (0x04, 0x04), (0x04, 0x06), (0x05, 0x00),
+    (0x11, 0x00), (0x11, 0x01), (0x11, 0x02), (0x11, 0x04), (0x11, 0x05), (0x11, 0x06),
+    (0x11, 0x07), (0x11, 0x08),
+})
+ANIMA_EFX_ROTARY_TYPES = frozenset({(0x01, 0x22), (0x03, 0x00), (0x11, 0x04), (0x11, 0x07)})
+ANIMA_EFX_PITCH_TYPES = frozenset({(0x01, 0x60), (0x01, 0x61)})
 
 # Gate Reverb: Type at 0x03: 00 Normal, 01 Reverse, 02 Sweep1, 03 Sweep2; the seed picks one.
 ANIMA_EFX_GATE_TYPE = {(0x01, 0x56): (0x03, (0x00, 0x01, 0x02, 0x03))}
