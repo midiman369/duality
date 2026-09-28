@@ -21,6 +21,9 @@ import sys
 
 import mido
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import common  # noqa: E402
+
 TPB = 480
 STEP = TPB // 4           # 16th
 BAR = 16 * STEP
@@ -281,6 +284,7 @@ tr.append(mido.MetaMessage("end_of_track", time=max(0, end_tick + TPB - last)))
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                             "midi", "anima_metal_test.mid")
 os.makedirs(os.path.dirname(out), exist_ok=True)
+mf = common.format1(mf)   # conductor + one named track per channel
 mf.save(out)
-print(f"{out}: {mf.length:.1f} s, {sum(1 for m in tr if m.type == 'note_on' and m.velocity)} notes, "
+print(f"{out}: Format 1, {len(mf.tracks)} tracks, {mf.length:.1f} s, {sum(1 for m in tr if m.type == 'note_on' and m.velocity)} notes, "
       f"{sum(1 for m in tr if m.type == 'pitchwheel')} bends")

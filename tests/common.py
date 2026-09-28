@@ -75,3 +75,81 @@ def load(path: str):
             ln = new
         i += 8 + ln
     return mido.MidiFile(file=io.BytesIO(bytes(data)))
+
+
+# --- Format 1 output for the generated test songs --------------------------------------
+GM_NAMES = (
+    "Piano 1,Piano 2,Piano 3,Honky-tonk,E.Piano 1,E.Piano 2,Harpsichord,Clav,Celesta,Glockenspiel,"
+    "Music Box,Vibraphone,Marimba,Xylophone,Tubular Bells,Dulcimer,Drawbar Organ,Perc. Organ,"
+    "Rock Organ,Church Organ,Reed Organ,Accordion,Harmonica,Bandoneon,Nylon Gt,Steel Gt,Jazz Gt,"
+    "Clean Gt,Muted Gt,Overdrive Gt,Distortion Gt,Gt Harmonics,Acoustic Bass,Fingered Bass,"
+    "Picked Bass,Fretless Bass,Slap Bass 1,Slap Bass 2,Synth Bass 1,Synth Bass 2,Violin,Viola,Cello,"
+    "Contrabass,Tremolo Strings,Pizzicato,Harp,Timpani,Strings,Slow Strings,Synth Strings 1,"
+    "Synth Strings 2,Choir Aahs,Voice Oohs,Synth Vox,Orchestra Hit,Trumpet,Trombone,Tuba,"
+    "Muted Trumpet,French Horn,Brass Section,Synth Brass 1,Synth Brass 2,Soprano Sax,Alto Sax,"
+    "Tenor Sax,Baritone Sax,Oboe,English Horn,Bassoon,Clarinet,Piccolo,Flute,Recorder,Pan Flute,"
+    "Bottle Blow,Shakuhachi,Whistle,Ocarina,Square Lead,Saw Lead,Syn Calliope,Chiffer Lead,Charang,"
+    "Solo Vox,5th Saw,Bass & Lead,Fantasia,Warm Pad,Polysynth,Space Voice,Bowed Glass,Metal Pad,"
+    "Halo Pad,Sweep Pad,Ice Rain,Soundtrack,Crystal,Atmosphere,Brightness,Goblin,Echo Drops,"
+    "Star Theme,Sitar,Banjo,Shamisen,Koto,Kalimba,Bagpipe,Fiddle,Shanai,Tinkle Bell,Agogo,"
+    "Steel Drums,Woodblock,Taiko,Melo Tom,Synth Drum,Reverse Cymbal,Fret Noise,Breath Noise,"
+    "Seashore,Bird,Telephone,Helicopter,Applause,Gun Shot").split(",")
+GS_KITS = {0: "Standard", 8: "Room", 16: "Power", 24: "Electronic", 25: "TR-808", 32: "Jazz",
+           40: "Brush", 48: "Orchestra", 56: "SFX"}
+
+
+def format1(mf, drum_ch: int = 9):
+    """A single-track (Format 0 layout) MidiFile -> Format 1: a conductor track (meta events and
+    SysEx, in their original order) and one track per channel, named after the programs it plays.
+    Fails if the merged tracks would not play exactly what the single track does."""
+    import mido
+    assert len(mf.tracks) == 1
+    cond, chans, t, order, sysex_after = [], {}, 0, [], False
+    seen_ch_at = None
+    for m in mf.tracks[0]:
+        t += m.time
+        if m.type == "end_of_track":
+            end = t
+            continue
+        if m.is_meta or m.type == "sysex":
+            cond.append((t, m))
+            if seen_ch_at == t:
+                sysex_after = True      # would move ahead of a channel event on the same tick
+        else:
+            chans.setdefault(m.channel, []).append((t, m))
+            seen_ch_at = t
+    assert not sysex_after, "a SysEx / meta event follows a channel event on the same tick"
+    out = mido.MidiFile(type=1, ticks_per_beat=mf.ticks_per_beat)
+    groups = [cond]
+    names = [None]
+    for ch in sorted(chans):
+        progs = []
+        for _t, m in chans[ch]:
+            if m.type == "program_change":
+                nm = (GS_KITS.get(m.program, f"Kit {m.program + 1}") + " kit") if ch == drum_ch \
+                    else GM_NAMES[m.program]
+                if nm not in progs:
+                    progs.append(nm)
+        groups.append(chans[ch])
+        names.append((f"Ch{ch + 1} " + " / ".join(progs)).strip()[:120])
+    for evs, name in zip(groups, names):
+        trk = mido.MidiTrack()
+        if name:
+            trk.append(mido.MetaMessage("track_name", name=name, time=0))
+        last = 0
+        for tk, m in evs:
+            trk.append(m.copy(time=tk - last))
+            last = tk
+        trk.append(mido.MetaMessage("end_of_track", time=max(0, end - last)))
+        out.tracks.append(trk)
+
+    def _seq(msgs):
+        t_, per = 0, {}
+        for m in msgs:
+            t_ += m.time
+            if not m.is_meta:
+                per.setdefault(getattr(m, "channel", -1), []).append((t_, str(m.copy(time=0))))
+        return per
+    assert _seq(mf.tracks[0]) == _seq(mido.merge_tracks(out.tracks)), "Format 1 tracks differ"
+    assert abs(out.length - mf.length) < 1e-6
+    return out

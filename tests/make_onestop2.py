@@ -1306,62 +1306,10 @@ if gaps:
     sys.exit(1)
 
 # Format 1 for editors: a conductor track (title, GS reset, tempo, meter), then one track per
-# channel named after the programs it plays. Same events and ticks as the merged track above.
-GM = ("Piano 1,Piano 2,Piano 3,Honky-tonk,E.Piano 1,E.Piano 2,Harpsichord,Clav,Celesta,Glockenspiel,"
-      "Music Box,Vibraphone,Marimba,Xylophone,Tubular Bells,Dulcimer,Drawbar Organ,Perc. Organ,"
-      "Rock Organ,Church Organ,Reed Organ,Accordion,Harmonica,Bandoneon,Nylon Gt,Steel Gt,Jazz Gt,"
-      "Clean Gt,Muted Gt,Overdrive Gt,Distortion Gt,Gt Harmonics,Acoustic Bass,Fingered Bass,"
-      "Picked Bass,Fretless Bass,Slap Bass 1,Slap Bass 2,Synth Bass 1,Synth Bass 2,Violin,Viola,Cello,"
-      "Contrabass,Tremolo Strings,Pizzicato,Harp,Timpani,Strings,Slow Strings,Synth Strings 1,"
-      "Synth Strings 2,Choir Aahs,Voice Oohs,Synth Vox,Orchestra Hit,Trumpet,Trombone,Tuba,"
-      "Muted Trumpet,French Horn,Brass Section,Synth Brass 1,Synth Brass 2,Soprano Sax,Alto Sax,"
-      "Tenor Sax,Baritone Sax,Oboe,English Horn,Bassoon,Clarinet,Piccolo,Flute,Recorder,Pan Flute,"
-      "Bottle Blow,Shakuhachi,Whistle,Ocarina,Square Lead,Saw Lead,Syn Calliope,Chiffer Lead,Charang,"
-      "Solo Vox,5th Saw,Bass & Lead,Fantasia,Warm Pad,Polysynth,Space Voice,Bowed Glass,Metal Pad,"
-      "Halo Pad,Sweep Pad,Ice Rain,Soundtrack,Crystal,Atmosphere,Brightness,Goblin,Echo Drops,"
-      "Star Theme,Sitar,Banjo,Shamisen,Koto,Kalimba,Bagpipe,Fiddle,Shanai,Tinkle Bell,Agogo,"
-      "Steel Drums,Woodblock,Taiko,Melo Tom,Synth Drum,Reverse Cymbal,Fret Noise,Breath Noise,"
-      "Seashore,Bird,Telephone,Helicopter,Applause,Gun Shot").split(",")
-KITS = {0: "Standard", 8: "Room", 16: "Power", 24: "Electronic", 25: "TR-808", 32: "Jazz", 40: "Brush",
-        48: "Orchestra", 56: "SFX"}
-conductor = mido.MidiTrack()
-conductor.append(mido.MetaMessage("track_name", name="ONESTOP2 - A Brief History of Sound", time=0))
-conductor.append(mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41], time=0))
-by_ch = {}
-for tk, _o, m in sorted(events, key=lambda e: (e[0], e[1])):
-    by_ch.setdefault(m.channel, []).append((tk, m))
-tracks = [(conductor, sorted(meta, key=lambda e: (e[0], e[1])))]
-for ch in sorted(by_ch):
-    progs = []
-    for _tk, m in by_ch[ch]:
-        if m.type == "program_change":
-            nm = (KITS.get(m.program, f"Kit {m.program + 1}") + " kit") if ch == DR else GM[m.program]
-            if nm not in progs:
-                progs.append(nm)
-    name = f"Ch{ch + 1} " + (" / ".join(progs) if progs else "")
-    trk = mido.MidiTrack()
-    trk.append(mido.MetaMessage("track_name", name=name[:120], time=0))
-    tracks.append((trk, [(tk, 0, m) for tk, m in by_ch[ch]]))
-mf1 = mido.MidiFile(type=1, ticks_per_beat=TPB)
-for trk, evs in tracks:
-    last = 0
-    for tk, _o, m in evs:
-        tk += TPB
-        trk.append(m.copy(time=max(0, tk - last)))
-        last = max(last, tk)
-    trk.append(mido.MetaMessage("end_of_track", time=max(0, end_tick + TPB - last)))
-    mf1.tracks.append(trk)
-# The merged Format 1 file must play exactly what the single track does.
-def _abs(msgs):
-    t_, out_ = 0, []
-    for m in msgs:
-        t_ += m.time
-        if not m.is_meta:
-            out_.append((t_, str(m.copy(time=0))))
-    return sorted(out_)
-assert _abs(tr) == _abs(mido.merge_tracks(mf1.tracks)), "Format 1 tracks differ from the merged track"
-assert abs(mf1.length - mf.length) < 1e-6
-mf = mf1
+# channel named after the programs it plays (checked to play exactly what the single track does).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import common  # noqa: E402
+mf = common.format1(mf)
 
 out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                             "midi", "onestop2.mid")
