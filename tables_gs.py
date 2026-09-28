@@ -530,10 +530,11 @@ ANIMA_EFX_WAH_MAN = {
 ANIMA_WAH_MAN_BASE = 20
 ANIMA_WAH_MAN_SCREAM = 48   # a hard-played high note held: the whole wah drives higher
 # Peak (resonance) per wah type: (address, value). GTR Multi 3 is a pedal wah
-# whose default Peak 10 barely speaks; 127 by ear. The auto-wah types keep
-# their defaults (40-62), which already give a vowel, and their own LFO / Sens.
+# whose default Peak 10 barely speaks; 127 screamed over a long high solo (ONESTOP2),
+# 80 by ear. The auto-wah types keep their defaults (40-62), which already give a
+# vowel, and their own LFO / Sens.
 ANIMA_EFX_WAH_PEAK = {
-    (0x04, 0x02): (0x05, 127),  # GTR Multi 3: Wah Peak (default 10) - lead guitar
+    (0x04, 0x02): (0x05, 80),   # GTR Multi 3: Wah Peak (default 10) - lead guitar
 }
 # A file's own wah (set and left, Control Source Off): Anima may play it with
 # the file's Manual as the pedal's rest. Defaults (Effect List) when the file
@@ -698,7 +699,8 @@ ANIMA_EFX_PITCH_DEFAULT_MODES = ("doubler", "oct_up")
 
 # Dirt inserts sit after the part's volume, so a CC7/CC11 fade only drives
 # the distortion softer and it stays loud. Their overall Level (40 03 16,
-# param 20 on every type) follows the fade instead. Value = the type default.
+# param 20 on every type) follows the fade instead. Value = the type default
+# (Anima's own types start from the Level ANIMA_EFX_TYPE_SET writes, if any).
 ANIMA_EFX_DIRT_LEVEL = {
     (0x01, 0x10): 96,   # Overdrive
     (0x01, 0x11): 84,   # Distortion
@@ -709,6 +711,18 @@ ANIMA_EFX_DIRT_LEVEL = {
     (0x04, 0x05): 76,   # Bass Multi (OD on)
     (0x11, 0x03): 127, (0x11, 0x04): 127, (0x11, 0x05): 127, (0x11, 0x06): 127,  # OD1/OD2, OD/…
 }
+
+# Fixed settings Anima writes with its own type (address, value), Effect List p.220-222,
+# by ear on ONESTOP2 (SC-VA): GTR Multi 2's Overdrive stage was far too loud, GTR Multi 3
+# too quiet at its default Level 88.
+ANIMA_EFX_TYPE_SET = {
+    (0x04, 0x01): ((0x07, 0x01),),   # GTR Multi 2: OD Sel = Dist (default Odrv)
+    (0x04, 0x02): ((0x16, 120),),    # GTR Multi 3: Level 120 (default 88)
+}
+# OD1/OD2 guitar split (Effect List p.222): both sides Distortion; OD1 Level 96 -> 80
+# (OD1 as Overdrive was far louder than the Distortion side, OD2 Level 84).
+ANIMA_SPLIT_OD1_SEL, ANIMA_SPLIT_OD1_LEVEL = 0x01, 80   # 40 03 03 / 40 03 13
+ANIMA_SPLIT_OD2_SEL = 0x01                               # 40 03 08
 
 # Wet/dry Balance at 40 03 12 (Effect List p.216-223) and each type's default value.
 # The LCD shows "D>nE" with the effect at n% of the dry signal, n = value x 1.54 rounded down
@@ -742,6 +756,9 @@ ANIMA_EFX_LFO_TYPES = frozenset({
     (0x11, 0x07), (0x11, 0x08),
 })
 ANIMA_EFX_ROTARY_TYPES = frozenset({(0x01, 0x22), (0x03, 0x00), (0x11, 0x04), (0x11, 0x07)})
+# GM programs that never get a wah insert (ANIMA_EFX_WAH): a jazz box comping swing is
+# played clean (ONESTOP2's big band guitar drew Auto Wah). Clean Gt. (27) keeps its funk wah.
+ANIMA_EFX_NO_WAH_PROGS = frozenset({26})   # Jazz Gt.
 ANIMA_EFX_PITCH_TYPES = frozenset({(0x01, 0x60), (0x01, 0x61)})
 
 # Gate Reverb: Type at 0x03: 00 Normal, 01 Reverse, 02 Sweep1, 03 Sweep2; the seed picks one.

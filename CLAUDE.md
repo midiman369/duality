@@ -30,6 +30,10 @@
   (shingo45endo/tone-browser); rerun it rather than editing them.
 - Anima GS EFX addresses and parameters come from the SC-8850 manual's Insertion Effect List
   (p.216-223) and MIDI Implementation (p.237); see comments in `tables_gs.py`.
+- Fixed settings Anima writes with its own type live in `tables_gs.ANIMA_EFX_TYPE_SET` (0.19.043, by ear:
+  GTR Multi 2 OD Sel = Dist, GTR Multi 3 Level 120; its wah Peak is `ANIMA_EFX_WAH_PEAK`, 80). The OD1/OD2
+  guitar split runs both sides as Distortion with OD1 Level 80. Harpsichord is `piano_acoustic`, not
+  `keys_pluck`; a Jazz Gt. never gets a wah (`ANIMA_EFX_NO_WAH_PROGS`).
 
 ## Anima GS EFX rules (agreed; keep them)
 
