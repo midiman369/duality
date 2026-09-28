@@ -8,7 +8,7 @@ horn ch6 pan 64, strings ch12 pan 96), so one unit is spare. Checks:
   - a file pan move later in the song is mirrored on the spare too
   - no real (file) note of a seated channel plays on the spare
   - panic() gives the spare unit the file's pans back
-  - a seat's Space D gets Balance D>50E (40 03 12 = 0x20); a family's does not
+  - a seat's Space D gets Balance D>50E (40 03 12 = 0x21); a family's does not
   - the spare gets the gentle "seat" insert with the harmony channels wired
     in; when a guitar arrives mid-song it takes the unit over, never with a
     type write while seat harmony is sounding there, and harmony then goes
@@ -151,7 +151,7 @@ def dt1_to(port, n0):
             if p == port and m.type == "sysex" and list(m.data[:4]) == [0x41, 0x10, 0x42, 0x12]]
 n0 = len(REC)
 d._anima_efx_shape(3, (0x01, 0x43), [0, 5, 11], "seat")
-if ([0x40, 0x03, 0x12], [0x20]) not in dt1_to(3, n0):
+if ([0x40, 0x03, 0x12], [0x21]) not in dt1_to(3, n0):
     fails.append(f"seat Space D: no Balance D>50E write, got {dt1_to(3, n0)}")
 n0 = len(REC)
 d._anima_efx_shape(3, (0x01, 0x43), [0], "strings")
@@ -161,7 +161,7 @@ typ4 = tuple(d._anima_slots[3].get("typ") or ())
 if typ4 in D.ANIMA_SEAT_BALANCE:
     sent = [v for _t, p, m in REC if p == 3 and m.type == "sysex"
             for v in [list(m.data[4:8])] if v[:3] == [0x40, 0x03, 0x12]]
-    if [0x40, 0x03, 0x12, 0x20] not in sent:
+    if [0x40, 0x03, 0x12, 0x21] not in sent:
         fails.append("seat insert Space D committed without its Balance")
 
 # A guitar arrives: the seat must hand P4 over, quietly.
