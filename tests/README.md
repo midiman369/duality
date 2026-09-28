@@ -81,7 +81,7 @@ marimba, vibes, xylophone, glockenspiel and bells. Seeds that put that unit on a
 mallets' spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho→Delay), `08CA`
 (Tm Ctrl Delay), `4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
 
-`python tests/make_onestop2.py` writes `tests/midi/onestop2.mid`, "ONESTOP2 - A Brief History of Sound"
+`python tests/make_onestop2.py` writes `tests/midi/onestop2.mid` (Format 1: a conductor track, then one named track per channel), "ONESTOP2 - A Brief History of Sound"
 (8:37): medieval (a fingerpicked lute with runs and strums, a bagpipe reprise), baroque to classical,
 an organ-led cathedral crescendo, big band, boogie-woogie into Chuck Berry-style rock'n'roll on an
 overdrive guitar, a proto-synth machine (calliope synth ostinato, synth brass, Fantasia, Bass & Lead)
