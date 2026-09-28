@@ -82,14 +82,15 @@ mallets' spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho
 (Tm Ctrl Delay), `4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
 
 `python tests/make_onestop2.py` writes `tests/midi/onestop2.mid`, "ONESTOP2 - A Brief History of Sound"
-(5:11): medieval, baroque to classical, a cathedral crescendo (pipe organ + choir), big band swing, a
-proto-synth machine, rock'n'roll, analog synths, prog / hard rock (rotary organ, a 7/8 passage) and a metal
-finale (gallop with guitars hard left / right, groove + solo with tapping and dive bombs, doom ending with
-the organ and choir back). Plays complete on one SC-8850 (GM capitals, GS drum sets, no file EFX); built for
-Duality on six GS units. Every section change is a program-change burst, and each seam exercises an EFX
-rule: a drone sounding through unheard program changes, a full rest before a burst, a drums-only fill
-carrying one, parts crossing over, CC7 fades on held chords. Any seed; checked with 0436, 1A2B, 7A18 and
-1A2B in game mode (no type change under a sounding player, no hitch outside foley, nothing left hanging).
+(6:04): medieval, baroque to classical, an organ-led cathedral crescendo, big band, boogie-woogie into
+Chuck Berry-style rock'n'roll, a proto-synth machine interleaved into analog synths, prog / hard rock
+(rotary organ, 7/8, organ vs Moog), then a Dio-style epic, a power groove, a NWOBHM gallop and a
+Priest-style anthem ending with the organ and choir. Plays complete on one SC-8850 (GM capitals, GS drum
+sets, no file EFX); built for Duality on six GS units. Every part is written in scale degrees of its
+section's key, and the build fails on a note outside the section's allowed pitch classes or on a silence
+over 1.5 s outside the one intended rest. Offline with seeds 0436, 1A2B, 7A18 (and 1A2B in game mode):
+no type change under a sounding player, nothing hanging, about 99.5% of what Duality sends inside the
+file's local key (the rest are chords held longer than the 2 s check window).
 
 ## Tests
 
