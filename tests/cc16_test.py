@@ -14,7 +14,7 @@ Rotary Multi, a clean guitar forced onto Auto Wah, strings. Checks:
     back to the heel and goes quiet
   - a muted guitar forced onto GTR Multi 3 playing power chords is heard as
     rhythm: its Peak drops to ANIMA_WAH_PEAK_RHYTHM and the screamer stays off
-  - one channel going from chords to a lead line opens up (Peak 127) within
+  - one channel going from chords to a lead line opens up (the lead Peak) within
     ANIMA_WAH_ROLE_LEAD_SEC-ish, and drops back to rhythm only after the chords
     have been back a while (one-sided glide)
   - no CC16 to units without a wah/rotary insert
@@ -184,6 +184,9 @@ else:
         fails.append(f"rhythm GTR Multi 3 Peak {r.get(0x05)}, want {D.ANIMA_WAH_PEAK_RHYTHM}")
     if r.get(0x04) != D.ANIMA_WAH_MAN_BASE:
         fails.append(f"rhythm wah screamed: Manual {r.get(0x04)}")
+    lvl = dict(D.ANIMA_EFX_TYPE_SET[(0x04, 0x02)])[0x16]
+    if r.get(0x16) != lvl:
+        fails.append(f"GTR Multi 3 Level {r.get(0x16)}, want {lvl} (written with the type)")
     print(f"rhythm guitar P{pc+1} GTR Multi 3: Peak {r.get(0x05)}, Manual {r.get(0x04)}")
 # --- one channel: chords -> lead line -> chords (fresh instance) ---------------------
 REC.clear()
@@ -222,14 +225,41 @@ while tt <= t + 1.0:
 ps = [q for q, sl in enumerate(d._anima_slots) if 1 in (sl.get("chs") or [])]
 peaks = [(t0 - 1000.0, m.data[7]) for t0, p, m in REC if ps and p == ps[0] and m.type == "sysex"
          and list(m.data[4:7]) == [0x40, 0x03, 0x05] and t0 - 1000.0 > 0.5]
-up = [t0 for t0, v in peaks if v == 127 and t0 >= lead_t]
+LEAD_PK = D.ANIMA_EFX_WAH_PEAK[(0x04, 0x02)][1]
+up = [t0 for t0, v in peaks if v == LEAD_PK and t0 >= lead_t]
 down = [t0 for t0, v in peaks if v == D.ANIMA_WAH_PEAK_RHYTHM and t0 >= chords_t]
 if not up or up[0] - lead_t > 0.6:
-    fails.append(f"lead line did not open the wah quickly (Peak 127 at {up[:1]}, lead at {lead_t:.2f})")
+    fails.append(f"lead line did not open the wah quickly (Peak {LEAD_PK} at {up[:1]}, lead at {lead_t:.2f})")
 if not down or down[0] - chords_t < 0.5:
     fails.append(f"back to chords: rhythm Peak at {down[:1]}, chords at {chords_t:.2f} (want a slower glide)")
-print(f"switch: lead at {lead_t:.2f}s -> Peak 127 at {up[0] if up else '-'}; "
+print(f"switch: lead at {lead_t:.2f}s -> Peak {LEAD_PK} at {up[0] if up else '-'}; "
       f"chords at {chords_t:.2f}s -> Peak {D.ANIMA_WAH_PEAK_RHYTHM} at {down[0] if down else '-'}")
+# --- family and fixed settings (0.19.043) ---------------------------------------------
+d.process(mido.Message("program_change", channel=3, program=6))
+d.process(mido.Message("program_change", channel=4, program=7))
+if d._anima_efx_family(3) != "piano_acoustic" or d._anima_efx_family(4) != "keys_pluck":
+    fails.append(f"Harpsichord family {d._anima_efx_family(3)} (want piano_acoustic), "
+                 f"Clavi {d._anima_efx_family(4)} (want keys_pluck)")
+D.ANIMA_EFX_GS["guitar_clean"] = [(0x01, 0x21, "Auto Wah", 8), (0x01, 0x42, "Stereo Chorus", 1)]
+d.process(mido.Message("program_change", channel=10, program=26))   # Jazz Gt.
+d.process(mido.Message("program_change", channel=11, program=27))   # Clean Gt.
+jz = {d._anima_palette_pick("guitar_clean", p_, [10])[2] for p_ in range(4)}
+cl = {d._anima_palette_pick("guitar_clean", p_, [11])[2] for p_ in range(4)}
+if "Auto Wah" in jz or "Auto Wah" not in cl:
+    fails.append(f"Jazz Gt. picks {jz} (want no wah), Clean Gt. picks {cl} (want its Auto Wah)")
+REC.clear()
+d._anima_apply_od_split([5, 6], ports=[3])
+od = {m.data[6]: m.data[7] for _t, p, m in REC if p == 3 and m.type == "sysex"
+      and list(m.data[4:6]) == [0x40, 0x03]}
+want = {0x03: D.ANIMA_SPLIT_OD1_SEL, 0x13: D.ANIMA_SPLIT_OD1_LEVEL, 0x08: D.ANIMA_SPLIT_OD2_SEL}
+if {a_: od.get(a_) for a_ in want} != want:
+    fails.append(f"OD1/OD2 split settings {[(hex(a_), od.get(a_)) for a_ in want]}, want {want}")
+REC.clear()
+d._anima_efx_bind_and_seed(0x04, 0x01, ports=[2])
+g2 = {m.data[6]: m.data[7] for _t, p, m in REC if p == 2 and m.type == "sysex"
+      and list(m.data[4:6]) == [0x40, 0x03]}
+if g2.get(0x07) != 0x01:
+    fails.append(f"GTR Multi 2 OD Sel {g2.get(0x07)}, want 1 (Distortion)")
 if fails:
     print(f"FAILS ({len(fails)}):")
     for f in fails:

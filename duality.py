@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.042"
+VERSION = "0.19.043"
 
 
 """
@@ -336,6 +336,9 @@ from tables_gs import (
     ANIMA_SPLIT_MSB,
     ANIMA_SPLIT_LSB,
     ANIMA_SPLIT_LABEL,
+    ANIMA_SPLIT_OD1_SEL,
+    ANIMA_SPLIT_OD1_LEVEL,
+    ANIMA_SPLIT_OD2_SEL,
     ANIMA_SPLIT_PAN_LO,
     ANIMA_SPLIT_PAN_HI,
     ANIMA_EFX_DRIVE_03,
@@ -371,9 +374,11 @@ from tables_gs import (
     ANIMA_EFX_LEVEL_DRY,
     ANIMA_EFX_LEVEL_WET,
     ANIMA_EFX_LFO_TYPES,
+    ANIMA_EFX_NO_WAH_PROGS,
     ANIMA_EFX_ROTARY_TYPES,
     ANIMA_EFX_PITCH_TYPES,
     ANIMA_EFX_DIRT_LEVEL,
+    ANIMA_EFX_TYPE_SET,
     ANIMA_EFX_EXCLUSIVE,
     GS_EFX_PARAMS,
 )
@@ -3822,6 +3827,9 @@ class Duality:
         sl = self._anima_slots[port]
         typ = tuple(sl.get("typ") or ())[:2]
         base = ANIMA_EFX_DIRT_LEVEL.get(typ)
+        if base is not None and sl.get("fam") != "file_park":
+            # Anima's own type: full volume is the Level it wrote with the type.
+            base = dict(ANIMA_EFX_TYPE_SET.get(typ, ())).get(0x16, base)
         chs = list(sl.get("chs") or [])
         if base is None or not chs:
             return
@@ -4804,8 +4812,8 @@ class Duality:
             return self._anima_efx_from_cat(_mt32_category(p))
         if msb == 126:
             return self._anima_efx_from_cat(_gm_category(p))
-        if p <= 2:
-            return "piano_acoustic"
+        if p <= 2 or p == 6:
+            return "piano_acoustic"   # + Harpsichord: piano inserts, never the clav's wah
         if p == 3 or 8 <= p <= 14 or p == 114:
             return "chromatic"      # + Steel Drums (GM 115): mallets share the unit
         if 96 <= p <= 103:
@@ -4814,8 +4822,8 @@ class Duality:
             return "ep_rhodes"
         if p == 5:
             return "ep_dx"
-        if p in (6, 7):
-            return "keys_pluck"
+        if p == 7:
+            return "keys_pluck"     # Clavi
         if p in (16, 17, 18):
             return "organ_rotary"   # Drawbar / Percussive / Rock
         if p == 22:
@@ -4978,8 +4986,9 @@ class Duality:
             self._anima_send_cc(ports, c, 10, hard)
         msgs = [
             self._gs_dt1([0x40, 0x03, 0x00], [ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB]),
-            self._gs_dt1([0x40, 0x03, 0x03], [0x00]),  # OD1 = Overdrive
-            self._gs_dt1([0x40, 0x03, 0x08], [0x01]),  # OD2 = Distortion
+            self._gs_dt1([0x40, 0x03, 0x03], [ANIMA_SPLIT_OD1_SEL]),     # OD1 Sel
+            self._gs_dt1([0x40, 0x03, 0x13], [ANIMA_SPLIT_OD1_LEVEL]),   # OD1 Level
+            self._gs_dt1([0x40, 0x03, 0x08], [ANIMA_SPLIT_OD2_SEL]),     # OD2 Sel
             self._gs_dt1([0x40, 0x03, 0x12], [int(od1_pan) & 0x7F]),
             self._gs_dt1([0x40, 0x03, 0x14], [int(od2_pan) & 0x7F]),
         ]
@@ -5196,6 +5205,14 @@ class Duality:
         _gm, key = self._anima_ch_tone(ch)
         return anima_tone_traits(key) if key else frozenset()
 
+    def _anima_efx_nowah(self, ch: int) -> bool:
+        """A jazz box is played clean: no wah insert (ANIMA_EFX_NO_WAH_PROGS)."""
+        try:
+            msb = int(self.bank_msb[ch]) & 0x7F
+        except Exception:
+            msb = 0
+        return msb < 126 and (int(self._anima_prog[ch]) & 0x7F) in ANIMA_EFX_NO_WAH_PROGS
+
     def _anima_ch_efx_level(self, ch: int) -> int:
         gm, key = self._anima_ch_tone(ch)
         if gm is None or not key:
@@ -5297,9 +5314,14 @@ class Duality:
                     return False
                 return True
             pal = [row for row in pal if _keep(row)] or [(0x01, 0x02, "Enhancer", 2)]
+        nowah = any(self._anima_efx_nowah(c) for c in chs_set)
+        if nowah:
+            pal = [row for row in pal if (row[0], row[1]) not in ANIMA_EFX_WAH] or pal
 
         def _from_typ(typ):
             if not typ:
+                return None
+            if nowah and tuple(typ)[:2] in ANIMA_EFX_WAH:
                 return None
             if avoid and tuple(typ)[:2] in avoid:
                 return None   # a hero unit takes a different type, not the family's
@@ -5333,7 +5355,8 @@ class Duality:
         exclusive_live = live & ANIMA_EFX_EXCLUSIVE
 
         key = (fam, port)
-        cached = self._anima_efx_pick.get(key)
+        # A jazz box picks from its own (wah-free) list and leaves the family's cached pick alone.
+        cached = None if nowah else self._anima_efx_pick.get(key)
         if cached and (cached[0], cached[1]) not in exclusive_live:
             return cached
         mix = self._anima_mix(sum(ord(c) for c in fam) * 31, 0 if port is None else (port + 1) * 97)
@@ -5354,7 +5377,8 @@ class Duality:
                     pick = alt
                     break
         pick = tuple(pick[:3])
-        self._anima_efx_pick[key] = pick
+        if not nowah:
+            self._anima_efx_pick[key] = pick
         return pick
 
 
@@ -5615,6 +5639,8 @@ class Duality:
         peak = ANIMA_EFX_WAH_PEAK.get(key)
         if peak is not None:
             msgs.append(self._gs_dt1([0x40, 0x03, peak[0]], [peak[1]]))
+        for addr, val in ANIMA_EFX_TYPE_SET.get(key, ()):
+            msgs.append(self._gs_dt1([0x40, 0x03, addr], [val & 0x7F]))
         self._anima_efx_ours = True
         for i in ports:
             for m in msgs:

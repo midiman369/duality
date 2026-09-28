@@ -14,7 +14,8 @@ if a note leaves its section's allowed pitch classes (the scale plus the few chr
 style calls for, listed per section), if nothing sounds for longer than 1.5 s outside the one
 intended rest, or if a program change lands on a channel that is still holding a note.
 
-   1 Medieval               D dorian     88   recorder / pan flute counterpoint, lute, dulcimer,
+   1 Medieval               D dorian     88   recorder / pan flute counterpoint, fingerpicked lute
+                                              (runs, turns, hammer-ons, strums), dulcimer,
                                               cello, organ drone, harp, bells; a full reprise with
                                               bagpipe drone
      -> the organ drone rings on while every other part changes program
@@ -28,7 +29,7 @@ intended rest, or if a program change lands on a channel that is still holding a
    5 Boogie -> rock'n'roll  A blues  150/168  solo boogie piano (bass and drums join), then an
                                               overdrive guitar intro lick, sax chorus, overdrive
                                               lead chorus, stop-time piano chorus, a stop
-   6 Proto-synth machine    A mixolyd.  132   xylophone picks up the lick; square lead, synth brass
+   6 Proto-synth machine    A mixolyd.  132   calliope synth picks up the lick; square lead, synth brass
                                               answers, Fantasia pad, celesta, synth bass, woodblocks
      -> same tempo: the analog sequence fades in under the machine on shared chords
    7 Analog synths          E minor     132   saw sequence, poly + halo pads, synth strings, synth
@@ -229,7 +230,7 @@ section(88, key=KD, name="medieval")
 prog(DR, 0, 48, vol=96, rev=60)                                        # Orchestra kit
 prog(C1, 0, 74, vol=100, pan=54, rev=64)                              # Recorder
 prog(C2, 0, 75, vol=94, pan=78, rev=64)                               # Pan Flute
-prog(C3, 0, 24, vol=96, pan=40, rev=50)                               # Nylon (lute)
+prog(C3, 0, 24, vol=118, pan=40, rev=50)                              # Nylon (lute)
 prog(C4, 0, 15, vol=90, pan=90, rev=55)                               # Dulcimer
 prog(C5, 0, 42, vol=96, pan=52, rev=55)                               # Cello
 prog(C6, 0, 19, vol=80, pan=64, rev=80)                               # Church Organ (drone)
@@ -258,6 +259,44 @@ REC1 = [
     [(0, 15, 4)],
 ]
 FLUTE1 = {k: [(b, d - (5 if ln >= 2 else 2), ln) for b, d, ln in REC1[k]] for k in range(4, 16)}
+# The lute (nylon guitar): fingerpicked sixteenths, the thumb on the beat (root / fifth, an octave
+# under the chord), fingers above; scale runs close each phrase, a triplet turn now and then,
+# hammer-ons, and strummed chords in the reprise. Degrees count up from the chord root, low octave.
+LUTE_FING = [[9, 11, 9], [7, 9, 11], [11, 9, 7], [9, 14, 11], [7, 11, 9], [11, 14, 9]]
+LUTE_RUN_UP = [0, 1, 2, 3, 4, 5, 6, 7]
+LUTE_RUN_DN = [11, 10, 9, 8, 7, 6, 5, 4]
+LUTE_TURN = [9, 10, 9, 8, 9, 11]                                          # six to a beat
+
+
+def lute(k, r):
+    b = t(k)
+    big = k >= 12
+    run = None
+    if k in (3, 11):
+        run = LUTE_RUN_UP
+    elif k in (7, 14):
+        run = LUTE_RUN_DN
+    for st in range(16):
+        tk = b + st * TPB // 4
+        if run is not None and st >= 8:                                  # the run takes beats 3-4
+            d = run[st - 8]
+            note(C3, tk, KD(r - 7 + d), 0.25, 82 + (st - 8) * 2, gate=0.95, jitter=3)
+            continue
+        if k in (5, 9) and st >= 12:                                     # a triplet turn on beat 4
+            if st == 12:
+                for i, d in enumerate(LUTE_TURN):
+                    note(C3, b + 3 * TPB + i * TPB // 6, KD(r - 7 + d), 1 / 6, 84 - (i % 3) * 3, gate=1.0, jitter=2)
+            continue
+        if st % 4 == 0:
+            if big and st in (0, 8):                                      # strum on beats 1 and 3
+                chord(C3, tk, [KD(r - 7 + d) for d in (0, 4, 7, 9, 11)], 1.0, 96, roll=12, gate=0.9)
+            else:
+                note(C3, tk, KD(r - 7 + (0, 4, 0, 4)[st // 4]), 0.5, 94, gate=1.0)
+            continue
+        d = LUTE_FING[(k + st // 4) % len(LUTE_FING)][st % 4 - 1]
+        if st in (2, 10) and k % 2 == 1 and not big:                     # hammer-on from a step below
+            note(C3, tk - 34, KD(r - 7 + d - 1), 0.07, 68, jitter=0)
+        note(C3, tk, KD(r - 7 + d), 0.25, 80 if st % 2 == 0 else 72, gate=1.3)
 FLUTE1[7] = [(0, 4, 2), (2, 6, 2)]
 FLUTE1[11] = [(0, 4, 2), (2, 6, 2)]
 FLUTE1[15] = [(0, 9, 2), (2, 11, 2)]
@@ -268,8 +307,12 @@ for k, r in enumerate(ROOTS1):
         chord(C6, b, [KD(r - 14), KD(r - 10), KD(r - 7)] + (KD.tri(r) if big else []), 2 * BPB, 76 if big else 70)
     note(C5, b, KD(r - 14), 2, 84)
     note(C5, b + 2 * TPB, KD(r - 10), 2, 76)
-    for i, dd in enumerate([0, 2, 4, 7, 9, 4, 2, 4]):
-        note(C3, b + i * TPB // 2, KD(r - 7 + dd), 0.5, 80 if i % 2 == 0 else 66, gate=1.6 if k < 15 else 0.8)
+    if k < 15:
+        lute(k, r)
+    else:                                                                # the last bar: a run down, a final strum
+        for i, d in enumerate([11, 10, 9, 8, 7, 6, 5, 4]):
+            note(C3, b + i * TPB // 4, KD(r - 7 + d), 0.25, 90 - i * 2, gate=0.95, jitter=3)
+        chord(C3, b + 2 * TPB, [KD(r - 7 + d) for d in (0, 4, 7, 9, 11)], 1.5, 98, roll=14, gate=0.85)
     if k >= 2:
         chord(C4, b, KD.tri(r + 7), 1.5, 78, roll=18)
         chord(C4, b + 2 * TPB, KD.tri(r + 7)[::-1], 1.5, 70, roll=18)
@@ -622,10 +665,10 @@ drum(t(0), CRASH, 116)
 drum(t(0), KICK, 116)
 
 # ======================================================================================
-# 6  Proto-synth machine - A mixolydian, 132 BPM, 16 bars (the xylophone picks up the lick)
+# 6  Proto-synth machine - A mixolydian, 132 BPM, 16 bars (a calliope synth picks up the lick)
 # ======================================================================================
 section(132, key=KAm, name="machine")
-prog(C8, t(0, 0.5), 13, vol=96, pan=84, rev=45)                         # Xylophone
+prog(C8, t(0, 0.5), 82, vol=100, pan=84, rev=45)                        # Syn. Calliope (the machine)
 prog(C1, t(0, 1) + 10, 80, vol=98, pan=60, rev=45)                      # Square lead
 prog(C2, t(0, 1) + 10, 63, vol=90, pan=76, rev=45)                      # Synth Brass 2 (answers)
 prog(C9, t(0, 1) + 10, 8, vol=86, pan=40, rev=55)                       # Celesta
