@@ -1316,5 +1316,5 @@ out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path
 os.makedirs(os.path.dirname(out), exist_ok=True)
 mf.save(out)
 n_on = sum(1 for m in tr if m.type == "note_on" and m.velocity)
-print(f"{out}: Format 1, {len(mf.tracks)} tracks, {mf.length:.1f} s ({int(mf.length // 60)}:{int(mf.length % 60):02d}), {n_on} notes, "
+print(f"{out}: Format 1, {len(mf.tracks)} tracks (ties kept in order, <= {mf.max_shift} ticks late), {mf.length:.1f} s ({int(mf.length // 60)}:{int(mf.length % 60):02d}), {n_on} notes, "
       f"{sum(1 for m in tr if m.type == 'program_change')} program changes, all in key")

@@ -257,4 +257,4 @@ out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path
 os.makedirs(os.path.dirname(out), exist_ok=True)
 mf = common.format1(mf)   # conductor + one named track per channel
 mf.save(out)
-print(f"{out}: Format 1, {len(mf.tracks)} tracks, {mf.length:.1f} s, {sum(1 for m in tr if m.type == 'note_on' and m.velocity)} notes")
+print(f"{out}: Format 1, {len(mf.tracks)} tracks (ties kept in order, <= {mf.max_shift} ticks late), {mf.length:.1f} s, {sum(1 for m in tr if m.type == 'note_on' and m.velocity)} notes")

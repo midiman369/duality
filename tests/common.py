@@ -98,58 +98,59 @@ GS_KITS = {0: "Standard", 8: "Room", 16: "Power", 24: "Electronic", 25: "TR-808"
            40: "Brush", 48: "Orchestra", 56: "SFX"}
 
 
-def format1(mf, drum_ch: int = 9):
+def format1(mf, drum_ch: int = 9, max_shift: int = 12):
     """A single-track (Format 0 layout) MidiFile -> Format 1: a conductor track (meta events and
-    SysEx, in their original order) and one track per channel, named after the programs it plays.
-    Fails if the merged tracks would not play exactly what the single track does."""
+    SysEx) and one track per channel, named after the programs it plays.
+
+    Players send events that share a tick track by track, which would reorder a program-change
+    burst (and Anima places inserts by arrival order). So an event that would come out ahead of
+    one written before it moves a tick later: played back, the tracks send every event in exactly
+    the single track's order, each at most max_shift ticks late (checked)."""
     import mido
     assert len(mf.tracks) == 1
-    cond, chans, t, order, sysex_after = [], {}, 0, [], False
-    seen_ch_at = None
+    evs, t, end = [], 0, 0
     for m in mf.tracks[0]:
         t += m.time
         if m.type == "end_of_track":
             end = t
-            continue
-        if m.is_meta or m.type == "sysex":
-            cond.append((t, m))
-            if seen_ch_at == t:
-                sysex_after = True      # would move ahead of a channel event on the same tick
         else:
-            chans.setdefault(m.channel, []).append((t, m))
-            seen_ch_at = t
-    assert not sysex_after, "a SysEx / meta event follows a channel event on the same tick"
-    out = mido.MidiFile(type=1, ticks_per_beat=mf.ticks_per_beat)
-    groups = [cond]
+            evs.append((t, m))
+    chans = sorted({m.channel for _t, m in evs if not (m.is_meta or m.type == "sysex")})
+    idx = {ch: i + 1 for i, ch in enumerate(chans)}          # conductor is track 0
+    groups = [[] for _ in range(len(chans) + 1)]
+    prev = (-1, -1)
+    shift = 0
+    for tk, m in evs:
+        k = 0 if (m.is_meta or m.type == "sysex") else idx[m.channel]
+        te = max(tk, prev[0])
+        if te == prev[0] and k < prev[1]:
+            te += 1
+        prev = (te, k)
+        shift = max(shift, te - tk)
+        groups[k].append((te, m))
+    assert shift <= max_shift, f"keeping the order moved an event {shift} ticks"
     names = [None]
-    for ch in sorted(chans):
+    for ch in chans:
         progs = []
-        for _t, m in chans[ch]:
+        for _t, m in groups[idx[ch]]:
             if m.type == "program_change":
                 nm = (GS_KITS.get(m.program, f"Kit {m.program + 1}") + " kit") if ch == drum_ch \
                     else GM_NAMES[m.program]
                 if nm not in progs:
                     progs.append(nm)
-        groups.append(chans[ch])
         names.append((f"Ch{ch + 1} " + " / ".join(progs)).strip()[:120])
-    for evs, name in zip(groups, names):
+    out = mido.MidiFile(type=1, ticks_per_beat=mf.ticks_per_beat)
+    for g, name in zip(groups, names):
         trk = mido.MidiTrack()
         if name:
             trk.append(mido.MetaMessage("track_name", name=name, time=0))
         last = 0
-        for tk, m in evs:
+        for tk, m in g:
             trk.append(m.copy(time=tk - last))
             last = tk
-        trk.append(mido.MetaMessage("end_of_track", time=max(0, end - last)))
+        trk.append(mido.MetaMessage("end_of_track", time=max(0, end + max_shift - last)))
         out.tracks.append(trk)
-
-    def _seq(msgs):
-        t_, per = 0, {}
-        for m in msgs:
-            t_ += m.time
-            if not m.is_meta:
-                per.setdefault(getattr(m, "channel", -1), []).append((t_, str(m.copy(time=0))))
-        return per
-    assert _seq(mf.tracks[0]) == _seq(mido.merge_tracks(out.tracks)), "Format 1 tracks differ"
-    assert abs(out.length - mf.length) < 1e-6
+    merged = [str(m.copy(time=0)) for m in mido.merge_tracks(out.tracks) if not m.is_meta]
+    assert merged == [str(m.copy(time=0)) for _t, m in evs if not m.is_meta], "Format 1 order differs"
+    out.max_shift = shift
     return out
