@@ -478,9 +478,10 @@ ANIMA_EFX_GS = {
 # Seat-unit wet/dry per type: Balance (param #, EFX C.Src2-modulatable; Anima
 # leaves Control 2 depth at 0 so nothing moves it). OM p.217: 40 03 12,
 # 00 = D>0E ... 40 = D=E (default) ... 7F = D0<E. Display "D>nE" is the effect at n% of the
-# dry signal, about value x 100/64 (checked on SC-VA: value 50 shows D>77E).
+# dry signal: n = value x 1.54 rounded down (checked on SC-VA: 32 -> D>49E, 33 -> D>50E,
+# 34 -> D>52E, 50 -> D>77E).
 ANIMA_SEAT_BALANCE = {
-    (0x01, 0x43): (0x12, 0x20),   # Space D: D>50E (value 32; default D=E)
+    (0x01, 0x43): (0x12, 0x21),   # Space D: D>50E (value 33; default D=E)
 }
 ANIMA_EFX_BALANCE_DEFAULT = 0x40  # D=E: what a family gets back on a type it keeps
 
@@ -710,18 +711,18 @@ ANIMA_EFX_DIRT_LEVEL = {
 }
 
 # Wet/dry Balance at 40 03 12 (Effect List p.216-223) and each type's default value.
-# The LCD shows "D>nE" with the effect at n% of the dry signal (D=E = 64, D0<E = 127),
-# so D>74E is about 47. A tone's EFX level (Tone Palettes page) moves Balance from this
+# The LCD shows "D>nE" with the effect at n% of the dry signal, n = value x 1.54 rounded down
+# (D=E = 64, D0<E = 127), so D>74E is 48, D>61E is 40 and D>65E is 42. A tone's EFX level (Tone Palettes page) moves Balance from this
 # default: toward dry by ANIMA_EFX_LEVEL_DRY, toward wet by ANIMA_EFX_LEVEL_WET.
 ANIMA_EFX_BALANCE_ADDR = 0x12
 ANIMA_EFX_BALANCE_TYPES = {
     (0x01, 0x23): 64, (0x01, 0x24): 64,                      # Stereo / Step Flanger
     (0x01, 0x40): 64, (0x01, 0x41): 127, (0x01, 0x42): 64,   # Hexa / Tremolo / Stereo Chorus
     (0x01, 0x43): 64, (0x01, 0x44): 64,                      # Space D, 3D Chorus
-    (0x01, 0x50): 47, (0x01, 0x51): 39, (0x01, 0x52): 47,   # Stereo / Mod / 3 Tap Delay
-    (0x01, 0x53): 47, (0x01, 0x54): 47,                      # 4 Tap, Tm Ctrl Delay
-    (0x01, 0x55): 64, (0x01, 0x56): 42, (0x01, 0x57): 47,   # Reverb, Gate Reverb, 3D Delay
-    (0x01, 0x60): 47, (0x01, 0x61): 64,                      # 2 Pitch Shifter, Fb P.Shifter
+    (0x01, 0x50): 48, (0x01, 0x51): 40, (0x01, 0x52): 48,   # Stereo / Mod / 3 Tap Delay
+    (0x01, 0x53): 48, (0x01, 0x54): 48,                      # 4 Tap, Tm Ctrl Delay
+    (0x01, 0x55): 64, (0x01, 0x56): 42, (0x01, 0x57): 48,   # Reverb, Gate Reverb, 3D Delay
+    (0x01, 0x60): 48, (0x01, 0x61): 64,                      # 2 Pitch Shifter, Fb P.Shifter
     (0x01, 0x72): 127, (0x01, 0x73): 127,                    # Lo-Fi 1 / 2
 }
 ANIMA_EFX_LEVEL_DRY = {-1: 0.60, -2: 0.35}   # x the default

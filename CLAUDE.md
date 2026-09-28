@@ -59,7 +59,7 @@ The file's own insert always wins its home unit.
 - **Subtler orchestral inserts**: lower wet/dry Balance on strings / brass / pads, and bring Stereo Delay
   back to strings with low feedback. Confirmed from the Effect List (p.217): Balance is `40 03 12` on the
   chorus types (#16-20) and Stereo Flanger, 00 = D>0E, 40 = D=E, 7F = D0<E (LCD "D>nE" = effect at n% of
-  dry, about value x 100/64: value 50 shows D>77E on SC-VA, so D>50E is value 32).
+  dry, n = value x 1.54 rounded down, checked on SC-VA: 32 -> D>49E, 33 -> D>50E, 50 -> D>77E).
   Check each other type's page before writing it. The seat unit's Space D already uses it (D>50E).
 - **Pitch shifter ↔ ghost harmony**: match the shifter's interval to the ghost harmony where the chord
   allows (today: key-safe doubler / octave / fifth only).
