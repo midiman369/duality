@@ -23,14 +23,17 @@ intended rest, or if a program change lands on a channel that is still holding a
                                               with flute, pizzicato walk into tremolo strings
    3 Cathedral              A min->maj   72   organ-led crescendo (pedal, manuals building),
                                               choir, brass section, horn tune, orchestra hit
-     -> a full rest; the big-band burst lands in the count-off
+     -> a full rest; the ragtime burst lands in it
+  3b Ragtime -> Dixieland   F major     112   honky-tonk stride rag, then a New Orleans front line
+                                              (trumpet, clarinet, tailgate trombone), tuba, banjo;
+                                              a stop, and the big-band burst lands in the count-off
    4 Big band swing         Bb          160   head, sax soli, trumpet solo over sax backgrounds,
                                               shout chorus with the brass section
    5 Boogie -> rock'n'roll  A blues  150/168  solo boogie piano (bass and drums join), then an
                                               overdrive guitar intro lick, sax chorus, overdrive
                                               lead chorus, stop-time piano chorus, a stop
    6 Proto-synth machine    A mixolyd.  132   calliope synth picks up the lick; square lead, synth brass
-                                              answers, Fantasia pad, celesta, synth bass, woodblocks
+                                              answers, Fantasia pad, celesta, synth bass, a rhythm machine
      -> same tempo: the analog sequence fades in under the machine on shared chords
    7 Analog synths          E minor     132   saw sequence, poly + halo pads, synth strings, synth
                                               brass fanfares, bending lead; the organ takes over
@@ -462,6 +465,121 @@ pos += 3 * TPB + TPB * 2                                                  # the 
 rests.append((rest0, pos))
 
 # ======================================================================================
+# 3b Ragtime -> Dixieland - F major, 112 BPM, 20 bars: a honky-tonk rag (stride piano), then
+#    a New Orleans front line (trumpet, clarinet, tailgate trombone) over tuba and banjo
+# ======================================================================================
+KF = Key(53, "major")
+for c_, pgm, vol, pan in ((C4, 3, 104, 64), (C5, 58, 100, 56), (C3, 105, 88, 34), (C1, 56, 102, 60),
+                          (C2, 71, 94, 80), (C8, 57, 96, 44)):
+    prog(c_, rest0 + 20, pgm, vol=vol, pan=pan, rev=40)                  # Honky-tonk, Tuba, Banjo, Tp, Cl, Tb
+prog(DR, rest0 + 20, 40, vol=96, rev=30)                                # Brush kit
+section(112, key=KF, extra={3, 6, 11}, name="ragtime")                 # Eb (F7), F# (D7), B (G7)
+# Chords as (root semitones above F, chord tones as semitones above that root).
+MAJ, DOM = [0, 4, 7], [0, 4, 7, 10]
+CHD = {"F": (0, MAJ), "F7": (0, DOM), "D7": (9, DOM), "G7": (2, DOM), "C7": (7, DOM), "Bb": (5, MAJ)}
+PROG_R = ["F", "F", "D7", "D7", "G7", "C7", "F", "C7",                  # the rag strain
+          "F", "F", "F", "F7", "Bb", "Bb", "F", "F", "C7", "C7", "F", "F"]   # a 12-bar Dixie blues
+
+
+def ctones(name, lo, hi):
+    root, iv = CHD[name]
+    pcs = {(53 + root + x) % 12 for x in iv}
+    return [n for n in range(lo, hi + 1) if n % 12 in pcs]
+
+
+def croot(name, lo):
+    n = 53 + CHD[name][0]
+    while n >= lo + 12:
+        n -= 12
+    while n < lo:
+        n += 12
+    return n
+
+
+RAG_RH = [(0, .25), (.25, .5), (.75, .25), (1, .5), (1.5, .5), (2, .25), (2.25, .5), (2.75, .25), (3, 1)]
+RAG_UP = [0, 1, 2, 1, 2, 3, 4, 3, 2]
+RAG_DN = [4, 3, 2, 3, 2, 1, 0, 1, 2]
+for k, nm in enumerate(PROG_R):
+    b = t(k)
+    last = k == len(PROG_R) - 1
+    dixie = k >= 8
+    sw = swing if dixie else (lambda x: x)
+    # stride left hand: bass on 1 and 3, chord on 2 and 4 (the rag strain plays it fuller)
+    lo = croot(nm, 36)
+    fifth = [n for n in ctones(nm, lo + 5, lo + 9)][:1] or [lo + 7]
+    if last:
+        chord(C4, b, [lo, lo + 12] + ctones(nm, 60, 77), 1, 110, gate=0.9)
+    else:
+        note(C4, b, lo, 1, 96 if not dixie else 84, gate=0.8)
+        note(C4, t(k, 2), fifth[0] if k % 2 else lo + 12, 1, 90 if not dixie else 80, gate=0.8)
+        for bt in (1, 3):
+            chord(C4, t(k, bt), ctones(nm, 53, 67)[:3], 0.5, 84 if not dixie else 72, gate=0.8)
+    # rag right hand (the tune while solo, then it steps back to fills)
+    if not dixie:
+        tones = ctones(nm, 65, 89)
+        start = min(range(len(tones)), key=lambda i: abs(tones[i] - (74 + (k % 4) * 2)))
+        shape = RAG_UP if k % 2 == 0 else RAG_DN
+        for (bt, ln), step in zip(RAG_RH, shape):
+            i = max(0, min(len(tones) - 1, start + step - 2))
+            chord(C4, t(k, bt), [tones[i]] + ([tones[i] - 12] if bt in (0, 1, 3) else []), ln, 96 if bt % 1 == 0 else 88, gate=0.85)
+    elif not last:
+        tones = ctones(nm, 72, 86)
+        for bt in (1.5, 3.5):
+            note(C4, t(k, sw(bt)), tones[(k + int(bt)) % len(tones)], 0.5, 76, gate=0.7)
+    # the rhythm section joins in bar 4: tuba (1 and 3) and banjo (every beat, 2 and 4 on top)
+    if k >= 4 and not last:
+        note(C5, b, croot(nm, 29), 2, 96, gate=0.85)
+        note(C5, t(k, 2), croot(nm, 29) + (7 if k % 2 else 0), 2, 90, gate=0.85)
+        for bt in range(4):
+            chord(C3, t(k, bt), ctones(nm, 55, 67)[:4], 0.5, 84 if bt % 2 else 70, roll=6, gate=0.55)
+        drum(b, KICK, 70, jitter=2)
+        drum(t(k, 2), KICK, 64, jitter=2)
+        for bt in (1, 3):
+            drum(t(k, bt), SNARE, 78 if dixie else 64, jitter=2)
+            if dixie and k % 2 == 1 and bt == 3:                         # press roll into the next bar
+                for i in range(6):
+                    drum(t(k, 3.25) + i * TPB // 8, SNARE, 60 + i * 4, jitter=0)
+        if not dixie:
+            for bt in (0.5, 1.5, 2.5, 3.5):
+                drum(t(k, bt), WOODH, 60, jitter=2)
+        else:
+            for bt in (0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5):
+                drum(t(k, sw(bt)), RIDE, 64 if bt % 1 == 0 else 50, jitter=2)
+    if dixie and not last:
+        # trumpet lead: the tune in quarters and swung eighths
+        tones = ctones(nm, 65, 81)
+        c0 = min(range(len(tones)), key=lambda i: abs(tones[i] - (72 + (k % 4))))
+        spec = [(0, 0, 1.5), (1.5, 1, .5), (2, 2, 1), (3, 1, 1)] if k % 2 == 0 else [(0, 2, 1), (1, 1, .5), (1.5, 0, 1.5), (3, -1, 1)]
+        for bt, st, ln in spec:
+            note(C1, t(k, sw(bt)), tones[max(0, min(len(tones) - 1, c0 + st))], ln, 104 if bt % 1 == 0 else 96, gate=0.85)
+        # clarinet obbligato: swung eighths weaving above
+        ct = ctones(nm, 74, 91)
+        base = min(range(len(ct)), key=lambda i: abs(ct[i] - 79))
+        walk = [0, 1, 2, 3, 2, 1, 2, 0] if k % 2 == 0 else [3, 2, 1, 0, 1, 2, 3, 4]
+        for i, st in enumerate(walk):
+            note(C2, t(k, sw(i * 0.5)), ct[max(0, min(len(ct) - 1, base + st - 1))], 0.5, 86 if i % 2 == 0 else 78, gate=0.8, jitter=3)
+        # tailgate trombone: a smear up into the chord root, then the third
+        tb = croot(nm, 46)
+        bend(C8, t(k) - 60, -8191)
+        note(C8, t(k), tb, 2, 96, gate=0.9)
+        bend_curve(C8, t(k), t(k, 0.5), -8191, 0, 6)
+        third = [n for n in ctones(nm, tb + 3, tb + 5)][:1] or [tb + 4]
+        note(C8, t(k, 2.5), third[0], 1.5, 88, gate=0.85)
+        bend(C8, t(k, 3.95), 0)
+    if dixie and k in (8, 12, 16):
+        drum(b, CRASH, 90)
+    if last:                                                             # everyone on the stop, then the count-off
+        chord(C1, b, [ctones(nm, 72, 77)[-1]], 1, 110, gate=0.9)
+        chord(C2, b, [ctones(nm, 81, 89)[0]], 1, 104, gate=0.9)
+        note(C8, b, croot(nm, 46), 1, 104, gate=0.9)
+        note(C5, b, croot(nm, 29), 1, 108, gate=0.9)
+        chord(C3, b, ctones(nm, 55, 67)[:4], 1, 96, roll=6, gate=0.9)
+        drum(b, CRASH, 110)
+        drum(b, KICK, 104)
+bend(C8, t(19) + 20, 0)
+advance(20)
+
+# ======================================================================================
 # 4  Big band swing - Bb, 160 BPM, 24 bars: head, soli, trumpet solo, shout
 # ======================================================================================
 KB = Key(58, "major")
@@ -707,14 +825,29 @@ for k in range(1, 16):
             chord(C2, t(k, bt), KAm.tri(r + 7), 0.4, 88, gate=0.7)
     if 4 <= k < 12:                                                      # bass & lead counter-line
         mel(C14, k, KAm, [(0, r + 4, 1.5), (1.5, r + 2, .5), (2, r, 1), (3, r + 2, 1)], vel=86)
+    # a rhythm machine: dead on the grid (no jitter), building every four bars
     for bt in range(4):
-        drum(t(k, bt), KICK if bt % 2 == 0 else CLAVES, 86 if bt % 2 == 0 else 74)
-        drum(t(k, bt + 0.5), WOODH if bt % 2 else WOODL, 72)
+        drum(t(k, bt), KICK if bt % 2 == 0 else CLAVES, 86 if bt % 2 == 0 else 74, jitter=0)
+        drum(t(k, bt + 0.5), WOODH if bt % 2 else WOODL, 72, jitter=0)
+        if k >= 4:
+            drum(t(k, bt + 0.5), CHH, 64, jitter=0)
         if k >= 8:
-            drum(t(k, bt + 0.25), SHAKER, 50)
-            drum(t(k, bt + 0.75), SHAKER, 46)
+            drum(t(k, bt), CHH, 58, jitter=0)
+            drum(t(k, bt + 0.25), CHH, 38, jitter=0)
+            drum(t(k, bt + 0.75), CHH, 42, jitter=0)
+            if bt % 2 == 1:
+                drum(t(k, bt), SNARE, 84, jitter=0)
+        if k >= 12:
+            drum(t(k, bt), TAMB, 62 if bt % 2 else 48, jitter=0)
+    if k >= 8:
+        drum(t(k, 1.75), KICK, 70, jitter=0)
+        drum(t(k, 2.5), KICK, 76, jitter=0)
+        drum(t(k, 3.5), OHH, 66, jitter=0)
     if k % 4 == 3:
-        drum(t(k, 3.5), TRI, 70)
+        drum(t(k, 3.5), TRI, 70, jitter=0)
+    if k in (7, 11, 15):
+        for i in range(8):
+            drum(t(k, 2 + i * 0.25), TOMS[i * 5 // 8] if k != 7 else SNARE, 70 + i * 4, jitter=0)
 KE = Key(52, "minor")
 prog(C3, t(12) - 30, 81, vol=86, pan=40, rev=45, expr=10)               # Saw (sequence)
 prog(C6, t(12) - 30, 90, vol=84, pan=64, rev=70, expr=10)               # Polysynth pad
@@ -769,13 +902,16 @@ for k, r in enumerate(ROOTS7):
     if 4 <= k < 8 or 12 <= k < 16:                                      # brass fanfares
         for bt in (0, 1.5, 3):
             chord(C8, t(k, bt), KE.tri(r + 7), 0.45, 98, gate=0.7)
-    for bt in range(4):
-        drum(t(k, bt), KICK if bt in (0, 2) else CLAP, 100 if bt in (0, 2) else 90)
-        drum(t(k, bt + 0.5), CHH, 70)
-        drum(t(k, bt + 0.25), CHH, 44)
-    drum(t(k, 3.75), KICK, 80)
+    for bt in range(4):                                                  # four on the floor
+        drum(t(k, bt), KICK, 104, jitter=0)
+        if bt % 2:
+            drum(t(k, bt), CLAP, 92, jitter=0)
+        drum(t(k, bt + 0.5), OHH if k >= 4 else CHH, 70, jitter=0)
+        drum(t(k, bt + 0.25), CHH, 42, jitter=0)
+        drum(t(k, bt + 0.75), CHH, 46, jitter=0)
     if k % 4 == 3:
-        drum(t(k, 3.5), OHH, 80)
+        for i in range(4):
+            drum(t(k, 3 + i * 0.25), CLAP, 70 + i * 8, jitter=0)
 prog(C4, t(12) - 30, 16, vol=100, pan=58, rev=40, expr=30)              # Drawbar Organ
 ramp(C4, 11, t(12), t(16), 30, 127)
 for k in range(12, 16):
