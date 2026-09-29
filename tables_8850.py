@@ -653,12 +653,516 @@ ANIMA_TONE_PREFS: dict = {
         (2, 4, 46): {'w': 6},  # Harp St.
         (8, 4, 46): {'w': 4},  # Uillean Harp
     },
+    48: {  # 049 Strings
+        (0, 4, 48): {'w': 8, 'efx': -1},  # Strings
+        (1, 4, 48): {'efx': -1, 'note': 'has built-in legato support.'},  # Bright Str
+        (10, 4, 48): {'efx': -1, 'note': 'alternative to tremolo strings with full orchestra color.'},  # Tremolo Orch
+        (11, 4, 48): {'efx': -1},  # Choir Str.
+        (12, 4, 48): {'efx': -1},  # Strings+Horn
+        (13, 4, 48): {'efx': -1},  # Str.+Flute
+        (14, 4, 48): {'efx': -1},  # Choir Str.2
+        (15, 4, 48): {'efx': -1},  # Choir Str.3
+        (16, 4, 48): {'w': 4, 'efx': -1},  # St. Strings
+        (17, 4, 48): {'w': 4},  # St.Strings 2
+        (18, 4, 48): {'w': 4},  # St.Strings 3
+        (2, 4, 48): {'w': 4, 'efx': -1},  # ChamberStr
+        (3, 4, 48): {'efx': -1, 'note': 'Cellos.  Better for middle and lower registers.'},  # Cello sect.
+        (32, 4, 48): {'note': 'has built-in +-12'},  # Oct Strings1
+        (33, 4, 48): {'note': 'has built-in +-12'},  # Oct Strings2
+        (34, 4, 48): {'note': 'Excellent for lower register strings section playing'},  # ContraBsSect
+        (4, 4, 48): {'efx': -1},  # Bright Str.2
+        (40, 4, 48): {'w': 4},  # 60s Strings
+        (5, 4, 48): {'efx': -1},  # Bright Str.3
+        (6, 4, 48): {'w': 4, 'efx': -1, 'note': 'intimate, distinct resin in voicing.'},  # Quad Strings
+        (7, 4, 48): {'efx': -1},  # Mild Strings
+        (8, 4, 48): {'efx': -1},  # Orchestra
+        (9, 4, 48): {'efx': -1},  # Orchestra 2
+    },
+    49: {  # 050 Slow Strings
+        (10, 4, 49): {'w': 4},  # St.Slow Str.
+        (11, 4, 49): {'w': 4},  # St.Slow Str2
+        (8, 4, 49): {'note': 'slow strings with legato.  nice.'},  # Legato Str.
+    },
+    50: {  # 051 Syn.Strings1
+        (0, 4, 50): {'w': 4},  # Syn.Strings1
+        (1, 4, 50): {'w': 1.0},  # OB Strings
+        (16, 4, 50): {'w': 1.0},  # High Strings
+        (25, 4, 50): {'w': 1.0},  # Noiz Strings
+    },
+    51: {  # 052 Syn.Strings2
+        (0, 4, 51): {'w': 4},  # Syn.Strings2
+    },
+    52: {  # 053 Choir Aahs
+        (10, 4, 52): {'note': 'has an extra -12 register'},  # Church Choir
+        (13, 4, 52): {'w': 4},  # St.BoysChoir
+        (14, 4, 52): {'w': 4},  # Rich Choir
+        (16, 4, 52): {'note': "Hah's instead of Aahs."},  # Choir Hahs
+        (24, 4, 52): {'note': "Lah's instead of Aahs"},  # Chorus Lahs
+        (8, 4, 52): {'w': 4},  # St.ChoirAahs
+    },
+    53: {  # 054 Voice Oohs
+        (0, 4, 53): {'w': 4},  # Voice Oohs
+        (1, 4, 53): {'w': 4, 'note': 'nice stereo separation'},  # Chorus Oohs
+        (10, 4, 53): {'w': 0.6667, 'note': 'oneshot Baps'},  # JzVoice Bap
+        (11, 4, 53): {'w': 0.6667, 'note': 'oneshot Dows'},  # JzVoice Dow
+        (12, 4, 53): {'w': 0.6667, 'note': 'oneshot Thums'},  # JzVoice Thum
+        (16, 4, 53): {'note': 'female Lahs instead of choir oohs'},  # VoiceLah Fem
+        (17, 4, 53): {'w': 4, 'note': 'female Lahs instead of choir oohs, with nice stereo separation'},  # ChorusLahFem
+        (18, 4, 53): {'note': 'female Luhs instead of choir oohs'},  # VoiceLuh Fem
+        (19, 4, 53): {'w': 4, 'note': 'female Lahs instead of choir oohs, with separation'},  # ChorusLuhFem
+        (20, 4, 53): {'w': 1.0, 'note': 'onehsot, female Lans instead of choir oohs'},  # VoiceLan Fem
+        (21, 4, 53): {'w': 1.0, 'note': 'oneshot, female Lans instead of choir oohs, with nice stereo separation'},  # ChorusLanFem
+        (22, 4, 53): {'note': 'female only voice ahhs instead of oohs'},  # VoiceAah Fem
+        (23, 4, 53): {'note': 'female only voice Uhhs instead of oohs'},  # VoiceUuh Fem
+        (24, 4, 53): {'w': 1.0, 'note': 'female lah (sustain) & lan stabs.  separated by velocity, higher velocity is oneshot stabs'},  # Fem Lah&Lan
+        (3, 4, 53): {'w': 4, 'note': 'nice stereo separation'},  # Chorus Oohs2
+        (32, 4, 53): {'note': 'male only wahs instead of oohs'},  # VoiceWah Mal
+        (33, 4, 53): {'w': 4, 'note': 'male only wahs instead of oohs, nice stereo seperation'},  # ChorusWahMal
+        (34, 4, 53): {'note': 'male only wohs instead of oohs'},  # VoiceWoh Mal
+        (35, 4, 53): {'w': 4, 'note': 'male only wohs instead of oohs, nice stereo seperation'},  # ChorusWohMal
+        (36, 4, 53): {'note': 'male only voice ahh instead of oohs'},  # VoiceAah Mal
+        (37, 4, 53): {'note': 'male only voice oohs'},  # VoiceOoh Mal
+        (4, 4, 53): {'w': 0.6667, 'note': 'limited range, maj7 Choir Oohs.'},  # OohsCodeMaj7
+        (40, 4, 53): {'w': 4, 'note': 'choir humming instead of oohs, sounds like a smoother voice oohs.'},  # Humming
+        (5, 4, 53): {'w': 0.6667, 'note': 'limited range, sus4 Choir Oohs.'},  # OohsCodeSus4
+        (6, 4, 53): {'w': 1.0, 'note': 'Ohhs, Baps, Dahs, Dats, Dows depending on velocity.'},  # Jazz Scat
+        (8, 4, 53): {'note': 'Dahs instead of Oohs'},  # Voice Dahs
+        (9, 4, 53): {'w': 0.6667, 'note': 'oneshot Dats'},  # JzVoice Dat
+    },
+    54: {  # 055 SynVox
+        (16, 4, 54): {'w': 4},  # VP330 Choir
+        (17, 4, 54): {'w': 4},  # Vinyl Choir
+        (18, 4, 54): {'w': 1.0, 'note': 'soft and wide'},  # JX8P Vox
+        (19, 4, 54): {'w': 1.0},  # Analog Voice
+        (9, 4, 54): {'w': 4, 'note': 'nice stereo separation'},  # Silent Night
+    },
+    55: {  # 056 OrchestraHit
+        (0, 4, 55): {'w': 10},  # OrchestraHit
+        (1, 4, 55): {'w': 4},  # Bass Hit
+        (10, 4, 55): {'w': 4},  # Double Hit
+        (11, 4, 55): {'note': 'big percussion hit, not the usual brass/string stab.  useful for big percussive beats or "metal" motifs like a terminator-type theme.'},  # Perc. Hit
+        (12, 4, 55): {'w': 0.6667, 'note': 'a synthy stab'},  # Shock Wave
+        (13, 4, 55): {'w': 0, 'note': 'sounds like a giant punch/object-impact'},  # Bounce Hit
+        (14, 4, 55): {'w': 0, 'note': 'a dentist drill from hell.'},  # Drill Hit
+        (15, 4, 55): {'w': 0.6667, 'note': 'very metallic almost like a metal pipe impact but with a fade.  neat at very low notes for effect, may sound neater very low with a pitchbend.'},  # Thrill Hit
+        (16, 4, 55): {'w': 0.6667, 'note': 'lofi effected and fast gated variation on the capital version in a way.'},  # Lo Fi Rave
+        (17, 4, 55): {'note': 'a little more percussion than the usual hit'},  # Techno Hit
+        (18, 4, 55): {'w': 0.6667, 'note': "iconic, 90's dance hit. not orchestral."},  # Dist. Hit
+        (19, 4, 55): {'w': 0.6667, 'note': 'pop/dance hit.  not orchestral.'},  # Bam Hit
+        (2, 4, 55): {'note': 'a 6th hit.'},  # 6th Hit
+        (20, 4, 55): {'w': 0.6667, 'note': 'pop/dance hit.  not orchestral.'},  # Bit Hit
+        (21, 4, 55): {'w': 0.6667, 'note': 'pop/dance hit.  not orchestral.  sounds like a synth stab.'},  # Bim Hit
+        (22, 4, 55): {'w': 0.6667, 'note': 'pop/dance hit.  not orchestral.'},  # Technorg Hit
+        (23, 4, 55): {'w': 0.5, 'note': 'pop/dance hit.  not orchestral.'},  # Rave Hit
+        (24, 4, 55): {'w': 0, 'note': 'short string stab.'},  # Strings Hit
+        (25, 4, 55): {'note': 'pop/dance hit.  not orchestral.  synth stab sounding.'},  # Stack Hit
+        (26, 4, 55): {'w': 0.6667, 'note': 'Another very metallic almost like a metal pipe impact but with a fade.  neat at very low notes for effect, may sound neater very low with a pitchbend.'},  # Industry Hit
+        (27, 4, 55): {'w': 0, 'note': 'clap hit with very high filter resonant type sound.'},  # Clap Hit
+        (3, 4, 55): {'note': 'intentionally thin.'},  # Euro Hit
+        (8, 4, 55): {'w': 4},  # Impact Hit
+        (9, 4, 55): {'w': 1.0},  # Philly Hit
+    },
+    56: {  # 057 Trumpet
+        (16, 4, 56): {'w': 1.0, 'note': 'plays 4ths.'},  # 4th Trumpets
+        (2, 4, 56): {'w': 8, 'note': 'Built-in Legato support'},  # Trumpet
+        (24, 4, 56): {'w': 4},  # Bright Tp.
+        (27, 4, 56): {'w': 4},  # Twin Tp.
+        (32, 4, 56): {'w': 1.0, 'note': 'synth trumpet, useful for comical phrasing or with synth sequences. less orchestral.'},  # Syn. Trumpet
+    },
+    57: {  # 058 Trombone
+        (0, 4, 57): {'w': 8},  # Trombone
+        (16, 4, 57): {'note': 'softer airier sound'},  # Euphonium
+        (2, 4, 57): {'w': 6},  # Twin bones
+        (3, 4, 57): {'note': 'trombone & tuba, has lower register sub from tuba sound'},  # Bones & Tuba
+        (4, 4, 57): {'w': 4},  # Bright Tb
+        (8, 4, 57): {'w': 6, 'note': 'flatter sound more bottom-end.'},  # Bs. Trombone
+    },
+    58: {  # 059 Tuba
+        (0, 4, 58): {'w': 4},  # Tuba
+        (1, 4, 58): {'w': 4},  # Tuba 2
+        (8, 4, 58): {'w': 4, 'note': 'tuba and french horn, nice separation'},  # Tuba + Horn
+    },
+    59: {  # 060 MutedTrumpet
+        (0, 1, 59): {'w': 1.0},  # MuteTrumpet
+        (0, 4, 59): {'w': 4},  # MutedTrumpet
+        (1, 4, 59): {'note': 'unique cupped trumpet sound.'},  # Cup Mute Tp
+        (3, 4, 59): {'w': 4, 'note': 'sounds like grouped mute/cupped trumpets.'},  # MuteTrumpet3
+        (8, 4, 59): {'note': 'Muted French Horns.  Not trumpets. very different color.'},  # Muted Horns
+    },
+    60: {  # 061 French Horns
+        (0, 4, 60): {'w': 4},  # French Horns
+        (1, 4, 60): {'note': 'softer, less brassy.'},  # Fr.Horn 2
+        (127, 1, 92): {'w': 0.6667, 'note': 'different, synthy sound.'},  # Fr Horn 1
+        (127, 1, 93): {'w': 0.6667, 'note': 'different, synthy sound.'},  # Fr Horn 2
+        (16, 2, 60): {'w': 1.0, 'note': 'sounds like fifths with octaves.'},  # Horn Orch
+        (16, 4, 60): {'w': 1.0, 'note': 'sounds like synth brass.'},  # Synth Horn
+        (2, 4, 60): {'note': 'wider ensemble sound.'},  # Horn + Orche
+        (24, 4, 60): {'w': 0, 'note': 'one shot french horn rip sound.'},  # F.Horn Rip
+        (3, 4, 60): {'w': 6},  # Wide FreHrns
+        (8, 2, 60): {'w': 1.0},  # Fr.HornSolo
+        (8, 4, 60): {'note': 'built-in legato support, better version of sc-88 Fr.HornSolo'},  # F.Hrn Slow
+    },
+    61: {  # 062 Brass 1
+        (1, 4, 61): {'note': 'fortissimo'},  # Brass ff
+        (10, 4, 61): {'w': 1.0, 'note': 'built-in sfz swell attack.'},  # Brass sfz
+        (12, 4, 61): {'w': 0.6667, 'note': 'built-in sfz swell attack.'},  # Brass sfz 2
+        (14, 4, 61): {'w': 4},  # FatPop Brass
+        (16, 4, 61): {'w': 0},  # Brass Fall
+        (17, 4, 61): {'w': 0},  # Trumpet Fall
+        (2, 4, 61): {'note': 'nice trombone section, useful as trombone alternative for bigger group trombone sound.'},  # Bones Sect.
+        (24, 4, 61): {'note': 'has a +12'},  # Octave Brass
+        (26, 4, 61): {'w': 4, 'note': 'sounds like brass and sax. nice.'},  # Fat + Reed
+        (3, 4, 61): {'note': 'wide fortissimo'},  # St. Brass ff
+        (35, 4, 61): {'w': 4},  # St.FatPopBrs
+        (4, 4, 61): {'w': 8},  # Quad Brass1
+        (5, 4, 61): {'w': 8},  # Quad Brass2
+    },
+    62: {  # 063 Synth Brass1
+        (0, 1, 62): {'w': 4},  # Syn.Brass 1
+        (0, 4, 62): {'w': 4},  # Synth Brass1
+        (1, 4, 62): {'w': 6},  # JUNO Brass
+        (16, 1, 62): {'w': 4},  # Analog Brs1
+        (16, 2, 62): {'note': 'has a +12'},  # OctaveBrass
+        (16, 4, 62): {'note': 'has +12'},  # Oct SynBrass
+        (17, 4, 62): {'w': 0.5},  # Hybrid Brass
+        (18, 4, 62): {'note': 'has -12'},  # OctSynBrass2
+        (2, 4, 62): {'w': 0.6667},  # Stack Brass
+        (3, 4, 62): {'w': 4},  # SH-5 Brass
+        (4, 4, 62): {'w': 4},  # MKS Brass
+        (5, 4, 62): {'w': 1.0},  # Jump Brass
+        (8, 4, 62): {'w': 4},  # Pro Brass
+        (9, 2, 62): {'w': 1.0},  # Quack Brass
+        (9, 4, 62): {'w': 4},  # P5 Brass
+    },
+    63: {  # 064 Synth Brass2
+        (0, 2, 63): {'w': 4},  # Syn.Brass 2
+        (0, 4, 63): {'w': 4},  # Synth Brass2
+        (2, 4, 63): {'w': 4},  # Warm Brass
+        (3, 4, 63): {'w': 6},  # Synth Brass3
+        (4, 4, 63): {'w': 6},  # Sync Brass
+        (5, 4, 63): {'w': 4},  # Fat SynBrass
+    },
+    64: {  # 065 Soprano Sax
+        (0, 1, 64): {'w': 0.6667},  # Soprano Sax
+        (0, 2, 64): {'w': 1.0},  # Soprano Sax
+        (8, 4, 64): {'w': 4},  # Soprano Exp.
+    },
+    65: {  # 066 Alto Sax
+        (127, 1, 78): {'w': 1.0},  # Sax 1
+        (16, 4, 65): {'note': 'wide with trumpet double'},  # AltoSax + Tp
+        (17, 4, 65): {'note': 'sax section.  great for bigger orchestra sounds not solos..  good for synthy sax solos though at high registers.'},  # Sax Section
+        (8, 2, 65): {'w': 6},  # Hyper Alto
+        (8, 4, 65): {'w': 4},  # AltoSax Exp.
+        (9, 4, 65): {'note': 'more growl than regular alto sax'},  # Grow Sax
+    },
+    66: {  # 067 Tenor Sax
+        (1, 4, 66): {'w': 4, 'note': 'built-in legato support'},  # Tenor Sax
+        (127, 1, 79): {'w': 1.0},  # Sax 2
+        (127, 1, 80): {'w': 1.0},  # Sax 3
+        (8, 4, 66): {'w': 4, 'note': 'built-in legato support'},  # BreathyTn.
+        (9, 4, 66): {'w': 4},  # St.Tenor Sax
+    },
+    67: {  # 068 Baritone Sax
+        (1, 4, 67): {'w': 4, 'note': 'built-in legato support'},  # Bari. Sax
+        (127, 1, 81): {'w': 1.0},  # Sax 4
+        (8, 4, 67): {'note': 'double of baritone and tenor saxes'},  # Bari & Tenor
+    },
+    68: {  # 069 Oboe
+        (0, 4, 68): {'w': 4},  # Oboe
+        (16, 4, 68): {'w': 6, 'note': 'sounds like a keyboard split of oboe, eng horn, & bassoon'},  # Multi Reed
+        (8, 4, 68): {'w': 4},  # Oboe Exp.
+    },
+    69: {  # 070 English Horn
+        (0, 4, 69): {'w': 4},  # English Horn
+        (127, 1, 85): {'w': 1.0},  # Engl Horn
+    },
+    70: {  # 071 Bassoon
+        (0, 4, 70): {'w': 4},  # Bassoon
+        (127, 1, 86): {'w': 1.0},  # Bassoon
+    },
+    71: {  # 072 Clarinet
+        (16, 4, 71): {'w': 6, 'note': 'sounds like keyboard split of flute, clarinet, & bass clarinet'},  # Multi Wind
+        (17, 4, 71): {'w': 4, 'note': 'unison clarinet, english horn, & bassoon'},  # Quad Wind
+        (8, 4, 71): {'w': 4, 'note': 'Bass Clarient, nice low end.'},  # Bs Clarinet
+    },
+    72: {  # 073 Piccolo
+        (1, 4, 72): {'w': 6, 'note': 'built-in legato support'},  # Piccolo
+        (9, 4, 72): {'note': 'tremolo effect in waveform'},  # Nay Tremolo
+    },
+    73: {  # 074 Flute
+        (1, 4, 73): {'w': 8},  # Flute 2
+        (16, 4, 73): {'note': 'mellotron flute!'},  # Tron Flute
+        (17, 4, 73): {'note': 'slower more breathy attack'},  # Indian Flute
+        (8, 4, 73): {'note': 'double with violin'},  # Flute + Vln
+        (9, 4, 73): {'note': 'sounds like double with oboe'},  # Pipe & Reed
+    },
+    75: {  # 076 Pan Flute
+        (0, 4, 75): {'w': 8},  # Pan Flute
+        (16, 4, 75): {'w': 4},  # Zampona
+        (17, 4, 75): {'note': 'play it on accents to another "chiff" sound'},  # Zampona Atk
+        (24, 4, 75): {'note': 'velocity layer, high velocity has different distinct "chiff" attack, lower velocity is a more normal attack.'},  # Tin Whistle
+        (25, 4, 75): {'note': 'no tin whistle "chiff"'},  # TinWhtsle Nm
+        (26, 4, 75): {'note': 'always "chiff"'},  # TinWhtsle Or
+    },
+    77: {  # 078 Shakuhachi
+        (1, 4, 77): {'w': 4, 'note': 'has built-in legato support'},  # Shakuhachi
+    },
+    79: {  # 080 Ocarina
+        (0, 4, 79): {'note': 'The "Ocarina of Time"'},  # Ocarina
+    },
+    80: {  # 081 Square Wave
+        (1, 4, 80): {'w': 4},  # MG Square
+        (35, 4, 80): {'note': 'tone has pulsing vibrato'},  # Flux Pulse
+        (6, 4, 80): {'w': 1.0},  # LM Square
+    },
     81: {  # 082 Saw Wave
+        (1, 4, 81): {'w': 4},  # OB2 Saw
+        (11, 4, 81): {'w': 4},  # D-50 Fat Saw
+        (127, 1, 44): {'w': 4},  # Doctor Solo
+        (15, 4, 81): {'w': 4},  # JP SuperSaw
+        (28, 4, 81): {'w': 4},  # D-50 Saw
+        (35, 4, 81): {'note': 'has a -12'},  # Oct Saw Lead
+        (36, 4, 81): {'w': 4},  # Natural Lead
+        (40, 3, 81): {'note': "short stab sound that doesn't loop, we should select/play accordingly. good for arp style playing only probably."},  # SequenceSaw1
         (40, 4, 81): {'note': "short stab sound that doesn't loop, we should select/play accordingly. good for arp style playing only probably."},  # SequenceSaw1
         (41, 4, 81): {'note': "short stab sound that doesn't loop, we should select/play accordingly. good for arp style playing only probably."},  # SequenceSaw2
+        (45, 4, 81): {'note': 'has a built-in vibrato'},  # Rhythmic Saw
+        (46, 4, 81): {'note': "short stab sound that doesn't loop, we should select/play accordingly. good for arp style playing only probably."},  # SequencedSaw
+        (7, 4, 81): {'w': 4},  # LA Saw
+        (8, 4, 81): {'w': 4},  # Doctor Solo
+    },
+    83: {  # 084 Chiffer Lead
+        (4, 4, 83): {'w': 4},  # FatSolo Lead
+    },
+    84: {  # 085 Charang
+        (18, 4, 84): {'w': 4},  # Rock Lead
+        (19, 4, 84): {'w': 1.0, 'note': 'plays in 5ths.'},  # 5th DecaSync
+        (21, 4, 84): {'w': 4},  # DualSyncLead
+        (22, 4, 84): {'w': 4},  # LA Brass Ld
+        (24, 4, 84): {'note': 'played real low, and properly, sounds a lot like the "Froggie" sample from Thriller.'},  # JUNO Sub Osc
+    },
+    85: {  # 086 Solo Vox
+        (1, 4, 85): {'w': 4},  # Solo Vox 2
+        (8, 4, 85): {'w': 1.0},  # Vox Lead
+        (9, 4, 85): {'w': 0.6667, 'note': 'has a sweeping lfo tremolo type effect.'},  # LFO Vox
+    },
+    86: {  # 087 5th Saw Wave
+        (8, 4, 86): {'note': '4ths instead of 5ths.'},  # 4th Lead
+    },
+    87: {  # 088 Bass & Lead
+        (0, 4, 87): {'w': 4},  # Bass & Lead
+        (1, 4, 87): {'w': 4},  # Big & Raw
+        (2, 4, 87): {'note': 'sharp attack, subdued sustain.'},  # Fat & Perky
+    },
+    88: {  # 089 Fantasia
+        (0, 4, 88): {'w': 4},  # Fantasia
+        (1, 4, 88): {'w': 4, 'note': 'has some twinkly shimmer'},  # Fantasia 2
+        (127, 1, 32): {'w': 8},  # Fantasy
+        (4, 4, 88): {'w': 4},  # Fantasia 3
+        (5, 4, 88): {'w': 6},  # Fantasia 4
+        (6, 4, 88): {'w': 1.0},  # After D !
+        (7, 4, 88): {'w': 1.0},  # 260HarmPad
+    },
+    90: {  # 091 Polysynth
+        (1, 4, 90): {'w': 4},  # 80's PolySyn
+        (10, 4, 90): {'note': 'sharp attack, subdued sustain'},  # Reso Stack
+        (11, 4, 90): {'w': 1.0},  # Techno Stack
+        (13, 4, 90): {'w': 0.6667},  # TwinOct.Rave
+        (14, 4, 90): {'w': 1.0},  # Oct.Rave
+        (15, 4, 90): {'note': 'thick chorus-y sound.'},  # Happy Synth
+        (16, 4, 90): {'w': 4},  # ForwardSweep
+        (2, 4, 90): {'w': 4},  # Polysynth 2
+        (3, 4, 90): {'w': 4},  # Poly King
+        (4, 4, 90): {'w': 4},  # Super Poly
+    },
+    91: {  # 092 Space Voice
+        (0, 4, 91): {'w': 4},  # Space Voice
+        (1, 4, 91): {'w': 4},  # Heaven II
+        (10, 4, 91): {'w': 0.6667},  # AuhAuh
+        (11, 4, 91): {'w': 4},  # Vocorderman
+        (12, 4, 91): {'w': 4},  # Holy Voices
+        (2, 4, 91): {'w': 4},  # SC Heaven
+        (6, 4, 91): {'w': 0.5},  # Noise Peaker
+        (7, 4, 91): {'w': 0.5},  # Bamboo Hit
+        (9, 4, 91): {'w': 0.6667},  # Auh Vox
+    },
+    92: {  # 093 Bowed Glass
+        (3, 4, 92): {'note': 'plays 7ths'},  # 7thBelPad
+    },
+    93: {  # 094 Metal Pad
+        (2, 4, 93): {'note': 'has stepped panning effect.'},  # Panner Pad
+        (3, 4, 93): {'w': 4},  # Steel Pad
+        (4, 4, 93): {'w': 0.5},  # Special Rave
+    },
+    94: {  # 095 Halo Pad
+        (2, 4, 94): {'note': 'slower attack'},  # Vox Sweep
+        (8, 4, 94): {'note': 'slower attack'},  # Horror Pad
+    },
+    95: {  # 096 Sweep Pad
+        (1, 4, 95): {'w': 4},  # Polar Pad
+        (13, 4, 95): {'note': 'fades up an octave'},  # Sweep Stack
+    },
+    96: {  # 097 Ice Rain
+        (10, 4, 96): {'w': 0.5},  # Tambra Pad
+        (2, 4, 96): {'note': 'random wooden percussion better for accent/effects'},  # African wood
+        (5, 4, 96): {'note': 'has a tremolo effect'},  # Saw Impulse
+    },
+    97: {  # 098 Soundtrack
+        (0, 4, 97): {'w': 8},  # Soundtrack
+        (127, 1, 36): {'w': 8},  # Soundtrack
+        (5, 4, 97): {'w': 1.0},  # HistoryWave
+        (8, 4, 97): {'w': 1.0},  # Rave
+    },
+    98: {  # 099 Crystal
+        (12, 4, 98): {'w': 1.0},  # Blow Bell
+        (20, 4, 98): {'note': 'short stabs'},  # JUNO Bell
+    },
+    99: {  # 100 Atmosphere
+        (0, 4, 99): {'w': 4},  # Atmosphere
+        (2, 4, 99): {'w': 4},  # Nylon Harp
+        (3, 4, 99): {'w': 4},  # Harpvox
+        (6, 4, 99): {'w': 1.0},  # Ambient Pad
+    },
+    100: {  # 101 Brightness
+        (1, 4, 100): {'w': 4},  # Shining Star
+    },
+    102: {  # 103 Echo Drops
+        (10, 4, 102): {'note': 'fast panning effect'},  # Panning Lead
+        (11, 4, 102): {'note': 'wide panning effect'},  # PanningBrass
+        (5, 4, 102): {'w': 1.0},  # Reso Panner
+        (7, 4, 102): {'note': 'better lower, echo bass pad'},  # Echo SynBass
+        (8, 4, 102): {'note': 'oneshot left-to-right pan synth stab'},  # Pan Sequence
+        (9, 4, 102): {'note': 'oneshot on  note one, one shot on note off.'},  # Aqua
+    },
+    103: {  # 104 Star Theme
+        (0, 4, 103): {'w': 4},  # Star Theme
+        (11, 4, 103): {'w': 4},  # Silky Pad 2
+        (16, 4, 103): {'w': 1.0},  # New Century
+        (17, 4, 103): {'w': 0.6667, 'note': '7ths.'},  # 7th Atmos.
+        (18, 4, 103): {'w': 0.5},  # Galaxy Way
+        (19, 4, 103): {'w': 0.5},  # Rising OSC.
+        (9, 4, 103): {'w': 4},  # Silky Pad
+    },
+    104: {  # 105 Sitar
+        (4, 4, 104): {'note': 'sitar with drone depending on velocity'},  # Sitar/Drone
+    },
+    105: {  # 106 Banjo
+        (0, 4, 105): {'w': 8},  # Banjo
+        (1, 4, 105): {'note': 'muted banjo!'},  # Muted Banjo
+        (16, 4, 105): {'w': 1.0},  # Gopichant
+        (28, 4, 105): {'w': 0.6667},  # Oud+Strings
+        (32, 4, 105): {'w': 0.6667},  # Pi Pa
+    },
+    106: {  # 107 Shamisen
+        (0, 4, 106): {'w': 4},  # Shamisen
+        (8, 4, 106): {'w': 1.0},  # Syn Shamisen
+    },
+    107: {  # 108 Koto
+        (0, 4, 107): {'w': 6},  # Koto
+        (1, 4, 107): {'w': 4},  # Gu Zheng
+        (127, 1, 105): {'w': 1.0},  # Koto
+        (19, 4, 107): {'w': 0.6667},  # Kanoon+Choir
+        (24, 4, 107): {'note': 'has -12 octave double'},  # Oct Harp
+    },
+    108: {  # 109 Kalimba
+        (0, 1, 108): {'w': 1.0},  # Kalimba
+        (0, 4, 108): {'w': 4},  # Kalimba
+        (10, 4, 108): {'w': 0, 'note': 'not kalimba, bodhran drum. muted.'},  # Bodhran Mute
+        (9, 4, 108): {'w': 0, 'note': 'not kalimba, bodhran drum.'},  # Bodhran
+    },
+    109: {  # 110 Bagpipe
+        (10, 4, 109): {'note': 'no "chiff"'},  # UillnPipe Nm
+        (11, 4, 109): {'note': 'always "chiff"'},  # UillnPipe Or
+        (8, 4, 109): {'note': 'Not bagpipes, digeridoo.'},  # Didgeridoo
+        (9, 4, 109): {'note': 'velocity "chiff".'},  # Uillean Pipe
+    },
+    110: {  # 111 Fiddle
+        (0, 4, 110): {'w': 4},  # Fiddle
+    },
+    112: {  # 113 Tinkle Bell
+        (0, 4, 112): {'w': 6},  # Tinkle Bell
+        (11, 4, 112): {'w': 4},  # St.Gamelan
+        (12, 4, 112): {'note': 'deeper register'},  # Jang Gu
+        (16, 4, 112): {'w': 0.5},  # RAMA Cymbal
+        (17, 4, 112): {'w': 0.4},  # Kajar
+        (18, 4, 112): {'w': 0.4},  # Kelontuk
+        (19, 4, 112): {'w': 0.4},  # Kelontuk Mt
+        (20, 4, 112): {'w': 0.4},  # Kelontuk Sid
+        (21, 4, 112): {'w': 0.4},  # Kopyak Op
+        (22, 4, 112): {'w': 0.4},  # Kopyak Mt
+        (23, 4, 112): {'w': 0.4},  # Ceng Ceng
+        (24, 4, 112): {'w': 1.0},  # Reyoung
+        (25, 4, 112): {'w': 0.4},  # Kempur
+        (32, 4, 112): {'w': 0, 'note': 'oneshot "jungle drumkit crash"'},  # Jngl Crash
+        (40, 4, 112): {'w': 0, 'note': 'crash cymbals  key split'},  # Crash Menu
+        (41, 4, 112): {'w': 0, 'note': 'ride cymbals key split'},  # RideCym Menu
+        (42, 4, 112): {'w': 0, 'note': 'ride cymbal bell key shift'},  # RideBellMenu
+        (8, 4, 112): {'note': 'deeper register'},  # Bonang
+        (9, 4, 112): {'note': 'deeper register'},  # Gender
+    },
+    113: {  # 114 Agogo
+        (0, 4, 113): {'w': 6},  # Agogo
+        (16, 4, 113): {'w': 1.0, 'note': 'not agogo, tambourine'},  # Tambourine
+        (8, 4, 113): {'w': 4},  # Atarigane
     },
     114: {  # 115 Steel Drums
         (1, 4, 114): {'w': 4},  # Island Mlt
+    },
+    115: {  # 116 Woodblock
+        (16, 4, 115): {'w': 0},  # Angklung
+        (17, 4, 115): {'w': 0},  # Angkl Rhythm
+        (24, 4, 115): {'w': 0},  # Finger Snaps
+        (32, 4, 115): {'w': 0},  # 909 HandClap
+        (40, 4, 115): {'w': 0},  # HandClapMenu
+        (8, 4, 115): {'w': 0},  # Castanets
+    },
+    116: {  # 117 Taiko
+        (0, 4, 116): {'w': 4},  # Taiko
+        (16, 4, 116): {'w': 0},  # Jungle BD
+        (17, 4, 116): {'w': 0},  # Techno BD
+        (18, 4, 116): {'w': 0},  # Bounce
+        (24, 4, 116): {'w': 0},  # KendangWadon
+        (25, 4, 116): {'w': 0},  # Bebarongan
+        (26, 4, 116): {'w': 0},  # Pelegongan
+        (27, 4, 116): {'w': 0},  # Dholak 1
+        (28, 4, 116): {'w': 0},  # Dholak 2
+        (32, 4, 116): {'w': 0},  # Jngl BD Roll
+        (40, 4, 116): {'w': 0},  # Kick Menu 1
+        (41, 4, 116): {'w': 0},  # Kick Menu 2
+        (42, 4, 116): {'w': 0},  # Kick Menu 3
+        (43, 4, 116): {'w': 0},  # Kick Menu 4
+        (8, 4, 116): {'w': 0, 'note': 'not taiko, concert bass drum'},  # Concert BD
+        (9, 4, 116): {'w': 0, 'note': 'not taiko, concert bass drum muted'},  # ConcertBD Mt
+    },
+    117: {  # 118 Melo. Tom 1
+        (16, 4, 117): {'w': 0},  # Rash SD
+        (17, 4, 117): {'w': 0},  # House SD
+        (18, 4, 117): {'w': 0},  # Jungle SD
+        (19, 4, 117): {'w': 0},  # 909 SD
+        (24, 4, 117): {'w': 0},  # Jngl SD Roll
+        (40, 4, 117): {'w': 0, 'note': 'snare drum menu'},  # SD Menu 1
+        (41, 4, 117): {'w': 0, 'note': 'snare drum menu'},  # SD Menu 2
+        (42, 4, 117): {'w': 0, 'note': 'snare drum menu'},  # SD Menu 3
+        (43, 4, 117): {'w': 0, 'note': 'snare drum menu'},  # SD Menu 4
+        (44, 4, 117): {'w': 0, 'note': 'snare drum menu'},  # SD Menu 5
+    },
+    118: {  # 119 Synth Drum
+        (0, 4, 118): {'w': 8},  # Synth Drum
+    },
+    119: {  # 120 Reverse Cym.
+        (16, 4, 119): {'w': 0},  # Rev.Kick 1
+        (17, 4, 119): {'w': 0},  # Rev.ConBD
+        (24, 4, 119): {'w': 0},  # Rev.Tom 1
+        (25, 4, 119): {'w': 0},  # Rev.Tom 2
+        (26, 4, 119): {'w': 0},  # Rev.Tom 3
+        (27, 4, 119): {'w': 0},  # Rev.Tom 4
+        (40, 4, 119): {'w': 0},  # Rev.SD Menu1
+        (41, 4, 119): {'w': 0},  # Rev.SD Menu2
+        (42, 4, 119): {'w': 0},  # Rev.SD Menu3
+        (43, 4, 119): {'w': 0},  # Rev.BD Menu1
+        (44, 4, 119): {'w': 0},  # Rev.BD Menu2
+        (45, 4, 119): {'w': 0},  # Rev.BD Menu3
+        (46, 4, 119): {'w': 0},  # Rev.ClapMenu
     },
 }
 # --- end generated picks ---
