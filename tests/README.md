@@ -82,10 +82,10 @@ mallets' spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho
 (Tm Ctrl Delay), `4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
 
 `python tests/make_onestop2.py` writes `tests/midi/onestop2.mid` (Format 1: a conductor track, then one named track per channel), "ONESTOP2 - A Brief History of Sound"
-(8:37): medieval (a fingerpicked lute with runs and strums, a bagpipe reprise), baroque to classical,
-an organ-led cathedral crescendo, big band, boogie-woogie into Chuck Berry-style rock'n'roll on an
-overdrive guitar, a proto-synth machine (calliope synth ostinato, synth brass, Fantasia, Bass & Lead)
-interleaved into analog synths, prog / hard rock (two rotary organ
+(9:20): medieval (a fingerpicked lute with runs and strums, a bagpipe reprise), baroque to classical,
+an organ-led cathedral crescendo, a honky-tonk rag into a Dixieland band, big band, boogie-woogie into Chuck Berry-style rock'n'roll on an
+overdrive guitar, a proto-synth machine (calliope synth ostinato, synth brass, Fantasia, Bass & Lead, a rhythm machine)
+interleaved into analog synths (four on the floor on the 808), prog / hard rock (two rotary organ
 crescendos, 7/8, organ vs Moog), then a Dio-style epic, a power groove, a screaming solo (long bent
 notes over ringing chords), a NWOBHM gallop and a Priest-style anthem ending with the organ and choir.
 Plays complete on one SC-8850 (GM capitals, GS drum sets, no file EFX); built for Duality on six GS
@@ -93,8 +93,9 @@ units. Every part is written in scale degrees of its section's key, and the buil
 outside the section's allowed pitch classes, on a silence over 1.5 s outside the one intended rest, or
 on a program change under a held note. Offline with seeds 0436, 1A2B, 7A18 (and 0436 in game mode): no
 type change under a sounding player, nothing hanging, about 99.8% of what Duality sends inside the
-file's local key (the rest are chords held longer than the 2 s check window). Seeds `1332`, `6030` and
-`EE63` put the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop (3 of 96 scanned).
+file's local key (the rest are chords held longer than the 2 s check window). Seeds `2368`, `61A1` and
+`D7C9` (0.19.044) put the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop and
+the prog organ on Rotary Multi (17 of 160 scanned gave the solo Multi 3).
 
 ## Tests
 
