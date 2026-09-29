@@ -222,7 +222,6 @@ ANIMA_EFX_GS = {
         (0x01, 0x22, "Rotary", 2),  # #9
         (0x01, 0x41, "Tremolo Chorus", 2),  # #17
         (0x03, 0x00, "Rotary Multi", 2),  # #47
-        (0x11, 0x04, "OD/Rotary", 2),  # #60
     ],
     "harmonica": [
         (0x01, 0x02, "Enhancer", 4),  # #3

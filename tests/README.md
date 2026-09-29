@@ -82,9 +82,9 @@ mallets' spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho
 (Tm Ctrl Delay), `4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
 
 `python tests/make_onestop2.py` writes `tests/midi/onestop2.mid` (Format 1: a conductor track, then one named track per channel), "ONESTOP2 - A Brief History of Sound"
-(9:20): medieval (a fingerpicked lute with runs and strums, a bagpipe reprise), baroque to classical,
+(9:20, all 15 musical channels): medieval (a fingerpicked lute with runs and strums, low voices, a bagpipe reprise), baroque to classical,
 an organ-led cathedral crescendo, a honky-tonk rag into a Dixieland band, big band, boogie-woogie into Chuck Berry-style rock'n'roll on an
-overdrive guitar, a proto-synth machine (calliope synth ostinato, synth brass, Fantasia, Bass & Lead, a rhythm machine)
+overdrive guitar, a proto-synth machine (calliope synth ostinato, synth brass, Fantasia, Bass & Lead, analog blips and bloops on a TR-909)
 interleaved into analog synths (four on the floor on the 808), prog / hard rock (two rotary organ
 crescendos, 7/8, organ vs Moog), then a Dio-style epic, a power groove, a screaming solo (long bent
 notes over ringing chords), a NWOBHM gallop and a Priest-style anthem ending with the organ and choir.

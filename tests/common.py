@@ -94,8 +94,9 @@ GM_NAMES = (
     "Star Theme,Sitar,Banjo,Shamisen,Koto,Kalimba,Bagpipe,Fiddle,Shanai,Tinkle Bell,Agogo,"
     "Steel Drums,Woodblock,Taiko,Melo Tom,Synth Drum,Reverse Cymbal,Fret Noise,Breath Noise,"
     "Seashore,Bird,Telephone,Helicopter,Applause,Gun Shot").split(",")
-GS_KITS = {0: "Standard", 8: "Room", 16: "Power", 24: "Electronic", 25: "TR-808", 32: "Jazz",
-           40: "Brush", 48: "Orchestra", 56: "SFX"}
+GS_KITS = {0: "Standard", 8: "Room", 16: "Power", 24: "Electronic", 25: "TR-808", 26: "Dance",
+           27: "CR-78", 28: "TR-606", 29: "TR-707", 30: "TR-909", 32: "Jazz", 40: "Brush",
+           48: "Orchestra", 56: "SFX"}
 
 
 def format1(mf, drum_ch: int = 9, max_shift: int = 12):
