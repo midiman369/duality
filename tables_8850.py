@@ -1201,6 +1201,62 @@ ANIMA_TONE_TRAITS = {
     (1, 4, 45): frozenset({"low"}),               # Vcs&Cbs Pizz: cellos and basses only
     (40, 4, 81): frozenset({"short"}),            # SequenceSaw1: stab, does not loop
     (41, 4, 81): frozenset({"short"}),            # SequenceSaw2: stab, does not loop
+    # 0.19.044: the rest of the Tone Palettes notes
+    (9, 4, 44):     frozenset({"lfo"}),             # Suspense Str: Nice wider mix of normal and tremolo strings
+    (10, 4, 44):    frozenset({"lfo"}),             # SuspenseStr2: Nice wider mix of normal and tremolo strings
+    (3, 4, 48):     frozenset({"low"}),             # Cello sect.: Cellos.  Better for middle and lower registers
+    (10, 4, 48):    frozenset({"lfo"}),             # Tremolo Orch: alternative to tremolo strings with full orchestra color
+    (32, 4, 48):    frozenset({"interval"}),        # Oct Strings1: has built-in +-12
+    (33, 4, 48):    frozenset({"interval"}),        # Oct Strings2: has built-in +-12
+    (34, 4, 48):    frozenset({"low"}),             # ContraBsSect: Excellent for lower register strings section playing
+    (10, 4, 52):    frozenset({"interval"}),        # Church Choir: has an extra -12 register
+    (4, 4, 53):     frozenset({"interval"}),        # OohsCodeMaj7: limited range, maj7 Choir Oohs
+    (5, 4, 53):     frozenset({"interval"}),        # OohsCodeSus4: limited range, sus4 Choir Oohs
+    (9, 4, 53):     frozenset({"short"}),           # JzVoice Dat: oneshot Dats
+    (10, 4, 53):    frozenset({"short"}),           # JzVoice Bap: oneshot Baps
+    (11, 4, 53):    frozenset({"short"}),           # JzVoice Dow: oneshot Dows
+    (12, 4, 53):    frozenset({"short"}),           # JzVoice Thum: oneshot Thums
+    (20, 4, 53):    frozenset({"short"}),           # VoiceLan Fem: onehsot, female Lans instead of choir oohs
+    (21, 4, 53):    frozenset({"short"}),           # ChorusLanFem: oneshot, female Lans instead of choir oohs, with nice stereo
+    (16, 4, 56):    frozenset({"interval"}),        # 4th Trumpets: plays 4ths
+    (3, 4, 57):     frozenset({"interval"}),        # Bones & Tuba: trombone & tuba, has lower register sub from tuba sound
+    (8, 4, 57):     frozenset({"low"}),             # Bs. Trombone: flatter sound more bottom-end
+    (16, 2, 60):    frozenset({"interval"}),        # Horn Orch: sounds like fifths with octaves
+    (24, 4, 61):    frozenset({"interval"}),        # Octave Brass: has a +12
+    (16, 2, 62):    frozenset({"interval"}),        # OctaveBrass: has a +12
+    (16, 4, 62):    frozenset({"interval"}),        # Oct SynBrass: has +12
+    (18, 4, 62):    frozenset({"interval"}),        # OctSynBrass2: has -12
+    (8, 4, 71):     frozenset({"low"}),             # Bs Clarinet: Bass Clarient, nice low end
+    (9, 4, 72):     frozenset({"lfo"}),             # Nay Tremolo: tremolo effect in waveform
+    (17, 4, 73):    frozenset({"slow"}),            # Indian Flute: slower more breathy attack
+    (35, 4, 80):    frozenset({"lfo"}),             # Flux Pulse: tone has pulsing vibrato
+    (35, 4, 81):    frozenset({"interval"}),        # Oct Saw Lead: has a -12
+    (40, 3, 81):    frozenset({"short"}),           # SequenceSaw1: short stab sound that doesn't loop, we should select/play ac
+    (45, 4, 81):    frozenset({"lfo"}),             # Rhythmic Saw: has a built-in vibrato
+    (46, 4, 81):    frozenset({"short"}),           # SequencedSaw: short stab sound that doesn't loop, we should select/play ac
+    (19, 4, 84):    frozenset({"interval"}),        # 5th DecaSync: plays in 5ths
+    (24, 4, 84):    frozenset({"low"}),             # JUNO Sub Osc: played real low, and properly, sounds a lot like the "Froggi
+    (9, 4, 85):     frozenset({"lfo"}),             # LFO Vox: has a sweeping lfo tremolo type effect
+    (8, 4, 86):     frozenset({"interval"}),        # 4th Lead: 4ths instead of 5ths
+    (15, 4, 90):    frozenset({"lfo"}),             # Happy Synth: thick chorus-y sound
+    (3, 4, 92):     frozenset({"interval"}),        # 7thBelPad: plays 7ths
+    (2, 4, 93):     frozenset({"lfo"}),             # Panner Pad: has stepped panning effect
+    (2, 4, 94):     frozenset({"slow"}),            # Vox Sweep: slower attack
+    (8, 4, 94):     frozenset({"slow"}),            # Horror Pad: slower attack
+    (13, 4, 95):    frozenset({"interval"}),        # Sweep Stack: fades up an octave
+    (2, 4, 96):     frozenset({"short"}),           # African wood: random wooden percussion better for accent/effects
+    (5, 4, 96):     frozenset({"lfo"}),             # Saw Impulse: has a tremolo effect
+    (20, 4, 98):    frozenset({"short"}),           # JUNO Bell: short stabs
+    (7, 4, 102):    frozenset({"echo", "low"}),     # Echo SynBass: better lower, echo bass pad
+    (8, 4, 102):    frozenset({"lfo", "short"}),    # Pan Sequence: oneshot left-to-right pan synth stab
+    (9, 4, 102):    frozenset({"short"}),           # Aqua: oneshot on  note one, one shot on note off
+    (10, 4, 102):   frozenset({"lfo"}),             # Panning Lead: fast panning effect
+    (11, 4, 102):   frozenset({"lfo"}),             # PanningBrass: wide panning effect
+    (17, 4, 103):   frozenset({"interval"}),        # 7th Atmos.: 7ths
+    (24, 4, 107):   frozenset({"interval"}),        # Oct Harp: has -12 octave double
+    (8, 4, 112):    frozenset({"low"}),             # Bonang: deeper register
+    (9, 4, 112):    frozenset({"low"}),             # Gender: deeper register
+    (12, 4, 112):   frozenset({"low"}),             # Jang Gu: deeper register
 }
 
 
