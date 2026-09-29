@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.044** (`python duality.py --version`).
+Current development line: **v0.19.045** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -317,6 +317,7 @@ Family is tracked so a later PC stays in brass / organ / strings / …. A *real*
 - **Tone picks applied** (0.19.040): the Tone Palettes picks (weights, EFX level, notes) and the EFX Palettes changes are in the tables. A tone's EFX level moves its insert's wet/dry Balance from the type's default (drier x0.6 / x0.35, wetter 40% / 65% of the way to full wet; the driest part on a unit wins). Notes become traits: a sample that already moves (vibrato, tremolo, rotary, strummed or arpeggiated sustain) gets no chorus / flanger / phaser / tremolo / rotary insert, a built-in rotary gets no CC16 speed flips, tones that play extra pitches (fifths, thirds, built-in octaves) get no harmony ghosts, no bass sub-octave and no pitch shifter. A short stab that does not loop, a slow-attack tone or a low-register tone that the part turns out not to suit (held notes, quick short notes, high notes) goes back to the capital once, at the part's next rest.
 - **Guitar insert levels, harpsichord** (0.19.043, by ear on ONESTOP2): GTR Multi 2's drive stage is set to Distortion (its Overdrive was far too loud); GTR Multi 3 gets Level 120 (default 88 was too quiet) and a wah Peak of 80; the OD1/OD2 guitar split runs both sides as Distortion with OD1's Level at 80 (OD1 as Overdrive at 96 was far louder than the other side). The Harpsichord takes the acoustic piano's inserts (Stereo-EQ, Enhancer, Space D, 3D Chorus, Reverb, Gate Reverb) instead of the clavinet's, so no more auto wah on a baroque harpsichord, and a Jazz Gt. never gets a wah insert (`ANIMA_EFX_NO_WAH_PROGS`; a swing comping guitar drew Auto Wah; the Clean Gt. keeps its funk wah). Fixed settings per type live in `tables_gs.ANIMA_EFX_TYPE_SET`.
 - **All tone picks applied** (0.19.044): the Tone Palettes picks for every program (605 tones on 101 programs, 57 switched off) and 55 more trait lines from the notes: built-in octaves / fourths / fifths / sevenths / chord tones (interval), tremolo, vibrato, panning or chorus in the sample (lfo), a built-in echo (echo), one-shots (short), slow attacks (slow) and low-register sections (low).
+- **Rotary organ palette** (0.19.045): OD/Rotary is out of the rotary organ's list (Rotary, Tremolo Chorus, Rotary Multi remain), so a drawbar or rock organ never gets a distortion stage.
 
 ![Anima insert shaping](docs/images/anima-efx-shaping.svg)
 

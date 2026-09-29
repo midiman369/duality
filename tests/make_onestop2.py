@@ -4,7 +4,8 @@
 
 Original composition (no copyright issue; generated, so it can be rebuilt anywhere). It plays
 complete on a single SC-8850 (GM capitals, GS drum sets, one GS reset at the start, no file
-insert EFX; channel 16 is left free for Anima's foley) and is laid out for Duality with six GS
+insert EFX; channel 15 adds a layer to most sections - monks, bassoon, bells, vibes, blips and
+bloops, a mellotron choir, timpani - and channel 16 is left free for Anima's foley) and is laid out for Duality with six GS
 units: every section change is a program change burst (Anima places inserts once per burst;
 game mode rerolls per cue) and each seam is built to exercise an EFX rule.
 
@@ -233,7 +234,7 @@ section(88, key=KD, name="medieval")
 prog(DR, 0, 48, vol=96, rev=60)                                        # Orchestra kit
 prog(C1, 0, 74, vol=100, pan=54, rev=64)                              # Recorder
 prog(C2, 0, 75, vol=94, pan=78, rev=64)                               # Pan Flute
-prog(C3, 0, 24, vol=118, pan=40, rev=50)                              # Nylon (lute)
+prog(C3, 0, 24, vol=118, pan=54, rev=50)                              # Nylon (lute)
 prog(C4, 0, 15, vol=90, pan=90, rev=55)                               # Dulcimer
 prog(C5, 0, 42, vol=96, pan=52, rev=55)                               # Cello
 prog(C6, 0, 19, vol=80, pan=64, rev=80)                               # Church Organ (drone)
@@ -271,6 +272,11 @@ LUTE_RUN_DN = [11, 10, 9, 8, 7, 6, 5, 4]
 LUTE_TURN = [9, 10, 9, 8, 9, 11]                                          # six to a beat
 
 
+def lv(v):
+    """Lute velocity: 27 up, the loudest strokes landing on 127 (note() adds up to 4)."""
+    return min(123, v + 27)
+
+
 def lute(k, r):
     b = t(k)
     big = k >= 12
@@ -283,23 +289,23 @@ def lute(k, r):
         tk = b + st * TPB // 4
         if run is not None and st >= 8:                                  # the run takes beats 3-4
             d = run[st - 8]
-            note(C3, tk, KD(r - 7 + d), 0.25, 82 + (st - 8) * 2, gate=0.95, jitter=3)
+            note(C3, tk, KD(r - 7 + d), 0.25, lv(82 + (st - 8) * 2), gate=0.95, jitter=3)
             continue
         if k in (5, 9) and st >= 12:                                     # a triplet turn on beat 4
             if st == 12:
                 for i, d in enumerate(LUTE_TURN):
-                    note(C3, b + 3 * TPB + i * TPB // 6, KD(r - 7 + d), 1 / 6, 84 - (i % 3) * 3, gate=1.0, jitter=2)
+                    note(C3, b + 3 * TPB + i * TPB // 6, KD(r - 7 + d), 1 / 6, lv(84 - (i % 3) * 3), gate=1.0, jitter=2)
             continue
         if st % 4 == 0:
             if big and st in (0, 8):                                      # strum on beats 1 and 3
-                chord(C3, tk, [KD(r - 7 + d) for d in (0, 4, 7, 9, 11)], 1.0, 96, roll=12, gate=0.9)
+                chord(C3, tk, [KD(r - 7 + d) for d in (0, 4, 7, 9, 11)], 1.0, lv(96), roll=12, gate=0.9)
             else:
-                note(C3, tk, KD(r - 7 + (0, 4, 0, 4)[st // 4]), 0.5, 94, gate=1.0)
+                note(C3, tk, KD(r - 7 + (0, 4, 0, 4)[st // 4]), 0.5, lv(94), gate=1.0)
             continue
         d = LUTE_FING[(k + st // 4) % len(LUTE_FING)][st % 4 - 1]
         if st in (2, 10) and k % 2 == 1 and not big:                     # hammer-on from a step below
-            note(C3, tk - 34, KD(r - 7 + d - 1), 0.07, 68, jitter=0)
-        note(C3, tk, KD(r - 7 + d), 0.25, 80 if st % 2 == 0 else 72, gate=1.3)
+            note(C3, tk - 34, KD(r - 7 + d - 1), 0.07, lv(68), jitter=0)
+        note(C3, tk, KD(r - 7 + d), 0.25, lv(80 if st % 2 == 0 else 72), gate=1.3)
 FLUTE1[7] = [(0, 4, 2), (2, 6, 2)]
 FLUTE1[11] = [(0, 4, 2), (2, 6, 2)]
 FLUTE1[15] = [(0, 9, 2), (2, 11, 2)]
@@ -314,8 +320,8 @@ for k, r in enumerate(ROOTS1):
         lute(k, r)
     else:                                                                # the last bar: a run down, a final strum
         for i, d in enumerate([11, 10, 9, 8, 7, 6, 5, 4]):
-            note(C3, b + i * TPB // 4, KD(r - 7 + d), 0.25, 90 - i * 2, gate=0.95, jitter=3)
-        chord(C3, b + 2 * TPB, [KD(r - 7 + d) for d in (0, 4, 7, 9, 11)], 1.5, 98, roll=14, gate=0.85)
+            note(C3, b + i * TPB // 4, KD(r - 7 + d), 0.25, lv(90 - i * 2), gate=0.95, jitter=3)
+        chord(C3, b + 2 * TPB, [KD(r - 7 + d) for d in (0, 4, 7, 9, 11)], 1.5, lv(98), roll=14, gate=0.85)
     if k >= 2:
         chord(C4, b, KD.tri(r + 7), 1.5, 78, roll=18)
         chord(C4, b + 2 * TPB, KD.tri(r + 7)[::-1], 1.5, 70, roll=18)
@@ -341,6 +347,11 @@ for k, r in enumerate(ROOTS1):
 ramp(C7, 11, t(4), t(12), 40, 112)
 drum(t(11, 3), TRI, 70)
 drum(t(15, 3), TRI, 80)
+prog(C15, 0, 53, vol=96, pan=76, rev=85, expr=70)                        # ch15 Voice Oohs (the monks)
+for k in range(4, 16, 2):
+    r = ROOTS1[k]
+    chord(C15, t(k), [KD(r - 7), KD(r - 3)] + ([KD(r)] if k >= 12 else []), 2 * BPB, 74 if k < 12 else 86, gate=0.94)
+ramp(C15, 11, t(4), t(8), 70, 110)
 advance(16)
 
 # ======================================================================================
@@ -350,7 +361,7 @@ KA, KAh = Key(57, "minor"), Key(57, "harm")
 section(100, key=KA, extra={8}, name="baroque")                        # G# on E chords
 chord(C6, t(0), [KA(-14), KA(-10), KA(-7)], 1.6 * BPB, 68)             # the drone carries over
 ramp(C6, 11, t(0, 2), t(1, 2), 127, 0)
-prog(C3, t(0) - 20, 6, vol=90, pan=44, rev=45)                        # Harpsichord
+prog(C3, t(0) - 20, 6, vol=110, pan=44, rev=45)                       # Harpsichord
 prog(C1, t(0) - 20, 40, vol=104, pan=58, rev=60)                      # Violin
 prog(C2, t(0) - 20, 68, vol=92, pan=74, rev=55)                       # Oboe
 prog(C4, t(0) - 20, 45, vol=92, pan=80, rev=50)                       # Pizzicato
@@ -372,7 +383,7 @@ for k, r in enumerate(ROOTS2):
     b = t(k)
     for i in range(16):
         dd = [0, 2, 4, 7][i % 4] + (7 if (i // 4) % 2 else 0)
-        note(C3, b + i * TPB // 4, K(r + dd), 0.25, 74 if i % 4 == 0 else 60, jitter=3)
+        note(C3, b + i * TPB // 4, K(r + dd), 0.25, 89 if i % 4 == 0 else 75, jitter=3)
     if k < 16:
         for i, dd in enumerate([0, 2, 4, 7, 4, 2, 4, 2]):
             note(C4, b + i * TPB // 2, K(r - 7 + dd), 0.5, 80, gate=0.6)
@@ -398,6 +409,14 @@ for k, r in enumerate(ROOTS2):
     if k % 2 == 0 and k < 16:
         note(C9, b, K(r - 7) if K(r - 7) >= 40 else K(r), 1, 94)
         note(C9, b + 3 * TPB, K(r - 3) if K(r - 3) <= 55 else K(r - 10), 1, 80)
+prog(C15, t(0) - 20, 70, vol=96, pan=36, rev=50)                         # ch15 Bassoon (continuo)
+for k, r in enumerate(ROOTS2):
+    K = KAh if r == 4 else KA
+    if 4 <= k < 16:
+        for bt, d in ((0, 0), (1, 2), (2, 4), (3, 2)):
+            note(C15, t(k, bt), K(r - 7 + d), 1, 84 if bt == 0 else 74, gate=0.85)
+    elif k >= 16:
+        note(C15, t(k), K(r - 7), BPB, 86)
 prog(C4, t(16) - 30, 44, vol=96, pan=80, rev=60, expr=50)             # Tremolo Strings
 for k in range(16, 20):
     r = ROOTS2[k]
@@ -421,7 +440,7 @@ prog(C13, t(0) - 20, 55, vol=110, pan=64, rev=70)                     # Orchestr
 prog(C14, t(0) - 20, 61, vol=92, pan=80, rev=70, expr=60)             # Brass Section
 cc(C6, t(0) - 20, 7, 118)
 cc(C6, t(0) - 20, 11, 70)
-cc(C7, t(0) - 20, 11, 70)
+cc(C7, t(0) - 20, 11, 90)
 ROOTS3 = [0, 5, 2, 6, 3, 5, 4, 4]
 HORN3 = [None, [(0, 9, 2), (2, 11, 2)], [(0, 11, 3), (3, 13, 1)], [(0, 13, 2), (2, 11, 2)],
          [(0, 12, 3), (3, 10, 1)], [(0, 12, 2), (2, 14, 2)], [(0, 15, 3), (3, 13, 1)], [(0, 11, 4)]]
@@ -449,6 +468,14 @@ ramp(C11, 11, t(2), t(7, 3), 60, 127)
 ramp(C14, 11, t(5), t(7, 3), 60, 127)
 for i in range(32):
     note(C9, t(7) + i * TPB // 8, KA(-10), 0.125, 70 + i, gate=0.5, jitter=2)
+prog(C15, t(0) - 20, 14, vol=100, pan=92, rev=90)                        # ch15 Tubular Bells
+for k in range(3, 8):
+    r = ROOTS3[k]
+    K = KAh if r == 4 else KA
+    note(C15, t(k), K(r), 2, 72 + k * 5)
+    if k >= 5:
+        note(C15, t(k, 2), K(r + 4), 2, 70 + k * 4)
+note(C15, t(8), KAM(7), 3, 112)
 hit = t(8)
 chord(C13, hit, KAM.tri(0) + [KAM(7)], 1.5, 124)
 chord(C6, hit, [KAM(-21), KAM(-14)] + KAM.tri(-7) + KAM.tri(0) + KAM.tri(7), 3, 116)
@@ -666,6 +693,17 @@ for k, r in enumerate(ROOTS4):
             chord(C14, t(k, swing(bt)), [x + 12 for x in v[:3]], 0.6, 104)
             note(C12, t(k, swing(bt)), KB(r - 7), 0.6, 96)
             drum(t(k, swing(bt)), CRASH if bt == 0 else SNARE, 96)
+prog(C15, burst + 27, 11, vol=96, pan=96, rev=50)                        # ch15 Vibraphone
+for k, r in enumerate(ROOTS4):
+    v = vox4(KB, r, k)
+    if 2 <= k < 8:                                                       # head: answers in the gaps
+        mel(C15, k, KB, [(swing(3), r + 9, 0.5), (swing(3.5), r + 7, 0.5)], vel=84)
+    elif k < 20:                                                         # comping behind the soli and the solo
+        for bt in ((0.5, 2.5) if k % 2 == 0 else (1.5, 3)):
+            chord(C15, t(k, swing(bt)), [x + 12 for x in v], 0.8, 74, gate=0.8)
+    else:                                                                # shout: vibes on top
+        for bt in (0, 1.5, 3):
+            chord(C15, t(k, swing(bt)), [v[3] + 12, v[1] + 12], 0.6, 98)
 advance(24)
 
 # ======================================================================================
@@ -787,7 +825,8 @@ drum(t(0), KICK, 116)
 # ======================================================================================
 section(132, key=KAm, name="machine")
 prog(C8, t(0, 0.5), 82, vol=100, pan=84, rev=45)                        # Syn. Calliope (the machine)
-prog(C1, t(0, 1) + 10, 80, vol=98, pan=60, rev=45)                      # Square lead
+prog(DR, t(0, 2), 30, vol=100, rev=30)                                  # TR-909 (the 808 waits for the analog section)
+prog(C1, t(0, 1) + 10, 80, vol=115, pan=60, rev=45)                     # Square lead
 prog(C2, t(0, 1) + 10, 63, vol=90, pan=76, rev=45)                      # Synth Brass 2 (answers)
 prog(C9, t(0, 1) + 10, 8, vol=86, pan=40, rev=55)                       # Celesta
 prog(C5, t(0, 1) + 10, 38, vol=98, pan=64, rev=20)                      # Synth Bass 1
@@ -848,8 +887,25 @@ for k in range(1, 16):
     if k in (7, 11, 15):
         for i in range(8):
             drum(t(k, 2 + i * 0.25), TOMS[i * 5 // 8] if k != 7 else SNARE, 70 + i * 4, jitter=0)
+# ch15: analog blips (sparks of sixteenths up high) and bloops (a note that dives or leaps an octave)
+prog(C15, t(0, 2), 80, vol=104, pan=100, rev=70)                        # Square: blips & bloops
+bend_range(C15, t(0, 2) + 10, 12)
+brng = random.Random(1957)
+for k in range(2, 16):
+    r = ROOTS6[k]
+    for sp in sorted(brng.sample(range(16), 3 if k < 8 else 5)):
+        if k % 2 == 1 and sp >= 11:
+            continue                                                     # beat 4 belongs to the bloop
+        note(C15, t(k, sp * 0.25), KAm(r + 14 + brng.choice([0, 2, 4, 7])), 0.25, 72 + brng.randint(0, 20),
+             gate=0.35, jitter=0)
+    if k % 2 == 1:
+        up = (k // 2) % 2 == 0
+        bend(C15, t(k, 3) - 5, 0)
+        note(C15, t(k, 3), KAm(r + (7 if up else 14)), 0.75, 94, gate=0.9, jitter=0)
+        bend_curve(C15, t(k, 3.1), t(k, 3.7), 0, 8191 if up else -8192, 10)
+        bend(C15, t(k, 3.95), 0)
 KE = Key(52, "minor")
-prog(C3, t(12) - 30, 81, vol=86, pan=40, rev=45, expr=10)               # Saw (sequence)
+prog(C3, t(12) - 30, 81, vol=115, pan=40, rev=45, expr=10)              # Saw (sequence)
 prog(C6, t(12) - 30, 90, vol=84, pan=64, rev=70, expr=10)               # Polysynth pad
 ramp(C3, 11, t(12), t(16), 10, 115)
 ramp(C6, 11, t(14), t(16), 10, 100)
@@ -871,7 +927,7 @@ prog(DR, t(0) - 30, 25, vol=100, rev=30)                                # TR-808
 prog(C5, t(0) - 30, 39, vol=104, pan=64, rev=15)                        # Synth Bass 2
 prog(C8, t(0) - 30, 62, vol=92, pan=80, rev=45)                         # Synth Brass 1
 prog(C7, t(0) - 30, 50, vol=84, pan=30, rev=60)                         # Synth Strings 1
-prog(C1, t(0) - 30, 81, vol=100, pan=58, rev=50)                        # Saw lead
+prog(C1, t(0) - 30, 81, vol=115, pan=58, rev=50)                        # Saw lead
 prog(C12, t(0) - 30, 94, vol=82, pan=96, rev=80, expr=40)               # Halo Pad
 bend_range(C1, t(0) - 25, 2)
 ROOTS7 = [0, 5, 6, 4, 0, 5, 2, 6, 3, 5, 6, 4, 0, 5, 6, 3]
@@ -929,7 +985,7 @@ prog(DR, t(0) - 30, 16, vol=104, rev=35)                                # Power 
 prog(C3, t(0) - 30, 29, vol=40, pan=30, rev=30)                         # Overdrive Gt. L (swells in)
 prog(C12, t(0) - 30, 29, vol=40, pan=100, rev=30)                       # Overdrive Gt. R
 prog(C5, t(0) - 30, 33, vol=104, pan=60, rev=20)                        # Fingered Bass
-prog(C1, t(0) - 30, 81, vol=98, pan=70, rev=50)                         # Saw lead ("Moog")
+prog(C1, t(0) - 30, 81, vol=115, pan=70, rev=50)                        # Saw lead ("Moog")
 cc(C4, t(0), 11, 50)
 cc(C6, t(0), 11, 30)
 # a) rotary crescendo: held organ chords two bars each, swelling; guitars and drums build under it
@@ -957,6 +1013,11 @@ for i in range(16):
     drum(t(4, i * 0.5), TOMS[(i // 3) % 5], 78 + i * 2)
 for i in range(32):
     drum(t(6, i * 0.25), SNARE, 60 + i * 2)
+prog(C15, t(0) - 30, 91, vol=104, pan=92, rev=80, expr=40)            # ch15 Space Voice: a choir pad (shares the pad unit)
+for j, r in enumerate(HOLD):
+    K = KAh if r == 4 else KA
+    chord(C15, t(2 * j), K.tri(r), 2 * BPB, 86, gate=0.97)
+ramp(C15, 11, t(0), t(7, 2), 40, 120)
 advance(8)
 # b) the riff: organ + two guitars + bass in unison, 8 bars (the second four add harmony)
 RIFF = [0, 0, 7, 0, 6, 0, 5, 4, 0, 0, 7, 0, 9, 8, 6, 4]
@@ -1043,6 +1104,10 @@ for i in range(16):
     drum(t(0, i * 0.5), RIDE, 60 + i * 2)
 for i in range(16):
     drum(t(2, i * 0.5), TOMS[i % 5] if i < 8 else SNARE, 80 + i * 2)
+for j, r in enumerate((5, 4)):                                          # ch15 mellotron choir
+    K = KAh if r == 4 else KA
+    chord(C15, t(2 * j), K.tri(r) + [K(r + 7)], 2 * BPB, 92, gate=0.96)
+ramp(C15, 11, t(0), t(3, 2), 60, 127)
 advance(4)
 # f) the ritardando into the metal (E minor v chord)
 KEm = Key(52, "minor")
@@ -1071,6 +1136,8 @@ prog(C5, t(0) - 20, 34, vol=108, pan=64, rev=15)                        # Picked
 prog(C11, t(0, 1), 52, vol=90, pan=58, rev=90, expr=50)                 # Choir Aahs
 prog(C6, t(2) - 30, 19, vol=110, pan=64, rev=90, expr=40)               # Church Organ (for the ending)
 prog(C12, t(2) - 30, 29, vol=86, pan=40, rev=45)                        # Overdrive: arpeggios
+prog(C14, t(0, 1), 119, vol=100, pan=64, rev=70)                        # Reverse Cymbal (a swell into bar 2)
+note(C14, t(1), 60, 3.8, 100, jitter=0)
 bend_range(C1, t(0, 1) + 10, 12)
 bend_range(C2, t(0, 1) + 10, 2)
 ramp(C4, 7, t(0), t(2), 100, 0)
@@ -1118,6 +1185,13 @@ for k, r in enumerate(ROOTS9):
             vib(C1, t(k, 1.5), t(k, 3.8), TONE)
             bend(C1, t(k, 3.9), 0)
 ramp(C11, 11, t(6), t(12), 50, 100)
+prog(C15, t(0) - 20, 47, vol=106, pan=64, rev=60)                        # ch15 Timpani (to the end)
+for i in range(16):                                                      # after the lead has its unit (bar 4)
+    note(C15, t(5, 2) + i * TPB // 8, 40, 0.125, 50 + i * 4, gate=0.7, jitter=1)
+for k, r in enumerate(ROOTS9):
+    if k >= 6:
+        tn = KEm(r - 7) if KEm(r - 7) >= 40 else KEm(r)
+        note(C15, t(k), tn if tn <= 55 else tn - 12, 1.5, 104 if k % 2 == 0 else 92)
 advance(12)
 
 # ======================================================================================
@@ -1162,6 +1236,14 @@ for k in range(12):
         note(C2, t(k, 3), [83, 81, 83, 86][k - 8], 1, 104)
     if k in (7, 11):
         fill(k, 2, "kicks", 112)
+for k in range(12):                                                      # ch15 timpani
+    if k % 4 == 0:
+        note(C15, t(k), 40, 1, 110)
+    if k % 4 == 3 and k < 8:
+        note(C15, t(k, 2.25), 40, 0.5, 104)
+    if k == 11:
+        for i in range(8):
+            note(C15, t(k, 3) + i * TPB // 8, 40, 0.125, 70 + i * 6, gate=0.7, jitter=1)
 advance(12)
 
 # ======================================================================================
@@ -1227,6 +1309,12 @@ vib(C1, t(11, 2), t(11, 3), TONE, depth=320)
 bend_curve(C1, t(11, 3), t(11, 3.95), TONE, -8192, 12)
 ramp(C6, 11, t(0), t(12), 40, 90)
 ramp(C11, 11, t(4), t(12), 60, 100)
+for k, r in enumerate(ROOTSS):                                           # ch15 timpani
+    if k % 2 == 0 and k < 11:
+        tn = KEm(r - 7) if KEm(r - 7) >= 40 else KEm(r)
+        note(C15, t(k), tn if tn <= 55 else tn - 12, 1.5, 100)
+for i in range(16):
+    note(C15, t(11, 2) + i * TPB // 8, 40, 0.125, 60 + i * 4, gate=0.7, jitter=1)
 advance(12)
 bend(C1, t(0) - 5, 0)
 
@@ -1316,6 +1404,13 @@ for k, r in enumerate(ROOTS9d):
         drum(t(k, 3 + i * 0.25), TOMS[i % 5] if k % 2 else KICK, 96 + i * 4)
 ramp(C6, 11, t(0), t(7), 60, 127)
 ramp(C11, 11, t(1), t(7), 50, 127)
+for k, r in enumerate(ROOTS9d):                                          # ch15 timpani
+    tn = KEm(r - 7) if KEm(r - 7) >= 40 else KEm(r)
+    tn = tn if tn <= 55 else tn - 12
+    note(C15, t(k), tn, 2, 108)
+    note(C15, t(k, 2), tn + 7 if tn + 7 <= 55 else tn - 5, 1, 94)
+for i in range(16):
+    note(C15, t(7, 2) + i * TPB // 8, 40, 0.125, 64 + i * 4, gate=0.7, jitter=1)
 advance(8)
 section(184, key=KEm, extra={8}, name="charge")
 for c_ in (C3, C8):
@@ -1344,6 +1439,12 @@ for k, r in enumerate(CHARGE):
         mel(C2, k, KEm, [(i * 0.5, r + 5 + i, 0.5) for i in range(8)], vel=102)
     if k == 11:
         fill(k, 2, "down", 116)
+for k, r in enumerate(CHARGE):                                           # ch15 timpani
+    tn = KEm(r - 7) if KEm(r - 7) >= 40 else KEm(r)
+    note(C15, t(k), tn if tn <= 55 else tn - 12, 1, 104)
+    note(C15, t(k, 2), tn if tn <= 55 else tn - 12, 1, 92)
+for i in range(16):
+    note(C15, t(11, 2) + i * TPB // 8, 40, 0.125, 70 + i * 3, gate=0.7, jitter=1)
 advance(12)
 section(72, key=KEm, extra={8}, name="final")
 end = t(0)
@@ -1359,7 +1460,10 @@ bend_curve(C1, t(0, 2), t(2), 0, -8192, 32)
 drum(end, CRASH, 124)
 drum(end, CRASH2, 118)
 drum(end, KICK, 124)
-for c_ in (C1, C2, C3, C8, C5, C6, C11, C7):
+note(C15, end, 40, 1, 124, jitter=0)                                     # ch15 timpani: the last hit, a fading roll
+for i in range(40):
+    note(C15, t(0, 1) + i * TPB // 8, 40, 0.125, max(30, 104 - i * 2), gate=0.7, jitter=1)
+for c_ in (C1, C2, C3, C8, C5, C6, C11, C7, C15):
     ramp(c_, 7, t(1, 2), t(3), 110, 0)
 end_tick = t(3) + TPB * 2
 
