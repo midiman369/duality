@@ -93,9 +93,9 @@ units. Every part is written in scale degrees of its section's key, and the buil
 outside the section's allowed pitch classes, on a silence over 1.5 s outside the one intended rest, or
 on a program change under a held note. Offline with seeds 0436, 1A2B, 7A18 (and 0436 in game mode): no
 type change under a sounding player, nothing hanging, about 99.8% of what Duality sends inside the
-file's local key (the rest are chords held longer than the 2 s check window). Seeds `2368`, `61A1` and
-`D7C9` (0.19.044) put the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop and
-the prog organ on Rotary Multi (17 of 160 scanned gave the solo Multi 3).
+file's local key (the rest are chords held longer than the 2 s check window). Seeds `FC6C`, `36D9`, `7386` (0.19.045) put the prog
+organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop;
+`946F` does the same with Rotary (21 of 240 scanned gave both).
 
 ## Tests
 
