@@ -1131,14 +1131,14 @@ section(96, key=KEm, name="dio")
 prog(C3, t(0, 1), 30, vol=102, pan=0, rev=30)                           # Distortion L
 prog(C8, t(0, 1), 30, vol=102, pan=127, rev=30)                         # Distortion R
 prog(C2, t(0, 1), 30, vol=96, pan=72, rev=45)                           # Twin lead
-prog(C1, t(0, 1), 30, vol=104, pan=62, rev=45)                          # Lead guitar
+prog(C1, t(3, 2), 30, vol=104, pan=62, rev=45)                          # Lead guitar (late: keeps its own unit)
 prog(C5, t(0) - 20, 34, vol=108, pan=64, rev=15)                        # Picked Bass
 prog(C11, t(0, 1), 52, vol=90, pan=58, rev=90, expr=50)                 # Choir Aahs
 prog(C6, t(2) - 30, 19, vol=110, pan=64, rev=90, expr=40)               # Church Organ (for the ending)
 prog(C12, t(2) - 30, 29, vol=86, pan=40, rev=45)                        # Overdrive: arpeggios
 prog(C14, t(0, 1), 119, vol=100, pan=64, rev=70)                        # Reverse Cymbal (a swell into bar 2)
 note(C14, t(1), 60, 3.8, 100, jitter=0)
-bend_range(C1, t(0, 1) + 10, 12)
+bend_range(C1, t(3, 2) + 10, 12)
 bend_range(C2, t(0, 1) + 10, 2)
 ramp(C4, 7, t(0), t(2), 100, 0)
 chord(C4, t(0), KEm.tri(0), 2 * BPB, 80)
