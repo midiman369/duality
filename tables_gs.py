@@ -716,7 +716,7 @@ ANIMA_EFX_DIRT_LEVEL = {
 # too quiet at its default Level 88.
 ANIMA_EFX_TYPE_SET = {
     (0x04, 0x01): ((0x07, 0x01),),   # GTR Multi 2: OD Sel = Dist (default Odrv)
-    (0x04, 0x02): ((0x16, 120),),    # GTR Multi 3: Level 120 (default 88)
+    (0x04, 0x02): ((0x16, 127),),    # GTR Multi 3: Level 127 (default 88; 120 still sat low)
 }
 # OD1/OD2 guitar split (Effect List p.222): both sides Distortion; OD1 Level 96 -> 80
 # (OD1 as Overdrive was far louder than the Distortion side, OD2 Level 84).
