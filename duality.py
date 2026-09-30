@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.045"
+VERSION = "0.19.046"
 
 
 """
@@ -546,6 +546,8 @@ ANIMA_ORGAN_VOL_LO = 75         # at this CC7 (and below): ×1.4
 ANIMA_ORGAN_VOL_GAIN_LO = 1.4
 ANIMA_ORGAN_VOL_HI = 127        # ×1.0 — no lift at full
 ANIMA_ORGAN_VOL_GAIN_HI = 1.0
+# GTR Multi 3 sits under the other dirt types in a mix even at Level 127: lift its players' CC7.
+ANIMA_WAH_GTR_VOL_GAIN = 1.2
 ANIMA_RAMP_MOD_UP = 55          # CC1 units / second (joystick-like)
 ANIMA_RAMP_MOD_DOWN = 70
 ANIMA_RAMP_EXPR_UP = 80         # CC11 units / second
@@ -5398,6 +5400,38 @@ class Duality:
             )
         return min(127, int(round(raw * gain)))
 
+    def _anima_wah_gtr_ch(self, ch: int) -> bool:
+        """True while this channel plays through Anima's own GTR Multi 3."""
+        if not self.anima:
+            return False
+        for slot in self._anima_slots:
+            if ch in (slot.get("chs") or []) and slot.get("fam") != "file_park" \
+                    and tuple(slot.get("typ") or ())[:2] == (0x04, 0x02):
+                return True
+        return False
+
+    def _anima_wah_gtr_vol_gain(self, raw: int) -> int:
+        return min(127, int(round(max(0, min(127, int(raw))) * ANIMA_WAH_GTR_VOL_GAIN)))
+
+    def _anima_wah_gtr_vol_lift(self, port: int, typ: tuple, chs: list) -> None:
+        """GTR Multi 3 is quieter than the other dirt inserts: lift its players' CC7."""
+        if tuple(typ or ())[:2] != (0x04, 0x02):
+            return
+        targets = self._anima_gs_ports() or [port]
+        for ch in chs or []:
+            cur = self._file_vol[ch]
+            if cur is None:
+                cur = 100
+            new = self._anima_wah_gtr_vol_gain(cur)
+            if new <= cur:
+                continue
+            msg = mido.Message("control_change", channel=ch, control=7, value=new)
+            for i in targets:
+                self._send_routed(i, msg)
+            self.vol[ch] = new
+            self.vol_time[ch] = time.monotonic()
+            self._anima_feedback("efx", f"ch{ch + 1} wah guitar CC7 {cur}→{new}", status=True)
+
     def _anima_organ_rotary_ch(self, ch: int) -> bool:
         if not self.anima:
             return False
@@ -6666,6 +6700,7 @@ class Duality:
             self._anima_organ_vol_lift(port, chs, label)
             self._anima_bass_harm_drive(port, typ, chs)
             self._anima_lead_dirt_drive(port, typ, chs)
+            self._anima_wah_gtr_vol_lift(port, typ, chs)
             self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} → GS {label}", status=True)
         elif old.get("fam") != fam:
             self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} keeps GS {label}", status=True)
@@ -10087,6 +10122,10 @@ class Duality:
                             f"ch{ch + 1} organ CC7 {self._file_vol[ch]}→{lifted} (file)",
                             status=False,
                         )
+                elif self._anima_wah_gtr_ch(ch):
+                    lifted = self._anima_wah_gtr_vol_gain(msg.value)
+                    if lifted != msg.value:
+                        msg = mido.Message("control_change", channel=ch, control=7, value=lifted)
                 self.vol[ch] = msg.value
                 self.vol_time[ch] = now
             elif msg.control == 10:    # Pan

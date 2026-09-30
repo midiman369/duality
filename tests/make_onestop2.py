@@ -234,7 +234,7 @@ section(88, key=KD, name="medieval")
 prog(DR, 0, 48, vol=96, rev=60)                                        # Orchestra kit
 prog(C1, 0, 74, vol=100, pan=54, rev=64)                              # Recorder
 prog(C2, 0, 75, vol=94, pan=78, rev=64)                               # Pan Flute
-prog(C3, 0, 24, vol=118, pan=54, rev=50)                              # Nylon (lute)
+prog(C3, 0, 24, vol=125, pan=54, rev=50)                              # Nylon (lute)
 prog(C4, 0, 15, vol=90, pan=90, rev=55)                               # Dulcimer
 prog(C5, 0, 42, vol=96, pan=52, rev=55)                               # Cello
 prog(C6, 0, 19, vol=80, pan=64, rev=80)                               # Church Organ (drone)
@@ -748,7 +748,7 @@ for k in range(12):
 fill(11, 3, "snare", 90)
 advance(12)
 section(168, key=Key(57, "major"), extra=BLUE, name="rocknroll")
-prog(C1, t(0) - 20, 66, vol=100, pan=58, rev=40)                        # Tenor Sax
+prog(C1, t(0) - 20, 66, vol=120, pan=58, rev=40)                        # Tenor Sax
 prog(C3, t(0) - 20, 27, vol=92, pan=36, rev=35)                         # Clean Gt. (rhythm)
 prog(C2, t(0) - 20, 29, vol=100, pan=74, rev=40)                        # Overdrive Gt. (intro lick, lead)
 prog(C12, t(0) - 20, 67, vol=88, pan=28, rev=30)                        # Baritone Sax

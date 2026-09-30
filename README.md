@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.045** (`python duality.py --version`).
+Current development line: **v0.19.046** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -318,6 +318,7 @@ Family is tracked so a later PC stays in brass / organ / strings / …. A *real*
 - **Guitar insert levels, harpsichord** (0.19.043, by ear on ONESTOP2): GTR Multi 2's drive stage is set to Distortion (its Overdrive was far too loud); GTR Multi 3 gets Level 120 (default 88 was too quiet) and a wah Peak of 80; the OD1/OD2 guitar split runs both sides as Distortion with OD1's Level at 80 (OD1 as Overdrive at 96 was far louder than the other side). The Harpsichord takes the acoustic piano's inserts (Stereo-EQ, Enhancer, Space D, 3D Chorus, Reverb, Gate Reverb) instead of the clavinet's, so no more auto wah on a baroque harpsichord, and a Jazz Gt. never gets a wah insert (`ANIMA_EFX_NO_WAH_PROGS`; a swing comping guitar drew Auto Wah; the Clean Gt. keeps its funk wah). Fixed settings per type live in `tables_gs.ANIMA_EFX_TYPE_SET`.
 - **All tone picks applied** (0.19.044): the Tone Palettes picks for every program (605 tones on 101 programs, 57 switched off) and 55 more trait lines from the notes: built-in octaves / fourths / fifths / sevenths / chord tones (interval), tremolo, vibrato, panning or chorus in the sample (lfo), a built-in echo (echo), one-shots (short), slow attacks (slow) and low-register sections (low).
 - **Rotary organ palette** (0.19.045): OD/Rotary is out of the rotary organ's list (Rotary, Tremolo Chorus, Rotary Multi remain), so a drawbar or rock organ never gets a distortion stage.
+- **Wah guitar level** (0.19.046): GTR Multi 3 still sat under the other distorted guitars, so its Level is now 127 and a part playing through it has its CC7 lifted x1.2 (capped at 127), like the organ lift on rotary types: once when the type is placed and on every CC7 the file sends while the part stays there.
 
 ![Anima insert shaping](docs/images/anima-efx-shaping.svg)
 
