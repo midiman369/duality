@@ -713,8 +713,9 @@ ANIMA_EFX_DIRT_LEVEL = {
 
 # Fixed settings Anima writes with its own type (address, value), Effect List p.220-222,
 # by ear on ONESTOP2 (SC-VA): GTR Multi 2's Overdrive stage was far too loud, GTR Multi 3
-# too quiet at its default Level 88.
+# too quiet at its default Level 88, a lone Overdrive guitar too loud at 96.
 ANIMA_EFX_TYPE_SET = {
+    (0x01, 0x10): ((0x16, 80),),     # Overdrive: Level 80 (default 96 stood out, like OD1 did)
     (0x04, 0x01): ((0x07, 0x01),),   # GTR Multi 2: OD Sel = Dist (default Odrv)
     (0x04, 0x02): ((0x16, 127),),    # GTR Multi 3: Level 127 (default 88; 120 still sat low)
 }

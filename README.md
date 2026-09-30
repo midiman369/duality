@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.046** (`python duality.py --version`).
+Current development line: **v0.19.047** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -319,6 +319,7 @@ Family is tracked so a later PC stays in brass / organ / strings / …. A *real*
 - **All tone picks applied** (0.19.044): the Tone Palettes picks for every program (605 tones on 101 programs, 57 switched off) and 55 more trait lines from the notes: built-in octaves / fourths / fifths / sevenths / chord tones (interval), tremolo, vibrato, panning or chorus in the sample (lfo), a built-in echo (echo), one-shots (short), slow attacks (slow) and low-register sections (low).
 - **Rotary organ palette** (0.19.045): OD/Rotary is out of the rotary organ's list (Rotary, Tremolo Chorus, Rotary Multi remain), so a drawbar or rock organ never gets a distortion stage.
 - **Wah guitar level** (0.19.046): GTR Multi 3 still sat under the other distorted guitars, so its Level is now 127 and a part playing through it has its CC7 lifted x1.2 (capped at 127), like the organ lift on rotary types: once when the type is placed and on every CC7 the file sends while the part stays there.
+- **Overdrive level** (0.19.047): Anima's Overdrive insert is written with Level 80 (default 96), the same cut as OD1 in the guitar split; a lone overdriven guitar no longer jumps out of the mix.
 
 ![Anima insert shaping](docs/images/anima-efx-shaping.svg)
 
