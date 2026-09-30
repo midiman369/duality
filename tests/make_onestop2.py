@@ -559,6 +559,11 @@ for k, nm in enumerate(PROG_R):
         note(C5, t(k, 2), croot(nm, 29) + (7 if k % 2 else 0), 2, 90, gate=0.85)
         for bt in range(4):
             chord(C3, t(k, bt), ctones(nm, 55, 67)[:4], 0.5, 84 if bt % 2 else 70, roll=6, gate=0.55)
+            if dixie:                                                    # chug-a-chug: upstrokes between the beats
+                bchord = ctones(nm, 55, 67)[:4][::-1]
+                chord(C3, t(k, sw(bt + 0.5)), bchord, 0.25, 62, roll=5, gate=0.5)
+                if bt % 2 == 1:                                          # a quick "chug-a" down-up before 3 and 1
+                    chord(C3, t(k, bt + 5 / 6), bchord[::-1], 1 / 6, 56, roll=4, gate=0.6)
         drum(b, KICK, 70, jitter=2)
         drum(t(k, 2), KICK, 64, jitter=2)
         for bt in (1, 3):
