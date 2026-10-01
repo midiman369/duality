@@ -72,6 +72,7 @@ The file's own insert always wins its home unit.
   insert/part that is before changing anything); (2) switch the wah itself (GTR Multi 3 Wah Sw `40 03 06`)
   off for chug-a-chug riffing and on for longer chord riffs, lead lines and solos. Test song:
   `tests/midi/dirty-women.mid` (Black Sabbath - Dirty Women; see tests/README.md).
+  Per the user, once the insert is set the Wah Sw toggles On/Off with no hitching (no need to keep it off note onsets).
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).
