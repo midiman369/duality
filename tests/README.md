@@ -50,7 +50,6 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `lotr-8850.mid` | `LotR_8850.mid` (Lord of the Rings medley, 16 orchestral parts, 3 families) | sent on its own | 115132 | `9572b49f62912118` |
 | `phobos-8850.mid` | `18_-_phobos_anomaly_8850.mid` (bulk dump sets GTR Multi 3, never touched again) | sent on its own | 65567 | `ac68f826d380875c` |
 | `rose-gun-sight.mid` | `rose_in_the_gun_sight.mid` (performs its own wah: live Wah Man writes from 6:43) | sent on its own | 205850 | `c5d45c95b713db4b` |
-| (stems for `make_metalgods.py`) | `A_Tribute_to_the_Metal_Gods__MIDI.zip` (the user's own song: Suno MIDI export, nine stems; keep it in `tests/midi/`, never commit it) | sent on its own | 35320 | `3e26dcbcc7cc9201` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
@@ -98,19 +97,25 @@ file's local key (the rest are chords held longer than the 2 s check window). Se
 organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop;
 `946F` does the same with Rotary (21 of 240 scanned gave both).
 
-`python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid`, "A Tribute to the Metal Gods": the
-user's own NWOBHM song (a Suno MIDI export) arranged for Duality from its stems
-(`tests/midi/A_Tribute_to_the_Metal_Gods__MIDI.zip`, kept local; the script prints SKIP without it).
-Suno's drifting tempo becomes a steady 158.5 BPM (the ritard and the 121 BPM outro stay), each stem is
-moved onto the drums' 16th grid and snapped, and the parts are rebuilt: one lead guitar plays the
-vocal melody, Suno's licks in its gaps and every solo (ch1, the GTR Multi 3 showcase); a hard-panned
-rhythm duo in clean power chords (ch3 / ch8, ch8 harmonises the melody in the twin-guitar verse);
-bass; drums on the SC-88Pro map's Standard 1 kit (the one non-GM touch). Added: rock organ under the
-choruses (Suno's synth riff, then held chords for the rotary), choir on the intro hook, the gothic
-verse, the second chorus and the big finish, timpani and crashes on section changes, an 8-bar
-continuation of the virtuoso solo, a 4-bar drum solo before the outro and an 8-bar final solo on the
-intro hook. Format 1, GS reset, no file EFX, channel 16 left for foley; the build fails on an added
-note out of key, a program change under a held note or a silence over 1.5 s. Offline on six GS units the setup burst places every family once (lead, both rhythm guitars, organ, bass, choir + timpani) and nothing is retyped after; no type change under a sounding player, nothing hanging. Seeds `0197`, `00A2` and `FC6C` give the lead GTR Multi 3 and the organ a rotary type (Rotary Multi, Rotary Multi, Rotary).
+`python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
+(10:03): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
+muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm
+duo (ch3 / ch8, ch8 also plays the twin-guitar harmonies), bass and the SC-88Pro map's Standard 1 kit.
+The verses that name the bands are written in their style with original riffs and melodies (no quotes):
+a Sabbath storm and tritone crawl, a Maiden gallop with twin leads and a becalmed sea, an Iron Man stomp,
+War Pigs hits, Heaven and Hell's bass groove, a drop-D doom crawl taking flight, a Priest pedal riff,
+Rainbow / Dio (saw synth, an Eastern march in phrygian dominant, clean arpeggios, a heavy riff with the
+rock organ), Pantera stop-start chugs with pinch squeals, a Slayer tremolo thrash with a whammy solo,
+Motorhead with bass chords and a shuffle, a King Diamond interlude (church organ, harpsichord,
+harmonic-minor twin leads) and a Black Horsemen closer (nylon arpeggios, then a slow epic build).
+Choir, timpani, tubular bells and the SC rain / thunder / wind SFX (ch13-14) colour it. GM capitals,
+GS reset, no file EFX, channel 16 left for foley. The build fails on a note outside its section's key
+(plus the section's extras: tritones, F#5 power chords), a program change under a held note, or a
+silence over 1.5 s. The rock organ's program change comes just before its first note, so it takes a
+unit when it is heard. Offline on six GS units: no type change under a sounding player, nothing hanging,
+hitches only on Anima's foley. Seeds `0197` (Rotary Multi), `00A2`, `6030`, `68F2` and `2CEF` (Rotary)
+give the lead GTR Multi 3 on its own unit all song and the organ a rotary type from the Dio verse
+through chorus 2 and the big finish (5 of 40 scanned).
 
 ## Tests
 
