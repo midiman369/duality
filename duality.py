@@ -42,7 +42,9 @@ Anima (opt-in)
     write per unit per 1.2 s; notes skip a unit for 150 ms after its type /
     Part On changes. Notes are never delayed. Guitars pair on OD1/OD2 by pan.
   • GS EFX palettes: all 64 SC-8850 / SC-88Pro insertion types (OM list
-    p.216), picked per family with weights (favoured ×2, less often ×½).
+    p.216), picked per family with weights set on the EFX Palettes page
+    (steps: ×2, ×3 … favoured, ×1/2, ×1/3 … less often; Jazz Gt. never
+    gets a wah, Harpsichord takes the piano's list).
     After the pick: pan-capable types follow the file's CC10; delay times
     follow the beat (MIDI clock, else note onsets) with feedback ≤ 50 %;
     pitch shifters get a doubler / octave / fifth; Gate Reverb gets a seeded type
@@ -52,8 +54,18 @@ Anima (opt-in)
     each unit on its own: the wah follows the player (picks quack, held
     notes cry open, bends open it, fast runs stay narrow, silence = heel)
     over a low Manual base (20; a held screaming high note lifts it to 48);
-    lead lines get GTR Multi 3 Peak 127, rhythm parts (chords, low notes)
-    Peak 48 and 60% of the pedal; rotary flips speed on a held chord.
+    lead lines get GTR Multi 3 Peak 80, rhythm parts (chords, low notes)
+    Peak 48 and 60% of the pedal; rotary flips speed on a held chord. A
+    file's own set-and-left wah is played the same way until the file
+    writes EFX again.
+  • Fixed insert settings (tables_gs ANIMA_EFX_TYPE_SET, by ear): Overdrive
+    Level 80, GTR Multi 2 drive = Distortion, GTR Multi 3 Level 127 with its
+    players' CC7 ×1.2; OD1/OD2 both Distortion, OD1 Level 80. Organs on
+    rotary types get a CC7 lift. A tone's EFX level (Tone Palettes) moves
+    the insert's wet/dry Balance; the driest part on a unit wins.
+  • Hero split: a featured line on a shared unit may take a spare unit with
+    another type of its family (only when every family is placed and no
+    part makes harmony); it moves in a breath and yields to any family.
   • Foley: shared ch16 8850 SFX (PC 121/122 variations)
   • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
     dist-guitar unison on a spare GS unit (inherits EFX)
@@ -83,7 +95,13 @@ Anima (opt-in)
     the loudest part over it (≤×1.4); competing notes in its register play at
     85% (75% within a tone of it); harmony keeps out of its way. Loudness is
     velocity × CC7 × CC11, so a quiet-channel horn does not count as louder.
-  • Seeded 8850 / CM-64 tone colors on capital 0/0 only — file bank wins
+  • Seeded tone colors on capital 0/0 only — file bank wins: every 8850-map
+    variation, older-map (55/88/88Pro) and CM-64 tones that are not copies,
+    weighted / switched off on the Tone Palettes page (tables_8850
+    ANIMA_TONE_PREFS). Tone traits from its notes keep LFO / rotary / delay /
+    pitch-shift inserts and harmony off tones that already have them, and send
+    one-shot, slow-attack or low-register tones back to the capital at a rest
+    when the part does not suit them.
   • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
   • Single output allowed
 

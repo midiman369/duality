@@ -1,7 +1,9 @@
 """Roland GS / SC-8850 lookup tables for Duality.
 
-Recognition names, insertion types, and Anima GS EFX palettes.
-Tunables (idle/hold seconds, CC16 LFO rate) stay in duality.py.
+Recognition names, insertion types, Anima GS EFX palettes (from the EFX Palettes page),
+insert shaping (pan, delay, pitch, gate, Balance, dirt level), the fixed settings Anima
+writes with a type (ANIMA_EFX_TYPE_SET) and the wah / rotary control tables.
+Tunables (idle/hold seconds, CC16 LFO rate, CC7 lifts) stay in duality.py.
 """
 from __future__ import annotations
 
@@ -127,7 +129,9 @@ GS_EFX_TYPES = {(0x00, 0x00): "Thru"}
 GS_EFX_TYPES.update({(m, l): name for _n, name, m, l in GS_EFX_LIST})
 
 # Anima GS palettes, chosen per family with the EFX Palettes picker (2026-09).
-# Row = (MSB, LSB, name, weight). Weight 2 = normal, 4 = favoured, 1 = less often.
+# Row = (MSB, LSB, name, weight). Weight = 2 x the EFX Palettes page's multiplier: 2 normal,
+# 4 / 6 / 8 ... favoured x2 / x3 / x4, 1 / 2/3 / 1/2 ... less often x1/2 / x1/3 / x1/4
+# (tools/picker/apply_efx_picks.py writes these rows from the page's picks).
 ANIMA_EFX_GS = {
     "guitar_dist": [
         (0x01, 0x10, "Overdrive", 4),  # #5

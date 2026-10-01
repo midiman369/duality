@@ -1,4 +1,7 @@
-"""Render README images from a real offline ONESTOP replay (no MIDI hardware)."""
+"""Render README panel images from an offline ONESTOP2 replay (no MIDI hardware).
+
+    python tests/render_status.py <seconds> <out.svg> [<seconds> <out.svg> ...]
+"""
 import sys, time as _time
 import common  # repo on sys.path, MIDI paths
 import mido
@@ -27,17 +30,12 @@ D.console = Console(width=W, record=True, force_terminal=True, color_system="tru
 names = ["Roland Sound Canvas VA", "SCVA2", "SCVA3", "SCVA4", "Yamaha S-YXG100", "MUNT"]
 fmts = [frozenset({"gm2", "gs8850"})] * 4 + [frozenset({"xg"}), frozenset({"mt32"})]
 d = D.Duality("duality", names, anima=True, show_status=False, out_formats=fmts,
-              anima_seed=0x6BA1, poly_limits=[32, 32, 32, 32, 64, 32],
+              anima_seed=0xFC6C, poly_limits=[32, 32, 32, 32, 64, 32],
               crucible=True, crucible_gm_wide=True)
 # As played: R (GS) then L (lock) before starting the file.
 d._force_format("GS", "hotkey R")
 d._toggle_format_lock()
-IN = common.midi("onestop-in-222922.mid")
-mf = mido.MidiFile(IN)
-ev = []; t = 0.0
-for m in mido.merge_tracks(mf.tracks):
-    t += mido.tick2second(m.time, mf.ticks_per_beat, 500000) if m.time else 0
-    if not m.is_meta: ev.append((t, m))
+ev = common.onestop2_events()
 shots = {float(sys.argv[i]): sys.argv[i + 1] for i in range(1, len(sys.argv), 2)}
 i = 0; tt = 0.0
 while shots and tt < ev[-1][0]:
