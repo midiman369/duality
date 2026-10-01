@@ -1,38 +1,42 @@
-"""Write "A Tribute to the Metal Gods", an original ~10 minute heavy metal epic for Duality + Anima.
+"""Write "A Tribute to the Metal Gods", an original ~12 minute heavy metal epic for Duality + Anima.
 
     python tests/make_metalgods.py [out.mid]      (default tests/midi/metal_gods.mid)
 
 The user's own song (lyric sheet: NWOBHM, iconic riffs, a stereo-wide guitar duo), composed here
 from scratch (an earlier Suno MIDI export was too muddy to use). The lead guitar sings the vocal
-melody and takes every solo. The tribute sections are written in the style of the bands the
-lyrics name: their tempo, tuning, groove, harmony (tritones, phrygian, harmonic minor) and
-arrangement tricks, with original riffs and melodies (no quotes).
+melody and takes every solo. The tribute sections take each reference's key, tempo, tuning, groove,
+signature intro or sound (bells, rain, a siren, drum intros, synth swells, a dive bomb) and harmony
+(tritones, phrygian, harmonic minor), with original riffs and melodies (no quotes).
 
-   Black Sabbath storm      E    60   rain, thunder, a tolling bell, a tritone doom crawl
+   Black Sabbath storm      G    60   rain, thunder, a tolling church bell, G against its tritone
    Vocal intro              E    80   "Feel the power!" hook, choir hits
+   Hallowed intro           E    76   the bell over slow clean arpeggios
    Virtuoso intro           E   160   twin-guitar harmony over a gallop, then runs
-   Verse 1 (Birmingham)     E    80   lumbering stomp
+   Verse 1 (Iron Man)       B    76   a slow dive, then a lumbering stomp
    Chorus                   E   160   anthem
-   Bridge                   E    92   sustained chord hits, ticking hi-hat
-   Hook                     E   172   full gallop, "Eddie's watching", then a becalmed sea
-   Bridge 2                 E   112   bass-driven mid-tempo
-   Riff break               E   140   syncopated heavy riff
+   Bridge (War Pigs)        E    92   an air-raid siren, sustained chord hits, a ticking hi-hat
+   Hook (Iron Maiden)       E   172   full gallop, a gang chant, then a becalmed sea (Rime)
+   Bridge 2                 E   112   bass-driven mid-tempo (Heaven and Hell)
+   Riff break               E   140   syncopated heavy riff (Sacred Heart)
    Soaring solo             E   112   long bends (the GTR Multi 3 showcase)
    Verse 2 (drop D)         D  70/170 doom crawl that takes flight into a gallop
-   Verse 3 (twin guitars)   A   150   open-string pedal riff, harmonised twin leads, "SKYYY"
-   Verse 4 (Dio / Rainbow)  E    96   synth intro, an Eastern march, clean arpeggios, heavy riff
-   Verse 5 (power groove)   D 100/200 stop-start chugs, pinch squeals, a thrash burst
-   Verse 6 (thrash)         E  84/216 ominous intro, tremolo riffs, "witness" scream, whammy chaos
-   Verse 7 (rock'n'roll)    E   160   relentless drive with bass chords, then a shuffle
+   Verse 3 (Judas Priest)   E/A 90-200 Night Crawler, Painkiller, Metal Meltdown, The Sentinel,
+                                      The Ripper, Turbo Lover, Jawbreaker, "SKYYY"
+   Verse 4 (Dio / Rainbow)  E    96   Tarot Woman synth, Stargazer drums + march, Children of the
+                                      Sea acoustic, Holy Diver synth swell + riff with the organ
+   Verse 5 (Pantera)        D 176/88/200 Domination's riff and half-time breakdown, Art of Shredding
+   Verse 6 (Slayer)         E  84-216 South of Heaven, Raining Blood's rain, thrash, whammy chaos
+   Verse 7 (Motorhead)      E 150/160 Ace of Spades bass intro and stops, Train Kept A-Rollin'
    Chorus, Big Finish x2    E 160/144 organ + choir crescendo
    Face-melting solo        E   176   sweeps, runs, tapping, bends
-   King Diamond interlude   E  80/150 church organ + harpsichord, harmonic-minor twin leads
+   King Diamond interlude   E  80-150 At the Graves, Sleepless Nights, Abigail, Cremation
    Drum solo + refrain      E   160   the tribute riffs as a medley
    Final solo               E   144   the hook, an octave up
-   Black Horsemen closer    E    72   acoustic intro, slow epic build, the last chord
+   Black Horsemen closer    E    72   nylon intro, the horsemen ride in, slow epic build, last chord
 
-Mostly GM: GM capitals, a GS reset at the start, the SC-88Pro map's Standard 1 kit on ch10 and
-the SC rain / thunder / wind SFX on ch13-14 (a plain GM synth plays Seashore there). No file EFX;
+Mostly GM: GM capitals, a GS reset at the start, the SC-88Pro map's Standard 1 kit on ch10, and
+SC variation tones for the effects: church bell (GM: tubular bells) on ch9, rain / thunder / wind
+(GM: Seashore), siren and train (GM: Helicopter), horse gallop (GM: Bird) on ch13-14. No file EFX;
 channel 16 is left for Anima's foley. Format 1. The build fails if a note leaves its section's
 key, if a program change lands under a held note, or on a silence over 1.5 s.
 """
@@ -61,7 +65,7 @@ TONE, SEMI = 1365, 683          # pitch-bend steps with a 12-semitone range (the
 
 MODES = {
     "minor": [0, 2, 3, 5, 7, 8, 10], "harm": [0, 2, 3, 5, 7, 8, 11], "mixo": [0, 2, 4, 5, 7, 9, 10],
-    "phrdom": [0, 1, 4, 5, 7, 8, 10],
+    "phrdom": [0, 1, 4, 5, 7, 8, 10], "locrian": [0, 1, 3, 5, 6, 8, 10],
 }
 
 
@@ -88,6 +92,9 @@ KEx = Key(64, "mixo")            # E mixolydian
 KEp = Key(64, "phrdom")          # E phrygian dominant
 KD = Key(62, "minor")            # D minor (drop-D sections)
 KA = Key(57, "minor")            # A minor, degree 0 = A3
+KG = Key(55, "minor")            # G minor, degree 0 = G3 (the storm)
+KGl = Key(55, "locrian")         # G locrian: G minor with the b2 (Ab) and the tritone (Db)
+KB = Key(59, "minor")            # B minor, degree 0 = B3 (the stomp)
 
 # guitar roots (standard tuning; drop D adds D2 = 38)
 E2, F2, Fs2, G2, Gs2, A2, As2, B2, Cn3, Cs3, D3, Ds3, E3 = range(40, 53)
@@ -329,33 +336,34 @@ prog(C3, 0, 30, vol=100, pan=0, rev=30)                        # Rhythm guitar L
 prog(C8, 0, 30, vol=100, pan=127, rev=30)                      # Rhythm guitar R
 prog(C5, 0, 34, vol=108, pan=64, rev=10)                       # Picked bass
 prog(DR, 0, 0, vol=110, rev=35, lsb=3)                         # Standard 1, SC-88Pro map
-prog(C9, 0, 14, vol=100, pan=40, rev=90)                       # Tubular bells
+prog(C9, 0, 14, vol=100, pan=40, rev=90, msb=8)                # Church bell (GM: Tubular bells)
 prog(C11, 0, 52, vol=96, pan=88, rev=90)                       # Choir Aahs
 prog(C15, 0, 47, vol=104, pan=64, rev=60)                      # Timpani
 prog(C13, 0, 122, vol=100, pan=64, rev=40, expr=0, msb=1)      # Rain (SC SFX; GM: Seashore)
 prog(C14, 0, 122, vol=110, pan=64, rev=60, msb=2)              # Thunder
 
 # ======================================================================================
-# 1  Black Sabbath storm - E, 60 BPM, 8 bars: rain, thunder, a bell, a tritone doom crawl
+# 1  Black Sabbath storm - G, 60 BPM, 8 bars: rain, thunder, a tolling church bell, then a
+#    crawl between G and its tritone (Db), the lead wailing down from the tritone
 # ======================================================================================
-section(60, KE, extra={5, 10}, name="storm (Black Sabbath)")    # F (b2) and A# (the tritone)
+section(60, KG, extra={1, 8}, name="storm (Black Sabbath)")     # Db (the tritone) and Ab (b2)
 note(C13, t(0), 60, 10 * 4, 100, jitter=0, gate=1.0)
 ramp(C13, 11, t(0), t(1), 0, 110)
 nocheck.append((C13, t(0), t(11)))
 for bar, beat in ((0, 1.5), (3, 2), (6, 0.5)):
     note(C14, t(bar, beat), 48, 3.5, 112, jitter=0)
 nocheck.append((C14, t(0), t(8)))
-for b in (1, 3, 5, 7):
-    note(C9, t(b), 64, 4, 104 - b * 2, jitter=0)
-DOOM = [[(0, E2, 2, "p"), (2, F2, 1, "p"), (3, As2, 2.5, "p")],
-        [(1.5, A2, .5, "p"), (2, G2, 1, "p"), (3, F2, .5, "p"), (3.5, E2, .5, "p")]]
+for i, bt in enumerate((1, 4, 7, 10, 14, 18, 22, 26)):           # the bell tolls, fading into the riff
+    note(C9, t(0, bt), 67, 3, 106 - i * 5, jitter=0)
+GDOOM = [[(0, G2, 2, "p"), (2, Cs3, 2, "p")],
+         [(0, Cn3, 1, "p"), (1, Cs3, 1, "p"), (2, G2, 1.5, "p"), (3.5, F2, .5, "p")]]
 for k in range(2, 8):
-    riff([C3, C8], k, DOOM[k % 2], 108, gate=0.97)
+    riff([C3, C8], k, GDOOM[k % 2], 110, gate=0.97)
     kit(k, kicks=(0,), snares=(2,), hats=(0, 1, 2, 3), hat=RIDE, crash=(k % 2 == 0), vel=104)
     if k % 2 == 0:
-        note(C15, t(k), E2, 2, 112)
+        note(C15, t(k), G2, 2, 112)
 fill(7, 2, "down", 96)
-sing(4, [[(2, 7, 2)], [(0, 6, 1), (1, 5, 1), (2, 4, 2)], [(0, 7, 3)], [(0, 9, .5), (.5, 8, .5), (1, 7, 3)]], KE, 100)
+sing(4, [[(2, 7, 2)], [(0, 11, 3), (3, 10, 1)], [(0, 9, 2), (2, 8, 2)], [(0, 7, 4)]], KGl, 100)
 advance(8)
 
 # ======================================================================================
@@ -374,9 +382,25 @@ for k, (r, tri) in enumerate(((E2, 0), (Cn3, 5), (D3, 6), (B2, 4))):
     drum(t(k), KICK, 116)
 sing(0, HOOK[:3], KE, 112)
 scream(3, 0, KE(4), 3.8)
-for i in range(16):
-    note(C15, t(3, 2) + i * TPB // 8, E2, 0.125, 70 + i * 3, jitter=0)
-fill(3, 2, "snare", 100)
+for i in range(16):                                                # a timpani rumble dying into the bell
+    note(C15, t(3, 2) + i * TPB // 8, E2, 0.125, 104 - i * 3, jitter=0)
+advance(4)
+
+# ======================================================================================
+# 3a Hallowed intro - E, 76 BPM, 4 bars: the bell tolls over slow clean arpeggios
+# ======================================================================================
+section(76, KE, name="intro (Hallowed Be Thy Name)")
+prog(C2, t(0) - 30, 27, vol=106, pan=36, rev=70, cho=40)           # Clean guitar
+for i in range(8):
+    note(C9, t(0, i * 2), 64, 2, 100 - i * 3, jitter=0)
+HALLOW = [[40, 47, 52, 55, 59, 55, 52, 47], [48, 52, 55, 59, 64, 59, 55, 52],
+          [50, 54, 57, 62, 66, 62, 57, 54], [47, 54, 59, 62, 66, 62, 59, 54]]
+for k, arp in enumerate(HALLOW):
+    for i, n in enumerate(arp):
+        note(C2, t(k, i * .5), n, ring(arp + sum(HALLOW[k + 1:k + 2], []), i, 1.5), 92 if i == 0 else 84, jitter=2)
+    note(C5, t(k), arp[0] - 12, 4, 84)
+sing(0, [[(0, 4, 2), (2, 6, 2)], [(0, 7, 3), (3, 6, 1)], [(0, 5, 2), (2, 6, 1), (3, 5, 1)], [(0, 4, 4)]], KE, 98, depth=140)
+drum(t(3, 3), CRASH, 90)
 advance(4)
 
 # ======================================================================================
@@ -409,22 +433,33 @@ fill(15, 2, "down", 104)
 advance(16)
 
 # ======================================================================================
-# 4  Verse 1 (Birmingham factories) - E, 80 BPM, 8 bars: a lumbering stomp
+# 4  Verse 1 (Birmingham factories) - B minor, 76 BPM: the lead's low chord dives an octave over a
+#    heavy pulse, then a lumbering stomp in power chords
 # ======================================================================================
-section(80, KE, extra={1, 5, 10}, name="verse 1 (Iron Man stomp)")   # F#5 and A#5 power chords
-STOMP = [[(0, E2, 1.5, "p"), (1.5, G2, .5, "p"), (2, A2, 1, "p"), (3, As2, .5, "p"), (3.5, A2, .5, "p")],
-         [(0, G2, 1, "p"), (1, Fs2, .5, "p"), (1.5, E2, 1.5, "p"), (3, D3, .5, "p"), (3.5, E2, .5, "p")]]
+section(76, KB, name="verse 1 (Iron Man)")
 VA = [[(0, 4, .5), (.5, 4, .5), (1, 4, .5), (1.5, 6, .5), (2, 7, 1), (3, 6, .5), (3.5, 4, .5)], [(0, 3, 1), (1, 4, 3)]]
 VB = [[(0, 7, .5), (.5, 7, .5), (1, 6, .5), (1.5, 4, .5), (2, 6, 1), (3, 7, 1)], [(0, 9, 1.5), (1.5, 7, .5), (2, 6, 2)]]
 VC = [[(0, 9, .5), (.5, 9, .5), (1, 8, .5), (1.5, 7, .5), (2, 6, 1), (3, 4, 1)], [(0, 3, 1), (1, 2, 1), (2, 4, 2)]]
 VD = [[(0, 4, .5), (.5, 6, .5), (1, 7, .5), (1.5, 9, .5), (2, 11, 1), (3, 9, 1)], [(0, 11, 4)]]
-for k in range(8):
-    riff([C3, C8], k, STOMP[k % 2], 108, gate=0.9)
+bend(C1, t(0) - 10, 8191)
+chord(C1, t(0), pw(B2), 7.8, 116, gate=0.98, jitter=0)
+bend_curve(C1, t(0, .5), t(2) - 80, 8191, 0, 48)
+for b in range(8):
+    drum(t(0, b), KICK, 96 + b * 3)
+    if b % 2:
+        drum(t(0, b), LTOM, 90 + b * 3)
+drum(t(0), CRASH, 104)
+note(C5, t(1), 35, 3.8, 100)
+IRON = [[(0, B2, 1.5, "p"), (1.5, D3, .5, "p"), (2, E3, 1.5, "p"), (3.5, D3, .5, "p")],
+        [(0, A2, .5, "p"), (.5, B2, .5, "p"), (1, A2, .5, "p"), (1.5, B2, .5, "p"), (2, Fs2, 1, "p"),
+         (3, G2, .5, "p"), (3.5, Fs2, .5, "p")]]
+for k in range(2, 10):
+    riff([C3, C8], k, IRON[k % 2], 110, gate=0.9)
     half_kit(k, 106, crash=(k % 2 == 0))
 for i, ph in enumerate((VA, VB, VC, VD)):
-    sing(i * 2, ph, KE, 110)
-fill(7, 2, "snare", 100)
-advance(8)
+    sing(2 + i * 2, ph, KB, 108)
+fill(9, 2, "snare", 100)
+advance(10)
 
 # ======================================================================================
 # 5  Chorus - E, 160 BPM, 16 bars: the anthem
@@ -460,9 +495,16 @@ def chorus(organ=False, choir_from=8):
 chorus()
 
 # ======================================================================================
-# 6  Bridge - E, 92 BPM, 8 bars: sustained chord hits with silence, a ticking hi-hat
+# 6  Bridge - E, 92 BPM, 10 bars: an air-raid siren over a ticking hi-hat, then sustained
+#    chord hits ringing into the silence
 # ======================================================================================
 section(92, KE, name="bridge (War Pigs)")
+prog(C13, t(0) - 30, 125, vol=100, pan=64, rev=70, expr=110, msb=5)   # Siren (SC SFX; GM: Helicopter)
+note(C13, t(0), 60, 9, 104, jitter=0, gate=1.0)
+nocheck.append((C13, t(0), t(3)))
+for i in range(16):
+    drum(t(0, i * .5), CHH, 56 if i % 2 else 68)
+advance(2)
 WAR = [[(0, E2, 3, "p")], [(0, G2, .5, "p"), (.5, A2, 2.5, "p")], [(0, E2, 3, "p")], [(0, Cn3, .5, "p"), (.5, D3, 2.5, "p")],
        [(0, E2, 3, "p")], [(0, G2, .5, "p"), (.5, A2, 2.5, "p")], [(0, Cn3, 2, "p"), (2, D3, 2, "p")], [(0, B2, 3.5, "p")]]
 BRA = [[(0, 9, 1), (1, 9, .5), (1.5, 11, .5), (2, 12, 2)], [(0, 11, 1), (1, 9, 1), (2, 7, 2)]]
@@ -478,7 +520,7 @@ for k, sp in enumerate(WAR):
     if k % 2 == 1:
         drum(t(k, 3), SNARE, 104)
 for i, ph in enumerate((BRA, BRB, BRA, BRD)):
-    sing(i * 2, ph, KE, 110)
+    sing(i * 2, ph, KE, 108)
 scream(7, 0, KE(14), 3.6)
 fill(7, 2, "down", 104)
 advance(8)
@@ -499,6 +541,8 @@ sing(0, HOOK, KE, 112)
 sing(4, HOOK2, KE, 112)
 sing(8, EDDIE, KE, 112, harmony=C8)
 sing(10, DIOH, KE, 114, harmony=C8)
+for i, spec in enumerate(HOOK2 + EDDIE + DIOH):                    # the gang chant, an octave down
+    mel(C11, 4 + i, KE, spec, 90, gate=0.9, oct_=-1)
 fill(11, 3, "snare", 96)
 advance(12)
 section(80, KE, name="becalmed (Rime)")
@@ -608,48 +652,140 @@ fill(7, 2, "down", 104)
 advance(8)
 
 # ======================================================================================
-# 12 Verse 3 (twin guitars) - A minor, 150 BPM: an open-string pedal riff and harmonised leads
+# 12 Verse 3 (Judas Priest suite): Night Crawler's storm, Painkiller's drum intro and riff, a
+#    Metal Meltdown dive bomb, The Sentinel's gallop and twin leads, The Ripper's scream and
+#    descending riff, Turbo Lover's guitar synths, Jawbreaker's drive and the "SKYYY" scream
 # ======================================================================================
-section(150, KA, name="verse 3 (twin guitars, Priest)")
-PEDAL = [[45, 60, 45, 62, 45, 64, 45, 62], [45, 60, 45, 62, 45, 67, 45, 64]]
+section(90, KE, name="verse 3 intro (Night Crawler)")
+prog(C13, t(0) - 30, 122, vol=110, pan=64, rev=60, expr=120, msb=2)  # Thunder
+note(C13, t(0, .5), 48, 3.5, 116, jitter=0)
+note(C13, t(2, 1), 48, 2.5, 104, jitter=0)
+nocheck.append((C13, t(0), t(3, 2)))
+ramp(C11, 11, t(0), t(2), 40, 120)
+chord(C11, t(0), [52, 55, 59, 64], 11.5, 96, gate=0.98)
+for k in (0, 2):
+    riff([C3, C8], k, [(0, E2, 3.5 if k == 0 else 3, "p")], 112, gate=0.98, bass=False)
+    drum(t(k), CRASH, 112)
+note(C5, t(0), 28, 11.5, 96, jitter=0, gate=0.98)
+for i in range(12):
+    drum(t(1, i / 3), LTOM if i % 3 == 0 else LTOM2, 80 + i * 3)
+fill(2, 3, "down", 104)
+advance(3)
+
+section(200, KE, name="verse 3 (Painkiller)")
+for i in range(32):                                                 # the drum intro: double kick, tom cascades
+    drum(t(0, i * .25), KICK, 104 - (0 if i % 4 == 0 else 8))
+    if i < 16:
+        drum(t(0, i * .25), TOMS[(i // 2) % 5], 100 + i)
+    elif i % 2 == 0:
+        drum(t(0, i * .25), SNARE if (i // 2) % 2 else MTOM, 108)
+drum(t(0), CRASH, 116)
+PK = [[E2, E2, E2, G2, E2, E2, A2, E2, E2, E2, E2, B2, E2, A2, G2, E2],
+      [E2, E2, E2, G2, E2, E2, A2, E2, E2, E2, D3, Cn3, B2, A2, G2, D3]]
+for k in range(2, 6):
+    riff([C3, C8], k, [(i * .25, n, .25, "n" if n == E2 else "5") for i, n in enumerate(PK[k % 2])], 110, gate=0.7)
+    dkick_kit(k, 108, crash=(k % 2 == 0))
+note(C1, t(3, 2), KE(11), 2, 120, jitter=0)                         # Halford's cry
+bend_curve(C1, t(3, 2.2), t(3, 2.6), 0, TONE, 5)
+vib(C1, t(3, 2.6), t(3, 3.8), TONE, 380)
+bend(C1, t(4) - 8, 0)
+note(C1, t(5), KE(7), 3.9, 118, jitter=0, gate=0.98)                # Metal Meltdown: a dive bomb
+vib(C1, t(5, .1), t(5, 1), 0, 300)
+bend_curve(C1, t(5, 1), t(5, 3.8), 0, -8192, 20)
+bend(C1, t(6) - 8, 0)
+advance(6)
+
+section(170, KA, name="verse 3 (The Sentinel)")
 TWIN12 = [[(0, 7, .5), (.5, 9, .5), (1, 11, 1), (2, 10, .5), (2.5, 9, .5), (3, 7, 1)],
           [(0, 9, 1), (1, 7, 1), (2, 6, 2)],
           [(0, 7, .5), (.5, 9, .5), (1, 11, .5), (1.5, 12, .5), (2, 14, 2)],
           [(0, 13, 1), (1, 11, 1), (2, 12, 2)]]
-ROOTS12 = [A2, A2, A2, A2] + [A2, A2, F2, G2] * 3 + [A2, F2, G2, E2]
-for k, r in enumerate(ROOTS12):
-    for i, n in enumerate(PEDAL[k % 2]):
-        note(C3, t(k, i * .5), n, .5, 104 if n == 45 else 112, jitter=2, gate=0.6 if n == 45 else 0.85)
-    note(C5, t(k), r - 12, 2, 108, jitter=2)
-    note(C5, t(k, 2), r - 12, 2, 100, jitter=2)
-    if k >= 4:
-        eighths([C8], k, r, 104, kind="5", bass=False)
-    kit(k, kicks=(0, 1.5, 2), snares=(1, 3), hats=[i * .5 for i in range(8)], hat=CHH, crash=(k % 4 == 0), vel=104)
+SENT = [A2, A2, F2, G2, A2, A2, F2, G2, A2, F2, G2, E2]
+for k, r in enumerate(SENT):
+    gallop([C3] if k < 4 else [C3, C8], k, r, vel=106)
+    gallop_kit(k, 104, crash=(k % 4 == 0))
 sing(0, TWIN12, KA, 112, harmony=C8)
-sing(4, VA, KA, 112, stretch=2, shift=7)
-sing(8, VB, KA, 112, stretch=2, shift=7)
-sing(12, VC, KA, 112, stretch=2, shift=7)
-sing(16, VD[:1], KA, 114, stretch=2, shift=7)
-scream(18, 0, KA(18), 7.6)
-fill(19, 2, "down", 106)
-advance(20)
+sing(4, VA, KA, 110, stretch=2, shift=7)
+sing(8, VB, KA, 110, stretch=2, shift=7)
+fill(11, 2, "down", 104)
+advance(12)
+
+section(128, KA, extra={8, 3, 6, 1}, name="verse 3 (The Ripper)")    # chromatic power chords
+RIP = [[(0, A2, 1, "p"), (1, Gs2, .5, "p"), (1.5, G2, .5, "p"), (2, Fs2, 1, "p"), (3, F2, .5, "p"), (3.5, E2, .5, "p")],
+       [(0, A2, 1.5, "p"), (1.5, Cn3, .5, "p"), (2, B2, 1, "p"), (3, E2, 1, "p")]]
+for k in range(4):
+    riff([C3, C8], k, RIP[k % 2], 112, gate=0.88)
+    rock_kit(k, 106, crash=(k % 2 == 0), hat=CHH)
+scream(0, 0, KA(14), 1.8)                                          # the opening scream
+sing(2, VC, KA, 110, shift=7)
+advance(4)
+
+section(104, KE, name="verse 3 (Turbo Lover)")
+prog(C12, t(0) - 30, 90, vol=100, pan=84, rev=70, cho=60, expr=40)  # Polysynth (guitar synth chords)
+prog(C14, t(0) - 30, 81, vol=96, pan=44, rev=60, cho=30)            # Saw synth (guitar synth lead)
+ramp(C12, 11, t(0), t(2), 40, 115)
+TURBO = [(E2, [52, 59, 64, 66]), (E2, [52, 59, 64, 66]), (E2, [52, 59, 64, 67]), (Cn3, [48, 55, 60, 64]),
+         (D3, [50, 57, 62, 66]), (B2, [47, 54, 59, 62])]
+for k, (r, ch_) in enumerate(TURBO):
+    chord(C12, t(k), ch_, 4, 92, gate=0.98)
+    for i in range(8):
+        note(C5, t(k, i * .5), r - 12, .5, 104 if i % 2 == 0 else 96, jitter=1, gate=0.7)
+    if k < 2:                                                     # the tom pattern under the swell
+        for b in range(4):
+            drum(t(k, b), KICK, 104)
+            drum(t(k, b + .5), LTOM2 if b % 2 else MTOM, 96)
+    else:
+        riff([C3, C8], k, [(0, r, 3.8, "p")], 108, gate=0.98, bass=False)
+        kit(k, kicks=(0, 2, 2.5), snares=(1, 3), hats=[i * .5 for i in range(8)], hat=CHH, crash=(k % 2 == 0), vel=106)
+sing(2, VD, KE, 108)
+mel(C14, 4, KE, [(0, 7, .5), (.5, 9, .5), (1, 11, 1), (2, 9, .5), (2.5, 7, .5), (3, 6, 1)], 100, gate=0.9)
+mel(C14, 5, KE, [(0, 7, 2), (2, 4, 2)], 100, gate=0.95)
+fill(5, 3, "snare", 100)
+advance(6)
+
+section(190, KE, name="verse 3 (Jawbreaker)")
+JAW = [[E2, E2, G2, E2, E2, A2, E2, E2, B2, E2, E2, D3, E2, Cn3, B2, A2],
+       [E2, E2, G2, E2, E2, A2, E2, E2, B2, E2, D3, E2, Cn3, D3, E3, D3]]
+for k in range(4):
+    riff([C3, C8], k, [(i * .25, n, .25, "n" if n == E2 else "5") for i, n in enumerate(JAW[k % 2])], 110, gate=0.7)
+    (dkick_kit if k < 2 else skank_kit)(k, 108, crash=(k % 2 == 0))
+riff([C3, C8], 4, [(0, E2, 7.8, "p")], 118, gate=0.99)               # "...reaching for the SKYYY!"
+drum(t(4), CRASH, 122)
+drum(t(4), KICK, 122)
+scream(4, 0, KE(14), 7.6)
+for i in range(24):
+    note(C15, t(5) + i * TPB // 6, E2, 1 / 6, 70 + i * 2, jitter=0)
+fill(5, 2, "down", 106)
+advance(6)
 
 # ======================================================================================
 # 13 Verse 4 (Dio, from Rainbow to his own) - E, 96 BPM: synth intro, an Eastern march,
 #    clean arpeggios, then a heavy mid-tempo riff with the organ
 # ======================================================================================
 section(96, KE, name="Tarot synth intro")
-prog(C14, t(0) - 30, 81, vol=96, pan=96, rev=70, expr=40)            # Saw synth
+prog(C14, t(0) - 30, 81, vol=100, pan=96, rev=70, expr=40)           # Saw synth
 ramp(C14, 11, t(0), t(2), 40, 120)
-chord(C6, t(0), [52, 59, 64, 67], 8, 84, gate=0.97)
+chord(C6, t(0), [52, 59, 64, 67], 16, 84, gate=0.97)
 for k in range(2):
     for i in range(16):
         note(C14, t(k, i * .25), [64, 71, 76, 79, 83, 79, 76, 71][i % 8] - (12 if k else 0), .25, 84, jitter=1, gate=0.7)
-sing(0, [[(0, 7, 4)], [(0, 9, 2), (2, 11, 2)]], KE, 100)
-drum(t(1, 2), CRASH, 96)
-advance(2)
+mel(C14, 2, KE, [(0, 7, .5), (.5, 9, .5), (1, 11, .5), (1.5, 12, .5), (2, 11, 1), (3, 9, .5), (3.5, 7, .5)], 96)
+mel(C14, 3, KE, [(0, 9, 2), (2, 11, 2)], 100, gate=0.97)
+vib(C14, t(3, .5), t(3, 1.9), 0, 700)
+vib(C14, t(3, 2.5), t(3, 3.9), 0, 900)
+for b in (0, 1, 2, 3):
+    drum(t(2, b), RIDE, 62)
+drum(t(3, 2), CRASH, 96)
+advance(4)
 section(96, KEp, name="Eastern march (Stargazer)")                 # E phrygian dominant
 prog(C7, t(0) - 30, 48, vol=100, pan=76, rev=80)                   # Strings
+for i in range(16):                                                # the drum intro: rolling toms
+    drum(t(0, i * .25), TOMS[2 + (i % 3)] if i % 4 else KICK, 98 + i)
+for i in range(16):
+    drum(t(1, i * .25), TOMS[min(4, i * 5 // 16)], 100 + i)
+    if i % 4 == 0:
+        drum(t(1, i * .25), KICK, 108)
+advance(2)
 MARCH = [52, 53, 56, 57, 56, 53, 52, 47]
 for k in range(4):
     chord(C7, t(k), [52, 56, 59, 64] if k % 2 == 0 else [53, 57, 60, 65], 4, 92)
@@ -667,13 +803,15 @@ sing(0, [[(0, 7, 1), (1, 8, .5), (1.5, 9, .5), (2, 10, 1), (3, 9, 1)], [(0, 8, 2
          [(0, 9, .5), (.5, 10, .5), (1, 11, 1), (2, 12, 1), (3, 11, 1)], [(0, 10, 1), (1, 9, 1), (2, 8, 1), (3, 7, 1)]], KEp, 112)
 advance(4)
 section(96, KE, name="clean arpeggios (Children of the Sea)")
-prog(C2, t(0) - 30, 27, vol=100, pan=30, rev=70, cho=40)          # Clean guitar
-for k, arp in enumerate(([40, 47, 52, 55, 59, 55, 52, 47], [42, 50, 54, 57, 62, 57, 54, 50])):
+prog(C2, t(0) - 30, 25, vol=116, pan=30, rev=70, cho=40)          # Steel-string acoustic
+ARPS4 = [[40, 47, 52, 55, 59, 55, 52, 47], [42, 50, 54, 57, 62, 57, 54, 50],
+         [48, 52, 55, 60, 64, 60, 55, 52], [47, 54, 59, 62, 66, 62, 59, 54]]
+for k, arp in enumerate(ARPS4):
     for i, n in enumerate(arp):
-        note(C2, t(k, i * .5), n, ring(arp, i, 1.2), 84, jitter=2)
+        note(C2, t(k, i * .5), n, ring(arp + sum(ARPS4[k + 1:k + 2], []), i, 1.2), 100 if i == 0 else 92, jitter=2)
     drum(t(k), RIDE, 60)
-sing(0, [[(0, 11, 4)], [(0, 9, 4)]], KE, 96, depth=140)
-advance(2)
+sing(0, [[(0, 11, 4)], [(0, 9, 4)], [(0, 7, 4)], [(0, 6, 4)]], KE, 96, depth=140)
+advance(4)
 section(96, KE, extra={1}, name="verse 4 (Holy Diver)")                # the F#5 power chord
 DIVER = [[(0, E2, 1.5, "p"), (1.5, E2, .5, "n"), (2, D3, 1, "p"), (3, Cn3, .5, "p"), (3.5, D3, .5, "p")],
          [(0, E2, 1, "p"), (1, G2, .5, "p"), (1.5, A2, 1, "p"), (2.5, G2, .5, "p"), (3, Fs2, .5, "p"), (3.5, E2, .5, "p")]]
@@ -681,6 +819,16 @@ ORG4 = [0, 0, 6, 0, 5, 6, 0, 0]
 DIO_A = [[(0, 7, 1), (1, 9, 1), (2, 11, 1.5), (3.5, 12, .5)], [(0, 11, 2), (2, 9, 2)]]
 DIO_B = [[(0, 12, 1), (1, 11, .5), (1.5, 9, .5), (2, 7, 1), (3, 9, 1)], [(0, 8, 4)]]
 DIO_D = [[(0, 9, .5), (.5, 11, .5), (1, 12, .5), (1.5, 14, .5), (2, 14, 2)], []]
+ramp(C12, 11, t(0), t(1, 2), 30, 110)                                # the synth swell intro
+chord(C12, t(0), [52, 59, 64, 71], 7.8, 90, gate=0.98)
+bend_range(C14, t(0), 12)
+note(C14, t(0, 1), 83, 6.5, 92, jitter=0, gate=0.98)
+bend_curve(C14, t(0, 2), t(1, 3), 0, -8192, 24)                      # an octave swoop down
+bend(C14, t(2) - 5, 0)
+bend_range(C14, t(2), 2)
+note(C5, t(1), 28, 3.8, 90)
+drum(t(1, 3), CRASH, 100)
+advance(2)
 prog(C4, t(0) - 30, 18, vol=100, pan=40, rev=60, expr=90)            # Rock organ (set late: it keeps its unit)
 for k in range(8):
     riff([C3, C8], k, DIVER[k % 2], 110, gate=0.85)
@@ -695,9 +843,21 @@ fill(7, 2, "down", 104)
 advance(8)
 
 # ======================================================================================
-# 14 Verse 5 (power groove) - D minor (drop D): stop-start chugs, pinch squeals; a thrash burst
+# 14 Verse 5 (power groove) - D minor (drop D): a fast chugging riff that slams into a slow
+#    half-time breakdown (stop-start chugs, pinch squeals), then a thrash burst
 # ======================================================================================
-section(100, KD, extra={3, 8}, name="verse 5 (Pantera groove)")
+section(176, KD, extra={3, 8}, name="verse 5 (Domination)")
+DOM = [[D2, D2, F2, D2, D2, G2, D2, D2, Gs2, G2, D2, D2, F2, D2, Eb2, D2],
+       [D2, D2, F2, D2, D2, G2, D2, D2, A2, Gs2, G2, F2, Eb2, D2, Eb2, F2]]
+for k in range(4):
+    riff([C3, C8], k, [(i * .25, n, .25, "n" if n == D2 else "5") for i, n in enumerate(DOM[k % 2])], 110, gate=0.7)
+    skank_kit(k, 106, crash=(k % 2 == 0))
+note(C1, t(3, 2.5), KD(18), 1.2, 118, jitter=0)                    # a pinch squeal into the breakdown
+bend_curve(C1, t(3, 2.6), t(3, 3), 0, TONE, 5)
+vib(C1, t(3, 3), t(3, 3.6), TONE, 420)
+bend(C1, t(3, 3.8), 0)
+advance(4)
+section(88, KD, extra={3, 8}, name="verse 5 (the breakdown)")
 GROOVE = [[(0, D2, .25, "5"), (.25, D2, .25, "5"), (.5, F2, .5, "5"), (1, D2, .25, "5"), (1.25, D2, .25, "5"), (1.5, Gs2, .5, "5"),
            (3, Eb2, .25, "5"), (3.25, D2, .25, "5"), (3.5, D2, .5, "5")],
           [(0, D2, .25, "5"), (.25, D2, .25, "5"), (.5, G2, .5, "5"), (1, D2, .25, "5"), (1.25, D2, .25, "5"), (1.5, F2, .5, "5"),
@@ -708,7 +868,7 @@ for k in range(8):
     riff([C3, C8], k, GROOVE[k % 2], 112, gate=0.7)
     for b, r, ln, kind in GROOVE[k % 2]:
         drum(t(k, b), KICK, 110)
-    kit(k, snares=(1, 3) if k % 2 == 0 else (1,), crash=False, vel=104)
+    kit(k, snares=(2,), crash=False, vel=106)                         # half time
     drum(t(k), CHINA, 104)
     if k % 2 == 1:                                                   # pinch squeal in the stop
         note(C1, t(k, 2.75), KD(18), 1, 118, jitter=0)
@@ -741,51 +901,89 @@ for k in range(4):
     drum(t(k), CRASH, 104)
 sing(0, [[(2, 4, 2)], [(0, 5, 3)], [(0, 4, 2), (2, 7, 2)], [(0, 6, 4)]], KE, 104)
 advance(4)
+section(84, KE, extra={5, 10, 3, 1}, name="verse 6 (South of Heaven)")
+SOH = [[(0, E2, 1.5, "p"), (1.5, F2, .5, "p"), (2, E2, 1, "p"), (3, G2, .5, "p"), (3.5, Fs2, .5, "p")],
+       [(0, E2, 1, "p"), (1, As2, 1, "p"), (2, A2, 1.5, "p"), (3.5, F2, .5, "p")]]
+for k in range(4):
+    riff([C3, C8], k, SOH[k % 2], 112, gate=0.92)
+    kit(k, kicks=(0, 1.5, 2.5), snares=(2,), hats=(0, 1, 2, 3), hat=RIDE, crash=(k % 2 == 0), vel=108)
+sing(0, VA, KE, 108)
+sing(2, VB, KE, 108)
+advance(4)
+section(108, KE, extra={5, 1}, name="verse 6 (Raining Blood)")                 # the chromatic climb
+prog(C13, t(0) - 30, 122, vol=104, pan=64, rev=50, expr=110, msb=1)  # Rain
+note(C13, t(0), 60, 8, 100, jitter=0, gate=1.0)
+nocheck.append((C13, t(0), t(2)))
+for i in range(32):
+    drum(t(0, i * .25), LTOM if (i // 2) % 2 == 0 else LTOM2, 84 + i)
+    if i % 4 == 0:
+        drum(t(0, i * .25), KICK, 96 + i)
+riff([C3, C8], 1, [(2, E2, .5, "p"), (2.5, F2, .5, "p"), (3, Fs2, .5, "p"), (3.5, G2, .5, "p")], 112, gate=0.8)
+drum(t(1, 3.5), CRASH, 110)
+advance(2)
 section(216, KE, extra={5, 10, 3}, name="verse 6 (thrash)")
 TREM = [[E2] * 8 + [F2] * 4 + [E2] * 4, [G2] * 4 + [Fs2] * 4 + [F2] * 4 + [E2] * 4]
-for k in range(13):
-    if k < 8:
+for k in range(11):
+    if k < 6:
         riff([C3, C8], k, [(i * .25, n, .25, "n") for i, n in enumerate(TREM[k % 2])], 106, gate=0.7)
         skank_kit(k, 106, crash=(k % 4 == 0))
-    elif k == 8:                                                   # "We are here to witness Slayer!"
+    elif k == 6:                                                   # "We are here to witness Slayer!"
         riff([C3, C8], k, [(0, E2, 4, "p")], 116, gate=0.97)
         drum(t(k), CRASH, 120)
         drum(t(k), KICK, 120)
     else:                                                          # whammy chaos over the tremolo
         riff([C3, C8], k, [(i * .25, n, .25, "n") for i, n in enumerate(TREM[k % 2])], 106, gate=0.7)
-        dkick_kit(k, 108, crash=(k == 9))
-for i, ph in enumerate((VA, VB, VC)):
-    sing(i * 2, ph, KE, 112)
-sing(6, [VD[0], []], KE, 114)
-scream(7, 0, KE(11), 1.9)
-note(C1, t(8), KE(14), 3.5, 126, jitter=0)
-bend_curve(C1, t(8, .2), t(8, 1), 0, TONE, 6)
-vib(C1, t(8, 1), t(8, 2.5), TONE, 500)
-bend_curve(C1, t(8, 2.5), t(8, 3.6), TONE, -8192, 10)
-bend(C1, t(9) - 10, 0)
+        dkick_kit(k, 108, crash=(k == 7))
+sing(0, VC, KE, 112)
+sing(2, [VD[0], []], KE, 114)
+scream(5, 0, KE(11), 1.9)
+note(C1, t(6), KE(14), 3.5, 126, jitter=0)
+bend_curve(C1, t(6, .2), t(6, 1), 0, TONE, 6)
+vib(C1, t(6, 1), t(6, 2.5), TONE, 500)
+bend_curve(C1, t(6, 2.5), t(6, 3.6), TONE, -8192, 10)
+bend(C1, t(7) - 10, 0)
 CHAOS = [64, 65, 67, 70, 71, 72, 74, 75, 76, 77, 79, 82, 83, 84, 86, 88]
-for k in range(9, 13):
+for k in range(7, 11):
     for i in range(14):
         note(C1, t(k, i * .25), CHAOS[rng.randrange(len(CHAOS))], .25, 114, jitter=1, gate=0.85)
     note(C1, t(k, 3.5), 88, .5, 120, jitter=0)
     bend_curve(C1, t(k, 3.55), t(k, 3.9), 0, -8192 if k % 2 else 4096, 6)
     bend(C1, t(k + 1) - 8, 0)
-advance(13)
+advance(11)
 
 # ======================================================================================
-# 16 Verse 7 (rock'n'roll) - E, 160 BPM: a relentless drive with bass chords, then a shuffle
+# 16 Verse 7 (rock'n'roll) - E, 150 BPM: the bass alone in chords, a relentless drive with stops,
+#    then a shuffle with a passing train
 # ======================================================================================
-section(160, KEx, extra={7}, name="verse 7 (Motorhead)")              # mixolydian + the blue third
+section(150, KEx, extra={7}, name="verse 7 (Ace of Spades)")          # mixolydian + the blue third
 DRIVE = [[E2] * 4 + [D3, D3, E2, E2], [E2] * 4 + [G2, G2, A2, A2]]
+for k in range(2):                                                  # the bass intro, alone
+    for i, r in enumerate(DRIVE[0]):
+        chord(C5, t(k, i * .5), [r - 12, r - 5], .5, 118 if i % 2 == 0 else 108, gate=0.8)
+    if k == 1:
+        for i in range(8):
+            drum(t(k, i * .5), RIDE, 70 + i * 4)
+advance(2)
 for k in range(8):
+    if k in (3, 7):                                                 # the stop: one hit, a held breath
+        riff([C3, C8], k, [(0, E2, .5, "p"), (3.5, E2, .5, "p")], 116, gate=0.8, bass=False)
+        for b in (0, 3.5):
+            chord(C5, t(k, b), [28, 35], .5, 116, gate=0.8)
+            drum(t(k, b), KICK, 116)
+        drum(t(k), CRASH, 118)
+        drum(t(k, 3.5), SNARE, 112)
+        continue
     eighths([C3, C8], k, DRIVE[k % 2], 110, bass=False)
     for i, r in enumerate(DRIVE[k % 2]):
         chord(C5, t(k, i * .5), [r - 12, r - 5], .5, 110, gate=0.8)     # bass chords
     kit(k, kicks=(0, 1, 2, 3), snares=(1, 3), hats=[i * .5 for i in range(8)], hat=RIDE, crash=(k % 2 == 0), vel=108)
 for i, ph in enumerate((VA, VB, VC, VD)):
-    sing(i * 2, ph, KEx, 112)
+    sing(i * 2, ph, KEx, 110)
 advance(8)
 section(160, KEx, extra={7}, name="shuffle (Train Kept A-Rollin')")
+prog(C13, t(0) - 30, 125, vol=96, pan=20, rev=50, expr=100, msb=6)  # Train (SC SFX; GM: Helicopter)
+note(C13, t(0), 60, 8, 96, jitter=0, gate=1.0)
+nocheck.append((C13, t(0), t(2)))
 
 
 def sw(b):
@@ -882,6 +1080,17 @@ for k, (d, tri) in enumerate(KDC):
     drum(t(k), RIDE, 56)
 sing(0, [[(0, 14, 4)], [(0, 12, 2), (2, 11, 2)], [(0, 13, 4)], [(0, 14, 4)]], KEh, 104, depth=260)
 advance(4)
+section(120, KEh, name="King Diamond (Sleepless Nights)")             # a keyboard riff drives the band
+SLEEP = [[64, 71, 67, 71, 63, 71, 67, 71], [64, 72, 69, 72, 66, 72, 69, 72]]
+for k in range(4):
+    for i, n in enumerate(SLEEP[k % 2]):
+        note(C7, t(k, i * .5), n, .5, 98 if i % 2 == 0 else 90, jitter=2, gate=0.8)
+    r = E2 if k % 2 == 0 else A2
+    chord(C4, t(k), [52, 55, 59] if k % 2 == 0 else [57, 60, 64], 4, 96, gate=0.98)
+    eighths([C3, C8], k, r, 106 if k else 112, kind="5")
+    rock_kit(k, 104, crash=(k % 2 == 0), hat=CHH)
+sing(2, [[(0, 11, 1.5), (1.5, 10, .5), (2, 9, 1), (3, 8, 1)], [(0, 7, 3), (3, 6, 1)]], KEh, 104)
+advance(4)
 section(150, KEh, extra={5}, name="King Diamond (Abigail riff)")
 ABI = [[(0, E2, .5, "p"), (.5, E2, .25, "p"), (.75, E2, .25, "p"), (1, E2, .5, "p"), (1.5, Ds3, .5, "n"),
         (2, E3, .5, "n"), (2.5, 54, .5, "n"), (3, 55, .5, "n"), (3.5, 54, .5, "n")],
@@ -936,12 +1145,9 @@ k0 = 4
 for k in range(2):                                                 # the gallop
     gallop([C3, C8], k0 + k, [E2, Cn3][k], vel=106)
     gallop_kit(k0 + k, 104, crash=(k == 0))
-for k in range(2):                                                 # the pedal riff, in E
-    for i, n in enumerate([40, 55, 40, 57, 40, 59, 40, 57]):
-        note(C3, t(k0 + 2 + k, i * .5), n, .5, 108, jitter=2, gate=0.7)
-        note(C8, t(k0 + 2 + k, i * .5), n + (12 if n > 40 else 0), .5, 102, jitter=2, gate=0.7)
-    note(C5, t(k0 + 2 + k), 28, 4, 106)
-    rock_kit(k0 + 2 + k, 104, crash=(k == 0), hat=CHH)
+for k in range(2):                                                 # the Painkiller chug
+    riff([C3, C8], k0 + 2 + k, [(i * .25, n, .25, "n" if n == E2 else "5") for i, n in enumerate(PK[k])], 110, gate=0.7)
+    dkick_kit(k0 + 2 + k, 106, crash=(k == 0))
 for k in range(2):                                                 # the Dio riff
     riff([C3, C8], k0 + 4 + k, DIVER[k], 110, gate=0.85)
     kit(k0 + 4 + k, kicks=(0, 1.5, 2.5), snares=(1, 3), hats=(0, 1, 2, 3), hat=RIDE, crash=(k == 0), vel=106)
@@ -979,17 +1185,23 @@ advance(8)
 # 23 Black Horsemen closer - E, 72 BPM: acoustic intro, the slow epic build, the last chord
 # ======================================================================================
 section(72, KEh, name="closer (Black Horsemen) acoustic")
-prog(C2, t(0) - 30, 24, vol=110, pan=40, rev=70)                   # Nylon guitar
-prog(C6, t(0) - 30, 89, vol=90, pan=88, rev=90, expr=60)           # Warm pad
+prog(C2, t(0) - 30, 24, vol=127, pan=40, rev=70)                   # Nylon guitar, up front
+prog(C6, t(0) - 30, 89, vol=80, pan=88, rev=90, expr=50)           # Warm pad, behind it
 BHC = [[40, 47, 52, 55, 59, 55, 52, 47], [48, 52, 55, 60, 64, 60, 55, 52], [45, 52, 57, 60, 64, 60, 57, 52],
        [47, 51, 54, 57, 63, 57, 54, 51]] * 2
 for k, arp in enumerate(BHC):
     for i, n in enumerate(arp):
-        note(C2, t(k, i * .5), n, ring(arp + sum(BHC[k + 1:k + 2], []), i, 1.5), 92 if i == 0 else 80, jitter=3)
-    chord(C6, t(k), [arp[1], arp[2], arp[3]], 4, 76)
-    note(C5, t(k), arp[0] - 12, 4, 84)
-sing(4, [[(0, 7, 2), (2, 9, 1), (3, 8, 1)], [(0, 7, 3), (3, 6, 1)], [(0, 5, 2), (2, 7, 2)], [(0, 6, 4)]], KEh, 98, depth=200)
-mel(C1, 1, KEh, [(2, 4, 2)], 90)
+        note(C2, t(k, i * .5), n, ring(arp + sum(BHC[k + 1:k + 2], []), i, 1.5), 112 if i == 0 else 102, jitter=3)
+    chord(C6, t(k), [arp[1], arp[2], arp[3]], 4, 68)
+    note(C5, t(k), arp[0] - 12, 4, 80)
+sing(4, [[(0, 7, 2), (2, 9, 1), (3, 8, 1)], [(0, 7, 3), (3, 6, 1)], [(0, 5, 2), (2, 7, 2)], [(0, 6, 4)]], KEh, 90, depth=200)
+mel(C1, 1, KEh, [(2, 4, 2)], 86)
+prog(C13, t(6) - 30, 123, vol=110, pan=16, rev=60, expr=20, msb=2)   # Horse-Gallop (SC SFX; GM: Bird)
+for k in range(4):                                                 # the horsemen ride in, left to right
+    note(C13, t(6 + k), 60, 3.9, 110, jitter=0, gate=0.98)
+nocheck.append((C13, t(6), t(10)))
+ramp(C13, 11, t(6), t(8), 20, 110)
+ramp(C13, 10, t(6), t(10), 16, 108)
 advance(8)
 section(72, KEh, name="closer (Black Horsemen) epic")
 BHR = [(E2, 0), (Cn3, 5), (A2, 3), (B2, 4), (E2, 0), (Cn3, 5), (B2, 4), (E2, 0)]

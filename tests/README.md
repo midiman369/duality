@@ -98,24 +98,30 @@ organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio sect
 `946F` does the same with Rotary (21 of 240 scanned gave both).
 
 `python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
-(10:03): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
+(11:51): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
 muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm
 duo (ch3 / ch8, ch8 also plays the twin-guitar harmonies), bass and the SC-88Pro map's Standard 1 kit.
-The verses that name the bands are written in their style with original riffs and melodies (no quotes):
-a Sabbath storm and tritone crawl, a Maiden gallop with twin leads and a becalmed sea, an Iron Man stomp,
-War Pigs hits, Heaven and Hell's bass groove, a drop-D doom crawl taking flight, a Priest pedal riff,
-Rainbow / Dio (saw synth, an Eastern march in phrygian dominant, clean arpeggios, a heavy riff with the
-rock organ), Pantera stop-start chugs with pinch squeals, a Slayer tremolo thrash with a whammy solo,
-Motorhead with bass chords and a shuffle, a King Diamond interlude (church organ, harpsichord,
-harmonic-minor twin leads) and a Black Horsemen closer (nylon arpeggios, then a slow epic build).
-Choir, timpani, tubular bells and the SC rain / thunder / wind SFX (ch13-14) colour it. GM capitals,
-GS reset, no file EFX, channel 16 left for foley. The build fails on a note outside its section's key
-(plus the section's extras: tritones, F#5 power chords), a program change under a held note, or a
-silence over 1.5 s. The rock organ's program change comes just before its first note, so it takes a
-unit when it is heard. Offline on six GS units: no type change under a sounding player, nothing hanging,
-hitches only on Anima's foley. Seeds `0197` (Rotary Multi), `00A2`, `6030`, `68F2` and `2CEF` (Rotary)
-give the lead GTR Multi 3 on its own unit all song and the organ a rotary type from the Dio verse
-through chorus 2 and the big finish (5 of 40 scanned).
+The verses that name the bands take each reference's key, tempo, tuning, groove and signature intro or
+sound, with original riffs and melodies (no quotes): Black Sabbath (G against its tritone, rain, thunder,
+a church bell), Hallowed Be Thy Name's bell intro, a Maiden twin gallop, Iron Man (B minor, a slow dive),
+War Pigs (an air-raid siren, ringing hits), Iron Maiden (gallop, gang chant), Rime's becalmed sea, Heaven
+and Hell, Sacred Heart, a drop-D Sabbath crawl taking flight, a Judas Priest suite (Night Crawler, a
+Painkiller drum intro, a Metal Meltdown dive bomb, The Sentinel's twin leads, The Ripper's scream,
+Turbo Lover's guitar synths, Jawbreaker), Rainbow / Dio (Tarot Woman's synth, Stargazer's drums and
+Eastern march, Children of the Sea's acoustic, Holy Diver's synth swell and riff with the rock organ),
+Pantera (Domination's riff and half-time breakdown, Art of Shredding), Slayer (South of Heaven, Raining
+Blood's rain, thrash, whammy chaos), Motorhead (Ace of Spades' bass intro and stops, Train Kept
+A-Rollin' with a passing train), King Diamond (At the Graves, Sleepless Nights, Abigail, Cremation)
+and a Black Horsemen closer (nylon arpeggios, the horsemen riding in, a slow epic build). Choir, timpani
+and SC variation tones for the effects (ch9 church bell; ch13-14 rain, thunder, wind, siren, train,
+horse gallop; a plain GM synth plays tubular bells, Seashore, Helicopter, Bird). GM capitals, GS reset,
+no file EFX, channel 16 left for foley. The build fails on a note outside its section's key (plus the
+section's extras: tritones, chromatic power chords), a program change under a held note, or a silence
+over 1.5 s. The rock organ's program change comes just before its first note, so it takes a unit when
+it is heard. Offline on six GS units: no type change under a sounding player, nothing hanging, hitches
+only on Anima's foley. Seeds `0197`, `00A2`, `6030`, `68F2` (Rotary Multi), `FC6C` and `2CEF` (Rotary)
+give the lead GTR Multi 3 on its own unit all song and the organ a rotary type from Holy Diver through
+chorus 2 and the big finish (6 of 40 scanned).
 
 ## Tests
 
