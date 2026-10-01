@@ -110,7 +110,7 @@ choruses (Suno's synth riff, then held chords for the rotary), choir on the intr
 verse, the second chorus and the big finish, timpani and crashes on section changes, an 8-bar
 continuation of the virtuoso solo, a 4-bar drum solo before the outro and an 8-bar final solo on the
 intro hook. Format 1, GS reset, no file EFX, channel 16 left for foley; the build fails on an added
-note out of key, a program change under a held note or a silence over 1.5 s.
+note out of key, a program change under a held note or a silence over 1.5 s. Offline on six GS units the setup burst places every family once (lead, both rhythm guitars, organ, bass, choir + timpani) and nothing is retyped after; no type change under a sounding player, nothing hanging. Seeds `0197`, `00A2` and `FC6C` give the lead GTR Multi 3 and the organ a rotary type (Rotary Multi, Rotary Multi, Rotary).
 
 ## Tests
 
