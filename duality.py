@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.047"
+VERSION = "0.19.048"
 
 
 """
@@ -53,7 +53,7 @@ Anima (opt-in)
     and rotary types (on EFX Control 1 or 2, whichever holds the knob),
     each unit on its own: the wah follows the player (picks quack, held
     notes cry open, bends open it, fast runs stay narrow, silence = heel)
-    over a low Manual base (20; a held screaming high note lifts it to 48);
+    over a low Manual base (20; a hard high note held 0.5 s lifts it to 38, at most once per 8 s);
     lead lines get GTR Multi 3 Peak 80, rhythm parts (chords, low notes)
     Peak 48 and 60% of the pedal; rotary flips speed on a held chord. A
     file's own set-and-left wah is played the same way until the file
@@ -820,7 +820,8 @@ ANIMA_WAH_ATTACK_SEC = 0.03  # pedal speed toward open ...
 ANIMA_WAH_RELEASE_SEC = 0.18 # ... and back toward the heel
 ANIMA_WAH_SCREAM_NOTE = 84   # scream: a note this high ...
 ANIMA_WAH_SCREAM_VEL = 105   # ... this hard ...
-ANIMA_WAH_SCREAM_HELD = 0.30 # ... held this long raises the Manual base (SysEx)
+ANIMA_WAH_SCREAM_HELD = 0.50 # ... held this long raises the Manual base (SysEx)
+ANIMA_WAH_SCREAM_REST = 8.0  # ... and not again until this long after the last one ended
 ANIMA_WAH_BASE_GAP = 0.30    # at most one Manual write per unit this often
 # Lead or rhythm? Two or more notes at once, or a low register, is rhythm; single
 # high notes are lead. The role glides (seconds) so it does not flicker.
@@ -5821,6 +5822,13 @@ class Duality:
                 target = float(st["rest"])
             target = max(0.0, min(127.0, target))
             scream = False
+        # A scream is an event, not a habit: after one ends the next waits a while.
+        if scream and not st.get("scream_on") \
+                and now - float(st.get("scream_end", -1e9)) < ANIMA_WAH_SCREAM_REST:
+            scream = False
+        if st.get("scream_on") and not scream:
+            st["scream_end"] = now
+        st["scream_on"] = scream
         cur = float(st.get("cur", ANIMA_WAH_REST))
         tau = ANIMA_WAH_ATTACK_SEC if target > cur else ANIMA_WAH_RELEASE_SEC
         cur += (target - cur) * min(1.0, dt / max(0.005, tau))

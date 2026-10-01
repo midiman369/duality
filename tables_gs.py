@@ -531,7 +531,7 @@ ANIMA_EFX_WAH_MAN = {
 # value (Depth +100% ~ Manual + CC16), so the Manual base sits low and CC16
 # sweeps up from it. On-screen 20 was the sweet spot by ear (SC-VA).
 ANIMA_WAH_MAN_BASE = 20
-ANIMA_WAH_MAN_SCREAM = 48   # a hard-played high note held: the whole wah drives higher
+ANIMA_WAH_MAN_SCREAM = 38   # a hard-played high note held: the whole wah drives higher (48 screamed too high, 0.19.048)
 # Peak (resonance) per wah type: (address, value). GTR Multi 3 is a pedal wah
 # whose default Peak 10 barely speaks; 127 screamed over a long high solo (ONESTOP2),
 # 80 by ear. The auto-wah types keep their defaults (40-62), which already give a
