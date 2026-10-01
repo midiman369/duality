@@ -68,6 +68,10 @@ The file's own insert always wins its home unit.
   Check each other type's page before writing it. The seat unit's Space D already uses it (D>50E).
 - **Pitch shifter ↔ ghost harmony**: match the shifter's interval to the ghost harmony where the chord
   allows (today: key-safe doubler / octave / fifth only).
+- **User notes (2026-10-01), GTR Multi 3**: (1) an "LP chorus" guitar clashes with the wah (check which
+  insert/part that is before changing anything); (2) switch the wah itself (GTR Multi 3 Wah Sw `40 03 06`)
+  off for chug-a-chug riffing and on for longer chord riffs, lead lines and solos. Test song:
+  `tests/midi/dirty-women.mid` (Black Sabbath - Dirty Women; see tests/README.md).
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).

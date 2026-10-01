@@ -50,6 +50,7 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `lotr-8850.mid` | `LotR_8850.mid` (Lord of the Rings medley, 16 orchestral parts, 3 families) | sent on its own | 115132 | `9572b49f62912118` |
 | `phobos-8850.mid` | `18_-_phobos_anomaly_8850.mid` (bulk dump sets GTR Multi 3, never touched again) | sent on its own | 65567 | `ac68f826d380875c` |
 | `rose-gun-sight.mid` | `rose_in_the_gun_sight.mid` (performs its own wah: live Wah Man writes from 6:43) | sent on its own | 205850 | `c5d45c95b713db4b` |
+| `dirty-women.mid` | `Black_Sabbath_-_Dirty_Women.mid` (riffing vs lead lines: wah switch on/off candidate) | sent on its own | 36565 | `0f8364c3277fd742` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
