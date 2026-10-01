@@ -123,11 +123,16 @@ joins its host's insert on purpose.
 ## Doc images
 
 `render_status.py`, `render_crucible.py` and `render_tables.py` regenerate
-`docs/images/` in a Windows Terminal frame (`wt_svg.py`). `svgshot.py`
-turns an SVG into a PNG (needs Playwright + Chromium).
+`docs/images/` in a Windows Terminal frame (`wt_svg.py`). The panels and the
+Crucible stills replay ONESTOP2 (built by `make_onestop2.py` if missing, so no
+copyrighted song is needed): the hero at the screaming solo and the panel in the
+analog synths (seed FC6C, four GS units, an XG and an MT-32 out); the Crucible
+stills at the busiest moment of the big-band shout chorus, plus
+`crucible-demo.gif` from them. `svgshot.py` turns an SVG into a PNG; the GIF
+step needs Playwright + Chromium and Pillow.
 
 ```bash
-python tests/render_status.py 196.5 docs/images/status-hero.svg 38.0 docs/images/status-panel.svg
+python tests/render_status.py 470.0 docs/images/status-hero.svg 320.0 docs/images/status-panel.svg
 python tests/render_crucible.py
 python tests/render_tables.py
 ```

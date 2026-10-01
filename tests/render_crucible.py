@@ -33,32 +33,69 @@ heads = {
     "XG": sysex_of("test_xg_display.mid"),
     "MT-32": sysex_of("test_mt32_display.mid"),
 }
-IN = common.midi("onestop-in-222922.mid")
-mf = mido.MidiFile(IN); body = []; t = 0.0
-for m in mido.merge_tracks(mf.tracks):
-    t += mido.tick2second(m.time, mf.ticks_per_beat, 500000) if m.time else 0
-    if m.is_meta or m.type == "sysex":
+# Seven seconds of ONESTOP2's big-band shout chorus (notes only), after its program / CC setup.
+WIN = (194.0, 201.0)
+body = []
+for t, m in common.onestop2_events():
+    if m.type == "sysex":
         continue
-    if 25.0 <= t < 32.0 and m.type in ("note_on", "note_off"):
-        body.append((t - 25.0 + 1.0, m))
-    elif t < 4.0 and m.type in ("program_change", "control_change"):
+    if WIN[0] <= t < WIN[1] and m.type in ("note_on", "note_off"):
+        body.append((t - WIN[0] + 1.0, m))
+    elif t < WIN[0] and m.type in ("program_change", "control_change"):
         body.append((0.5, m))
-for fmt, head in heads.items():
+def play(head, until=None):
+    """Run the head + window; return (duality, busiest time) or the duality at `until`."""
     CLOCK[0] = 1000.0
     D.console = Console(width=W, record=True, force_terminal=True, color_system="truecolor", file=null)
     d = D.Duality("duality", names, show_status=False, out_formats=fmts,
                   poly_limits=[32, 32, 32, 32, 64, 32], crucible=True)
-    ev = [(0.0, m) for m in head] + body
-    ev.sort(key=lambda e: e[0])
-    i = 0; tt = 0.0; snap = 5.9
-    while tt <= snap:
+    ev = sorted([(0.0, m) for m in head] + body, key=lambda e: e[0])
+    i = 0; tt = 0.0; best = (-1, 0.0)
+    end = WIN[1] - WIN[0] + 1.0 if until is None else until
+    while tt <= end:
         CLOCK[0] = 1000.0 + tt
         while i < len(ev) and ev[i][0] <= tt:
             d.process(ev[i][1]); i += 1
+        if until is None and tt >= 2.0 and sum(d.voice_counts) > best[0]:
+            best = (sum(d.voice_counts), tt)
         tt = round(tt + 0.01, 3)
+    return d, best[1]
+
+
+snap = play(heads["GS"])[1]          # the busiest moment, the same for every dialect
+for fmt, head in heads.items():
+    d = play(head, snap)[0]
     c = Console(width=W, record=True, force_terminal=True, color_system="truecolor", file=null)
     D.console = c
     c.print(d._make_status_panel())
-    out = fcommon.IMAGES + "/crucible-{fmt.lower().replace('-', '')}.svg"
+    out = common.IMAGES + f"/crucible-{fmt.lower().replace('-', '')}.svg"
     save_wt(c, out)
     print(fmt, "badge", d.detected_format, "voices", d.voice_counts, "->", out)
+
+# The README's animated demo: the four stills, 1100 px wide, 1.8 s each (needs Playwright + Pillow).
+try:
+    import base64, io, re
+    from PIL import Image
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    print("skip crucible-demo.gif (needs playwright and Pillow)")
+else:
+    frames = []
+    with sync_playwright() as pw:
+        b = pw.chromium.launch(executable_path=os.environ.get("CHROMIUM", "/opt/pw-browsers/chromium"))
+        for fmt in heads:
+            txt = open(common.IMAGES + f"/crucible-{fmt.lower().replace('-', '')}.svg").read()
+            w, h = map(float, re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', txt).groups())
+            pg = b.new_page(viewport={"width": int(w) + 20, "height": int(h) + 20})
+            pg.set_content('<html><body style="margin:0"><img src="data:image/svg+xml;base64,'
+                           + base64.b64encode(txt.encode()).decode() + f'" width="{w}" height="{h}"></body></html>')
+            pg.wait_for_timeout(300)
+            png = pg.screenshot(clip={"x": 0, "y": 0, "width": w, "height": h})
+            pg.close()
+            im = Image.open(io.BytesIO(png)).convert("RGB")
+            frames.append(im.resize((1100, round(1100 * im.height / im.width)), Image.LANCZOS))
+        b.close()
+    pal = [f.convert("P", palette=Image.ADAPTIVE, colors=128) for f in frames]
+    pal[0].save(common.IMAGES + "/crucible-demo.gif", save_all=True, append_images=pal[1:],
+                duration=1800, loop=0, optimize=True)
+    print("wrote", common.IMAGES + "/crucible-demo.gif")
