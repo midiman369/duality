@@ -50,6 +50,7 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `lotr-8850.mid` | `LotR_8850.mid` (Lord of the Rings medley, 16 orchestral parts, 3 families) | sent on its own | 115132 | `9572b49f62912118` |
 | `phobos-8850.mid` | `18_-_phobos_anomaly_8850.mid` (bulk dump sets GTR Multi 3, never touched again) | sent on its own | 65567 | `ac68f826d380875c` |
 | `rose-gun-sight.mid` | `rose_in_the_gun_sight.mid` (performs its own wah: live Wah Man writes from 6:43) | sent on its own | 205850 | `c5d45c95b713db4b` |
+| (stems for `make_metalgods.py`) | `A_Tribute_to_the_Metal_Gods__MIDI.zip` (the user's own song: Suno MIDI export, nine stems; keep it in `tests/midi/`, never commit it) | sent on its own | 35320 | `3e26dcbcc7cc9201` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
@@ -96,6 +97,20 @@ type change under a sounding player, nothing hanging, about 99.8% of what Dualit
 file's local key (the rest are chords held longer than the 2 s check window). Seeds `FC6C`, `36D9`, `7386` (0.19.045) put the prog
 organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop;
 `946F` does the same with Rotary (21 of 240 scanned gave both).
+
+`python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid`, "A Tribute to the Metal Gods": the
+user's own NWOBHM song (a Suno MIDI export) arranged for Duality from its stems
+(`tests/midi/A_Tribute_to_the_Metal_Gods__MIDI.zip`, kept local; the script prints SKIP without it).
+Suno's drifting tempo becomes a steady 158.5 BPM (the ritard and the 121 BPM outro stay), each stem is
+moved onto the drums' 16th grid and snapped, and the parts are rebuilt: one lead guitar plays the
+vocal melody, Suno's licks in its gaps and every solo (ch1, the GTR Multi 3 showcase); a hard-panned
+rhythm duo in clean power chords (ch3 / ch8, ch8 harmonises the melody in the twin-guitar verse);
+bass; drums on the SC-88Pro map's Standard 1 kit (the one non-GM touch). Added: rock organ under the
+choruses (Suno's synth riff, then held chords for the rotary), choir on the intro hook, the gothic
+verse, the second chorus and the big finish, timpani and crashes on section changes, an 8-bar
+continuation of the virtuoso solo, a 4-bar drum solo before the outro and an 8-bar final solo on the
+intro hook. Format 1, GS reset, no file EFX, channel 16 left for foley; the build fails on an added
+note out of key, a program change under a held note or a silence over 1.5 s.
 
 ## Tests
 
