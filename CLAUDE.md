@@ -21,8 +21,9 @@
   `tools/picker/apply_efx_picks.py <dir>` (rows of `tables_gs.ANIMA_EFX_GS`); the dir is an ArtifactData
   list with out_dir. EFX level moves the insert's wet/dry Balance (`40 03 12`, types in
   `ANIMA_EFX_BALANCE_TYPES`; driest part on a unit wins). Notes are read by Claude and turned into
-  `tables_8850.ANIMA_TONE_TRAITS` (lfo / rotary / echo / interval / short / slow / low): propose new
-  lines for new notes before adding them.
+  `tables_8850.ANIMA_TONE_TRAITS` (lfo / rotary / echo / interval / short / slow / low / sweep): propose new
+  lines for new notes before adding them. A trait that trips steps down a tone set (`ANIMA_TONE_STEPDOWN`,
+  e.g. 303SqDistBs3 -> 2 -> 1) instead of going to the capital; `ANIMA_TONE_SWEEP_SCALE` sets a milder sweep.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
   tone data (voices, waveforms, parameters) is an exact copy of an 8850 tone or of one already offered
   (by waveform alone was too strict: the 88Pro Piano 1 reuses samples yet is a different piano). The lists in

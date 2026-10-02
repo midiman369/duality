@@ -8,6 +8,9 @@
   4. fallback: Seq Bass held long twice, Slow Tremolo played short and quick, Vcs&Cbs Pizz
      played high each go back to the capital once, at a rest (no note of the part sounding);
      an unmarked tone played the same way stays
+  5. sweep: 303SqDistBs3 with notes ending before its squeal settles steps down one tone at a
+     time (CC00 42 -> 41 -> 40, ANIMA_TONE_STEPDOWN) and stays on 40; long low notes, short
+     high notes, and 303SqDistBs2 with notes past its half-length squeal keep their tone
 """
 import sys
 import time as _time
@@ -176,6 +179,29 @@ for name, gm, slot, notes, want in (
     if want and pcs and d._anima_tone_slot[5] != (0, 4, gm_real):
         fails.append(f"4: {name}: tone now {d._anima_tone_slot[5]}, want the capital")
     print(f"4 {name}: program changes after start at {[round(t, 2) for t in pcs]}")
+
+# 5. sweep + tone set: 303SqDistBs3 played with notes shorter than its squeal steps down one
+#    tone at a time (42 -> 41 -> 40) and stops at 40; long low notes or high short notes stay
+for name, slot, notes, want in (
+    ("303SqDistBs3 short at C2", (42, 4, 38), [(1.0 + k * 1.1, 36, 0.8) for k in range(10)],
+     [(41, 4, 38), (40, 4, 38)]),
+    ("303SqDistBs3 long at C2", (42, 4, 38), [(1.0 + k * 3.0, 36, 2.6) for k in range(5)], []),
+    ("303SqDistBs3 short at C5", (42, 4, 38), [(1.0 + k * 0.3, 72, 0.2) for k in range(10)], []),
+    ("303SqDistBs2 1.2 s at C2", (41, 4, 38), [(1.0 + k * 1.5, 36, 1.2) for k in range(6)], []),
+):
+    d, pcs, ev = run_fallback(slot[2], slot, notes)
+    steps = []
+    for t, p, m in REC:
+        if m.type == "control_change" and m.control == 0 and m.channel == 5 and t > 0.2 and p == 0:
+            steps.append((m.value, 4, slot[2]))
+    if len(pcs) != len(want):
+        fails.append(f"5: {name}: {len(pcs)} program changes after the start, want {len(want)}")
+    if want and d._anima_tone_slot[5] != want[-1]:
+        fails.append(f"5: {name}: tone now {d._anima_tone_slot[5]}, want {want[-1]}")
+    for t in pcs:
+        if sounding_at(ev, t):
+            fails.append(f"5: {name}: step at {t:.2f}s under a sounding note")
+    print(f"5 {name}: steps at {[round(t, 2) for t in pcs]} -> {d._anima_tone_slot[5]}")
 
 if fails:
     print(f"FAILS ({len(fails)}):")
