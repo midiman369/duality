@@ -1262,6 +1262,21 @@ ANIMA_TONE_TRAITS = {
     (8, 4, 112):    frozenset({"low"}),             # Bonang: deeper register
     (9, 4, 112):    frozenset({"low"}),             # Gender: deeper register
     (12, 4, 112):   frozenset({"low"}),             # Jang Gu: deeper register
+    # 0.19.050: a squeal at each note's start that sweeps down (~2 s at C2, none by C5)
+    (42, 4, 38):    frozenset({"sweep"}),           # 303SqDistBs3: full squeal; slower bass lines only
+    (41, 4, 38):    frozenset({"sweep"}),           # 303SqDistBs2: the same, milder
+}
+
+# "sweep" time per tone (x ANIMA_TRAIT_SWEEP's seconds); unlisted = 1.0
+ANIMA_TONE_SWEEP_SCALE = {
+    (41, 4, 38): 0.5,                               # 303SqDistBs2: about half the squeal
+}
+
+# Tone sets (0.19.050): a marked tone whose trait trips steps down to a tamer sibling of the
+# same voice instead of the GM capital, one step per trip; a step with no trait stays.
+ANIMA_TONE_STEPDOWN = {
+    (42, 4, 38): (41, 4, 38),                       # 303SqDistBs3 -> 303SqDistBs2 (less squeal)
+    (41, 4, 38): (40, 4, 38),                       # 303SqDistBs2 -> 303SqDistBs (no squeal, same tone)
 }
 
 
@@ -1271,6 +1286,20 @@ def anima_tone_traits(key) -> frozenset:
         return frozenset()
     c0, c32, p = (int(x) & 0x7F for x in key)
     return ANIMA_TONE_TRAITS.get((c0, c32, p)) or (ANIMA_TONE_TRAITS.get((c0, 4, p)) if c32 == 0 else None) or frozenset()
+
+
+def _tone_key(key):
+    c0, c32, p = (int(x) & 0x7F for x in key)
+    return (c0, 4 if c32 == 0 else c32, p)
+
+
+def anima_tone_stepdown(key):
+    """The tamer sibling a marked tone steps down to, or None (then the capital)."""
+    return ANIMA_TONE_STEPDOWN.get(_tone_key(key)) if key else None
+
+
+def anima_tone_sweep_scale(key) -> float:
+    return float(ANIMA_TONE_SWEEP_SCALE.get(_tone_key(key), 1.0)) if key else 1.0
 
 
 def anima_tone_pref(gm_pc: int, key) -> dict:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.049"
+VERSION = "0.19.050"
 
 
 """
@@ -431,6 +431,7 @@ from tables_anima import (
     ANIMA_TONE_VARS,
 )
 from tables_8850 import anima_cm_to_gm, anima_tone_slots, anima_combo_ok, ANIMA_TONE_RARE, anima_tone_pref, anima_tone_weight, anima_tone_traits
+from tables_8850 import anima_tone_stepdown, anima_tone_sweep_scale
 
 
 def _roland_checksum(body: list[int]) -> int:
@@ -787,7 +788,8 @@ ANIMA_HERO_SPLIT_BREATH = 0.25   # the hero has been silent this long (notes, gh
 ANIMA_HERO_SPLIT_WAIT = 10.0     # give a prepared unit back once the hero is no longer featured past this
 ANIMA_HERO_SPLIT_SKIP = frozenset({"guitar_dist", "seat", "file_park"})
 # Tone traits (tables_8850.ANIMA_TONE_TRAITS): a marked tone the part does not suit goes back
-# to the capital once, at a rest (never under a note). Counts since the program change.
+# to the capital once, at a rest (never under a note), or one step down a tone set
+# (tables_8850.ANIMA_TONE_STEPDOWN, 0.19.050). Counts since the program change.
 ANIMA_TRAIT_LONG_SEC = 0.60     # "short" stab: notes held longer than this ...
 ANIMA_TRAIT_LONG_N = 2          # ... this many times
 ANIMA_TRAIT_QUICK_SEC = 0.25    # "slow" attack: notes shorter than this, onsets closer than
@@ -795,6 +797,8 @@ ANIMA_TRAIT_QUICK_GAP = 0.35    # this ...
 ANIMA_TRAIT_QUICK_N = 4         # ... this many times
 ANIMA_TRAIT_HIGH_NOTE = 67      # "low" register: notes at or above G4 ...
 ANIMA_TRAIT_HIGH_N = 2          # ... this many times
+ANIMA_TRAIT_SWEEP = ((36, 2.0), (72, 0.0))   # "sweep" squeal: settles in 2 s at C2, none by C5 ...
+ANIMA_TRAIT_SWEEP_N = 3         # ... notes ending before it settles, this many times
 ANIMA_TRAIT_REST_SEC = 0.12     # the part has been silent this long before the swap
 ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX type/owner changes on one unit
 ANIMA_EFX_FLUSH_GAP = 0.18  # unused; 166 flush applies on the part's own note-off
@@ -6934,11 +6938,11 @@ class Duality:
         slot = self._anima_tone_slot[ch]
         st = tw.get(ch)
         if st is None or st.get("slot") != slot:
-            traits = (anima_tone_traits(slot) & {"short", "slow", "low"}) if slot else frozenset()
+            traits = (anima_tone_traits(slot) & {"short", "slow", "low", "sweep"}) if slot else frozenset()
             if not traits or tuple(slot)[0] == 0:
                 tw.pop(ch, None)
                 return None
-            st = tw[ch] = {"slot": slot, "traits": traits, "on": {}, "long": 0, "quick": 0, "high": 0,
+            st = tw[ch] = {"slot": slot, "traits": traits, "on": {}, "long": 0, "quick": 0, "high": 0, "sweep": 0,
                            "last_on": 0.0, "last_off": 0.0, "due": None}
         return st
 
@@ -6971,6 +6975,14 @@ class Duality:
             st["quick"] += 1
             if st["quick"] >= ANIMA_TRAIT_QUICK_N:
                 st["due"] = "the part plays short quick notes"
+        if "sweep" in st["traits"]:
+            (n0, s0), (n1, s1) = ANIMA_TRAIT_SWEEP
+            x = min(1.0, max(0.0, (note - n0) / max(1, n1 - n0)))
+            need = (s0 + (s1 - s0) * x) * anima_tone_sweep_scale(st["slot"])
+            if dur < need:
+                st["sweep"] += 1
+                if st["sweep"] >= ANIMA_TRAIT_SWEEP_N:
+                    st["due"] = "its notes end before the squeal settles"
 
     def _anima_trait_tick(self) -> None:
         """A due fallback goes out at the part's next rest: capital tone, once per program."""
@@ -6990,7 +7002,8 @@ class Duality:
             gm, key = self._anima_ch_tone(ch)
             if gm is None:
                 continue
-            slot = (0, 4, gm)
+            step = anima_tone_stepdown(st["slot"])
+            slot = tuple(step) if step else (0, 4, gm)
             for i in range(self.n_ports):
                 if not self._anima_port_8850(i):
                     continue
@@ -7003,10 +7016,11 @@ class Duality:
                 self._send_routed(i, mido.Message("program_change", channel=ch, program=pc_out))
             st["done"] = True
             self._anima_tone_slot[ch] = slot
-            self._anima_tone_cc0[ch] = 0
+            self._anima_tone_cc0[ch] = slot[0]
             self._anima_cm64[ch] = False
+            where = f"down to CC00={slot[0]:03d}" if step else f"back to the capital GM{gm + 1}"
             self._anima_feedback(
-                "tone", f"ch{ch + 1} back to the capital GM{gm + 1}: {st['due']} "
+                "tone", f"ch{ch + 1} {where}: {st['due']} "
                         f"(CC00={key[0]:03d} is marked {'/'.join(sorted(st['traits']))})", status=True,
             )
             port = self._anima_ch_port.get(ch)
