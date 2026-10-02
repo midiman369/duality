@@ -30,6 +30,7 @@ RUNS = [
     ("harmony, Death Gate 07", "replay_harmony.py", {"SONG": "07"}),
     ("harmony, Death Gate 03", "replay_harmony.py", {"SONG": "03"}),
     ("harmony, Death Gate 97", "replay_harmony.py", {"SONG": "97"}),
+    ("game cue, DOOM", "replay_game_cue.py", {}),
 ]
 bad = 0
 for name, script, env in RUNS:

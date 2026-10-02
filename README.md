@@ -339,7 +339,7 @@ Bass split: Finger / Picked (`bass_electric`) lean on **Bass Multi**; slap, fret
 
 ![Anima foley map](docs/images/foley-8850-map.svg)
 
-**Game mode** — resets after 4 s of real silence (no new MIDI *and* nothing still sounding, so a held chord is not a new scene), and rolls a new seed + EFX set on a real PC burst (DOS / soundtrack cue changes).
+**Game mode** — resets after 4 s of real silence (no new MIDI *and* nothing still sounding, so a held chord is not a new scene), and rolls a new seed + EFX set on a real PC burst (DOS / soundtrack cue changes). A new cue is its own channels (0.19.049): only the parts that got a program change in the burst, or play a note afterwards, count for the insert planner and the seat units, so parts left over from the previous cue no longer squeeze the new cue's guitars onto a shared OD1/OD2 unit or hold units as seats; the cue is placed as soon as the reroll clears the units, and a unit already placed for the cue and sounding is kept.
 
 ---
 

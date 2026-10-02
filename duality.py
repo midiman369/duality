@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.048"
+VERSION = "0.19.049"
 
 
 """
@@ -58,6 +58,8 @@ Anima (opt-in)
     Peak 48 and 60% of the pedal; rotary flips speed on a held chord. A
     file's own set-and-left wah is played the same way until the file
     writes EFX again.
+  • Game mode: a new cue plans only its own channels (its PC burst and
+    parts that play after it) and is placed right after the reroll.
   • Fixed insert settings (tables_gs ANIMA_EFX_TYPE_SET, by ear): Overdrive
     Level 80, GTR Multi 2 drive = Distortion, GTR Multi 3 Level 127 with its
     players' CC7 ×1.2; OD1/OD2 both Distortion, OD1 Level 80. Organs on
@@ -944,7 +946,9 @@ class Duality:
             self._anima_efx_seed = None
             self._anima_seed_locked = False
         self._anima_game_pc_t = []
+        self._anima_game_pc_ch = []      # channels of those PCs (same order)
         self._anima_game_snap = None
+        self._anima_cue_chs = None       # game mode: channels of the current cue (None = every used one)
         self.record_dir = record_dir
         self._rec_on = False
         self._rec_wanted = False
@@ -958,6 +962,7 @@ class Duality:
         self._anima_tone_slot = [None] * 16
         self._anima_cm64 = [False] * 16
         self._file_used_ch = [False] * 16
+        self._anima_cue_chs = None
         self._anima_seen_cc0 = [False] * 16
         self._anima_seen_cc32 = [False] * 16
         self._file_pc = [0] * 16
@@ -4117,7 +4122,7 @@ class Duality:
                 status=True,
             )
             if self.anima_game:
-                self._anima_game_note_pc()
+                self._anima_game_note_pc(ch)
             # Insert types are placed once the PC dump settles (or at the
             # first note), still ahead of the notes. Not per PC in arrival order.
             self._anima_efx_on_pc(ch)
@@ -4335,6 +4340,7 @@ class Duality:
         self._anima_foley_patch = None
         self._anima_foley_pitch = [-1] * 16
         self._file_used_ch = [False] * 16
+        self._anima_cue_chs = None
         self._anima_seen_cc0 = [False] * 16
         self._anima_seen_cc32 = [False] * 16
         self._anima_tone_cc0 = [None] * 16
@@ -5059,11 +5065,22 @@ class Duality:
         self._anima_apply_od_split(chs, ports=home[:1] if home else [])
 
 
-    def _anima_game_note_pc(self) -> None:
+    def _anima_game_note_pc(self, ch: int = -1) -> None:
         now = time.monotonic()
         self._anima_game_pc_t.append(now)
+        self._anima_game_pc_ch.append(ch)
         cut = now - ANIMA_GAME_PC_WINDOW
-        self._anima_game_pc_t = [x for x in self._anima_game_pc_t if x >= cut]
+        keep = [i for i, x in enumerate(self._anima_game_pc_t) if x >= cut]
+        self._anima_game_pc_t = [self._anima_game_pc_t[i] for i in keep]
+        self._anima_game_pc_ch = [self._anima_game_pc_ch[i] for i in keep]
+
+    def _anima_ch_live(self, c: int) -> bool:
+        """A channel the planner and seats count: used by the file and, in game
+        mode after a new cue, part of that cue (its PC burst or a note since)."""
+        if not self._file_used_ch[c]:
+            return False
+        cue = self._anima_cue_chs
+        return cue is None or c in cue
 
     def _anima_game_poll(self) -> None:
         """After a PC dump settles, reroll EFX if the 16-program map moved."""
@@ -5079,7 +5096,9 @@ class Duality:
             return
         snap = tuple(int(x) & 0x7F for x in self._anima_prog)
         prev = self._anima_game_snap
+        cue = {c for c in self._anima_game_pc_ch if 0 <= c < 16}
         self._anima_game_pc_t = []
+        self._anima_game_pc_ch = []
         if prev is None:
             self._anima_game_snap = snap
             return
@@ -5093,18 +5112,37 @@ class Duality:
         self._anima_cm64 = [False] * 16
         # Unstick ports so the next family map can land on a fresh box.
         home = self._anima_file_home_port()
+        keep_pins = {}
         for p in self._anima_gs_ports():
             if p == home:
                 continue
-            if self._anima_slots[p].get("fam"):
-                self._anima_clear_slot(p)
-        self._anima_ch_port = {}
+            sl = self._anima_slots[p]
+            fam = sl.get("fam")
+            if not fam:
+                continue
+            chs = list(sl.get("chs") or [])
+            # Already placed for this cue and sounding (a drone that started
+            # before this poll): keep it; a retype there would break rule 1.
+            if (fam not in ("seat", "file_park") and chs and self._anima_port_players_sounding(p)
+                    and all(self._anima_efx_family(c) == fam for c in chs)):
+                for c in chs:
+                    if self._anima_ch_port.get(c) == p:
+                        keep_pins[c] = p
+                continue
+            self._anima_clear_slot(p)
+        self._anima_ch_port = keep_pins
         self._anima_fam_was = [None] * 16
         self._anima_efx_sound_t = {}
         self._anima_fam_played = {}     # family -> last real note (not a PC)
-        self._anima_efx_burst_dirty = False  # PC dump waiting for one settle
-        self._anima_efx_burst_t = 0.0
         self._anima_efx_seek_t = [0.0] * 16
+        # The new cue is its channels: earlier cues' parts stop counting for the
+        # planner and the seats until they play again (0.19.049).
+        self._anima_cue_chs = cue | {k[0] for k in self.active}
+        # Place the new cue once, now: the clear above left every unit quiet, and
+        # parts already sounding (a drone that started before this poll) count.
+        self._anima_efx_burst_dirty = True
+        self._anima_efx_burst_t = 0.0
+        self._anima_efx_burst_n = max(len(cue), ANIMA_EFX_BIG_BURST)
         self._anima_feedback("game", f"new cue ({diff} PCs) — EFX/tone reroll", status=True)
 
     def _anima_reroll_tones(self) -> None:
@@ -6020,7 +6058,7 @@ class Duality:
         # PC already told us the family — pack it now, not at the first note.
         # Current tables (chromatic, fx, wider wind/strings) join this same pass.
         for c in range(16):
-            if self._file_used_ch[c]:
+            if self._anima_ch_live(c):
                 _add(c)
         # While a family is inside HOLD, keep every channel that still
         # classifies as that family — not only when the family is absent.
@@ -6028,7 +6066,7 @@ class Duality:
             if now - ts >= ANIMA_EFX_HOLD_SEC:
                 continue
             for c in range(16):
-                if not (self._file_used_ch[c] or self._anima_ch_has_notes(c)):
+                if not (self._anima_ch_live(c) or self._anima_ch_has_notes(c)):
                     continue
                 if c in reserved:
                     continue
@@ -7058,7 +7096,7 @@ class Duality:
                 continue
             reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
             unplaced = any(
-                self._file_used_ch[c] and not self._anima_is_rhythm(c) and c not in reserved
+                self._anima_ch_live(c) and not self._anima_is_rhythm(c) and c not in reserved
                 and self._anima_efx_family(c) and c not in self._anima_ch_port
                 for c in range(16)
             )
@@ -7068,7 +7106,7 @@ class Duality:
             pool += [p for p in gs if slots[p].get("fam") == "seat" and not slots[p].get("yield")
                      and not self._anima_port_players_sounding(p)]
             harmony = any(
-                self._file_used_ch[c] and not self._anima_is_rhythm(c) and self._anima_efx_family(c)
+                self._anima_ch_live(c) and not self._anima_is_rhythm(c) and self._anima_efx_family(c)
                 and self._anima_category(c) in ANIMA_HARM_CATS
                 for c in range(16)
             )
@@ -7099,7 +7137,7 @@ class Duality:
             return
         chs = sorted(
             c for c in range(16)
-            if self._file_used_ch[c]
+            if self._anima_ch_live(c)
             and not self._anima_is_rhythm(c)
             and self._anima_efx_family(c)
             and self._anima_category(c) in ANIMA_HARM_CATS
@@ -8557,6 +8595,8 @@ class Duality:
             self._anima_efx_burst_n = int(getattr(self, "_anima_efx_burst_n", 0) or 0) + 1
 
     def _anima_maybe_efx(self, ch: int) -> None:
+        if self._anima_cue_chs is not None:
+            self._anima_cue_chs.add(ch & 0x0F)   # a part that plays is part of the cue
         if not self.anima or self._anima_is_rhythm(ch):
             return
         fmt = (getattr(self, "detected_format", None) or "").upper()
