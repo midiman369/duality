@@ -127,6 +127,10 @@ def main(argv):
         "progs": {pc: [ks(k) for k in keys] for pc, keys in progs.items()},
         "defp": {pc: v for pc, v in default.items()},
         "blocked": blocked,
+        # Anima's reading of the notes: traits per tone, the sweep scale, tone-set steps.
+        "traits": {ks(k): sorted(v) for k, v in T.ANIMA_TONE_TRAITS.items() if ks(k) in used},
+        "sweep": {ks(k): v for k, v in T.ANIMA_TONE_SWEEP_SCALE.items()},
+        "step": {ks(k): ks(v) for k, v in T.ANIMA_TONE_STEPDOWN.items()},
     }
     src = open(argv[1]).read()
     assert src.count("const DATA = __DATA__;") == 1
