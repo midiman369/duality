@@ -27,6 +27,8 @@ python tests/run_all.py
 | `every-breath-8850.mid` | Every Breath You Take (SC-8850 bulk-dump setup) | `replay_bulk_dump.py` |
 | `d_e1m1.mid` | DOOM E1M1 (file OD1/OD2 on parts 1+2) | `replay_file_efx_echo.py` |
 | `death-gate-03.mid`, `-07`, `-97` | Death Gate (XMI2MID; a stray byte after end-of-track, `common.load` copes) | `replay_harmony.py` |
+| `doom-game-223128.mid` | IN take, DOOM in DosBox with `--anima-game`, 2026-10-01 22:31:28 (a take: `recordings/` works too) | `replay_game_cue.py` |
+| `replay_game_cue.py` | Game mode (DOOM take): after a new cue only its own channels plan, so E1M1's two guitars get a unit each (no OD1/OD2 while units are free) and no unit is a seat for a channel the cue does not use; the reroll places the next cue at once; no insert type write under a sounding player |
 
 ## Where the songs came from
 
@@ -50,6 +52,7 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `lotr-8850.mid` | `LotR_8850.mid` (Lord of the Rings medley, 16 orchestral parts, 3 families) | sent on its own | 115132 | `9572b49f62912118` |
 | `phobos-8850.mid` | `18_-_phobos_anomaly_8850.mid` (bulk dump sets GTR Multi 3, never touched again) | sent on its own | 65567 | `ac68f826d380875c` |
 | `rose-gun-sight.mid` | `rose_in_the_gun_sight.mid` (performs its own wah: live Wah Man writes from 6:43) | sent on its own | 205850 | `c5d45c95b713db4b` |
+| `doom-game-223128.mid` | `IN-Duality-4-gs-20261001-223128.mid` (DOOM in DosBox, game mode: title, menu, E1M1, intermission, next cue) | `duality-20261001-223128.zip` | 24570 | `0fc14de4b7b5e584` |
 | `dirty-women.mid` | `Black_Sabbath_-_Dirty_Women.mid` (riffing vs lead lines: wah switch on/off candidate) | sent on its own | 36565 | `0f8364c3277fd742` |
 
 The IN takes are Duality `--record` captures of the input stream (the
