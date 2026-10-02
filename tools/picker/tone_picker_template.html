@@ -193,6 +193,16 @@ function toneCard(pc,k){
   else if (inf[1]===1) badges.push(['Attack layer']);
   if (inf[2]>1) badges.push([`${inf[2]} voices`]);
   if (DATA.blocked.includes(k)) badges.push(['Reserved: one-shot articulation','w']);
+  const TR = {lfo:"Built-in LFO: no LFO inserts", rotary:"Built-in rotary: no rotary inserts", echo:"Built-in echo: no delays",
+              interval:"Plays extra pitches: no harmony", short:"Short stab: held notes → fallback", slow:"Slow attack: quick notes → fallback",
+              low:"Low register: high notes → fallback", sweep:"Squeal sweep: short low notes → fallback"};
+  for (const t of (DATA.traits||{})[k]||[]) {
+    let txt = TR[t] || t;
+    if (t==="sweep" && (DATA.sweep||{})[k]) txt += ` (×${DATA.sweep[k]})`;
+    badges.push([`Anima: ${txt}`]);
+  }
+  const stp = (DATA.step||{})[k];
+  if (stp) badges.push([`Steps down to ${INFO[stp]?INFO[stp][0]:stp} (CC00 ${stp.split("-")[0]})`]);
   const kp = +k.split("-")[2];
   if (c0===126 || c0===127) badges.push([`CM-64 ${c0===126?"PCM":"LA"} #${pad3(kp+1)}`]);
   else if (kp!==+pc) badges.push([`Clean Gt color (from ${pad3(kp+1)})`]);
