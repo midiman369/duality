@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.051"
+VERSION = "0.19.052"
 
 
 """
