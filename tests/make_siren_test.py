@@ -1,6 +1,7 @@
 """Write an air-raid siren listening test for the medley's War Pigs bridge.
 
-    python tests/make_siren_test.py [out.mid]      (default tests/midi/siren_test.mid)
+    python tests/make_siren_test.py [out.mid]      (default tests/midi/siren_test2.mid)
+    ROUND=1 python tests/make_siren_test.py         (the first round, tests/midi/siren_test.mid)
 
 A real air-raid siren is a motor: it spins up fast and slows near the top, holds with a little
 wobble, then winds down slowly, sinking below where it started; the next spin-up starts before it
@@ -14,7 +15,9 @@ pitch-bend range (a GS RPN), louder as it climbs. Markers name each one (Format 
   D  Whistle + Wind (SC SFX)      a pure tone over a howl of air (GM: Seashore)
   E  Ocarina + Calliope           soft and eerie
   F  SC "Siren" (Helicopter var.) what the medley uses now, for comparison
-  then A and C over an Iommi-style intro in E at 86 BPM: a big ringing power chord with a wide,
+  Round 2 (the default; A and C were the picks): C louder, then stacked with A's whistle and
+  octaves / a fifth (G, H, I, J), and G and I over the riff.
+  Round 1: A and C over an Iommi-style intro in E at 86 BPM: a big ringing power chord with a wide,
   slow vibrato, the hi-hat ticking in the gap, a two-chord pickup into the next hit.
 """
 import math
@@ -143,41 +146,73 @@ def swap(ch, pc, msb=0, vol=100):
     bend_range(ch, pos - 30, 24)
 
 
-# A: Saw + Whistle
-mark("A  Saw Wave + Whistle")
-pos = siren([SIREN_A, SIREN_B], pos, 76) + 0
-gap()
-# B: Square
-mark("B  Square Wave")
-swap(SIREN_A, 80)
-pos = siren([SIREN_A], pos, 76)
-gap()
-# C: two saws a minor third apart
-mark("C  two saws, a minor third apart")
-swap(SIREN_A, 81)
-swap(SIREN_B, 81, vol=92)
-pos = siren([SIREN_A, SIREN_B], pos, 73, offsets=[0, 3])
-gap()
-# D: Whistle + Wind
-mark("D  Whistle + Wind (SC SFX)")
-swap(SIREN_A, 78)
-swap(SIREN_B, 122, msb=3, vol=110)
-pos = siren([SIREN_A, SIREN_B], pos, 76, offsets=[0, -16])
-gap()
-# E: Ocarina + Calliope
-mark("E  Ocarina + Calliope")
-swap(SIREN_A, 79)
-swap(SIREN_B, 82, vol=90)
-pos = siren([SIREN_A, SIREN_B], pos, 76)
-gap()
-# F: the SC Siren the medley uses now
-mark("F  SC Siren (now in the medley)")
-swap(SIREN_A, 125, msb=5, vol=100)
-bend_range(SIREN_A, pos - 20, 2)
-note(SIREN_A, pos, 60, sec(10), 104)
-cc(SIREN_A, pos, 11, 110)
-pos += sec(10)
-gap()
+ROUND = int(os.environ.get("ROUND", "2"))
+VOICE_CHS = [12, 13, 11, 5, 6]          # ch13, ch14, ch12, ch6, ch7 (all free at the medley's War Pigs)
+
+
+def stack(label, voices, base=73, at=None, scale=1.0, cycles=None):
+    """voices: (program, volume, semitone offset); one channel each, the same motor gesture."""
+    global pos
+    t0 = pos if at is None else at
+    chs = VOICE_CHS[:len(voices)]
+    for ch, (pc, vol, _off) in zip(chs, voices):
+        prog(ch, t0 - 60, pc, vol=vol, pan=64, rev=90, cho=20)
+        bend_range(ch, t0 - 50, 24)
+    kw = {"cycles": cycles} if cycles else {}
+    return siren(chs, t0, base, offsets=[v[2] for v in voices], scale=scale, **kw)
+
+
+ROUND2 = [
+    ("C+  two saws a minor third apart, louder", [(81, 120, 0), (81, 114, 3)]),
+    ("G   C+ with a whistle an octave up", [(81, 120, 0), (81, 114, 3), (78, 100, 12)]),
+    ("H   G with a saw an octave down", [(81, 120, 0), (81, 114, 3), (78, 100, 12), (81, 106, -12)]),
+    ("I   H with a whistle on the fifth above", [(81, 120, 0), (81, 114, 3), (78, 100, 12), (81, 106, -12),
+                                                (78, 88, 19)]),
+    ("J   both saws doubled an octave down, whistle on top", [(81, 118, 0), (81, 112, 3), (81, 104, -12),
+                                                           (81, 100, -9), (78, 100, 12)]),
+]
+if ROUND == 1:
+    # A: Saw + Whistle
+    mark("A  Saw Wave + Whistle")
+    pos = siren([SIREN_A, SIREN_B], pos, 76) + 0
+    gap()
+    # B: Square
+    mark("B  Square Wave")
+    swap(SIREN_A, 80)
+    pos = siren([SIREN_A], pos, 76)
+    gap()
+    # C: two saws a minor third apart
+    mark("C  two saws, a minor third apart")
+    swap(SIREN_A, 81)
+    swap(SIREN_B, 81, vol=92)
+    pos = siren([SIREN_A, SIREN_B], pos, 73, offsets=[0, 3])
+    gap()
+    # D: Whistle + Wind
+    mark("D  Whistle + Wind (SC SFX)")
+    swap(SIREN_A, 78)
+    swap(SIREN_B, 122, msb=3, vol=110)
+    pos = siren([SIREN_A, SIREN_B], pos, 76, offsets=[0, -16])
+    gap()
+    # E: Ocarina + Calliope
+    mark("E  Ocarina + Calliope")
+    swap(SIREN_A, 79)
+    swap(SIREN_B, 82, vol=90)
+    pos = siren([SIREN_A, SIREN_B], pos, 76)
+    gap()
+    # F: the SC Siren the medley uses now
+    mark("F  SC Siren (now in the medley)")
+    swap(SIREN_A, 125, msb=5, vol=100)
+    bend_range(SIREN_A, pos - 20, 2)
+    note(SIREN_A, pos, 60, sec(10), 104)
+    cc(SIREN_A, pos, 11, 110)
+    pos += sec(10)
+    gap()
+
+else:
+    for label, voices in ROUND2:
+        mark(label)
+        pos = stack(label, voices)
+        gap()
 
 # ---- riff demos: an Iommi-style intro in E at 86 BPM under sirens A and C
 BPM = 86.0
@@ -232,16 +267,13 @@ def riff_bars(n_bars):
             drum(bt(b, i * 0.5), 42, 60 if i % 2 else 74)
 
 
-for label, voices in (("riff + siren A (Saw + Whistle)", ((81, 0, 104), (78, 0, 96), [0, 0])),
-                      ("riff + siren C (two saws)", ((81, 0, 104), (81, 0, 92), [0, 3]))):
+RIFFS = ([("riff + siren A (Saw + Whistle)", [(81, 104, 0), (78, 96, 0)], 76),
+          ("riff + siren C (two saws)", [(81, 104, 0), (81, 92, 3)], 73)] if ROUND == 1 else
+         [("riff + siren G (two saws + whistle)", ROUND2[1][1], 73),
+          ("riff + siren I (full stack)", ROUND2[3][1], 73)])
+for label, voices, base in RIFFS:
     marks.append((pos, label))
-    (pa, ma, va), (pb, mb, vb), offs = voices
-    prog(SIREN_A, pos - 60, pa, vol=va, rev=80, msb=ma)
-    prog(SIREN_B, pos - 60, pb, vol=vb, rev=80, msb=mb)
-    bend_range(SIREN_A, pos - 50, 24)
-    bend_range(SIREN_B, pos - 50, 24)
-    # siren over the first bars (seconds scaled to this tempo), riff from bar 0
-    siren([SIREN_A, SIREN_B], pos, 73 if offs[1] else 76, offsets=offs, scale=BPM / 60.0,
+    stack(label, voices, base=base, at=pos, scale=BPM / 60.0,
           cycles=((3.4, 1.6, 3.2, -18), (2.4, 1.0, 6.0, -10)))
     riff_bars(8)
     power(E2, bt(8), 4.0, 120)
@@ -266,7 +298,7 @@ for tk, _o, m in allev:
     last = max(last, tk)
 tr.append(mido.MetaMessage("end_of_track", time=max(0, end_tick + TPB - last)))
 mf = common.format1(mf)
-out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "midi", "siren_test.mid")
+out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "midi", "siren_test.mid" if ROUND == 1 else f"siren_test{ROUND}.mid")
 os.makedirs(os.path.dirname(out), exist_ok=True)
 mf.save(out)
 print(f"{out}: Format 1, {len(mf.tracks)} tracks, {mf.length:.1f} s")
