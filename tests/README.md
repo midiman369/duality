@@ -123,9 +123,10 @@ no file EFX, channel 16 left for foley. The build fails on a note outside its se
 section's extras: tritones, chromatic power chords), a program change under a held note, or a silence
 over 1.5 s. Each section's last lead phrase walks down onto the tonic; above 160 BPM the rhythm guitars pick 8ths with 16th pairs on the accents. The rock organ's program change comes just before its first note, so it takes a unit when
 it is heard. Offline on six GS units: no type change under a sounding player, nothing hanging, hitches
-only on Anima's foley. Seeds `0197`, `00A2`, `6030`, `68F2` (Rotary Multi), `FC6C` and `2CEF` (Rotary)
-give the lead GTR Multi 3 on its own unit all song and the organ a rotary type from Holy Diver through
-chorus 2 and the big finish (6 of 40 scanned).
+only on Anima's foley. Seeds like `0197` (0.19.051, 13 of 120 scanned)
+give the lead GTR Multi 3 on its own unit all song, the organ a rotary type from Holy Diver through
+the big finish, and no dirt insert on the siren: `0197`, `DDBA`, `CB60` (Rotary Multi); `00A2`, `6030`,
+`2CEF`, `D9D3`, `FAA2`, `B699`, `B849`, `E1D7`, `7535`, `CDCC` (Rotary).
 
 `python tests/make_siren_test.py` writes `tests/midi/siren_test2.mid` (`ROUND=1`: `siren_test.mid`): air-raid
 siren candidates for the medley, the motor gesture (fast spin-up, wobble, slow wind-down, a second
