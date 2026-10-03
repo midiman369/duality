@@ -7,14 +7,18 @@ from scratch (an earlier Suno MIDI export was too muddy to use). The lead guitar
 melody and takes every solo. The tribute sections take each reference's key, tempo, tuning, groove,
 signature intro or sound (bells, rain, a siren, drum intros, synth swells, a dive bomb) and harmony
 (tritones, phrygian, harmonic minor), with original riffs and melodies (no quotes).
+The lead's lines come home: each section's last phrase walks down onto the tonic and a scream
+releases onto the tonic below it; its vibrato starts slow and narrow and speeds up as a note is held.
+Above 160 BPM the rhythm guitars pick 8ths with 16th pairs on the accents (continuous 16ths were too
+fast); the drums keep the speed.
 
    Black Sabbath storm      G    60   rain, thunder, a tolling church bell, G against its tritone
    Vocal intro              E    80   "Feel the power!" hook, choir hits
-   Hallowed intro           E    76   the bell over slow clean arpeggios
+   Hallowed intro           E    76   the bell over slow clean arpeggios, a clean guitar sings
    Virtuoso intro           E   160   twin-guitar harmony over a gallop, then runs
    Verse 1 (Iron Man)       B    76   a slow dive, then a lumbering stomp
    Chorus                   E   160   anthem
-   Bridge (War Pigs)        E    92   an air-raid siren, sustained chord hits, a ticking hi-hat
+   Bridge (War Pigs)        E    86   a five-voice air-raid siren, the big chord ringing, pickups
    Hook (Iron Maiden)       E   172   full gallop, a gang chant, then a becalmed sea (Rime)
    Bridge 2                 E   112   bass-driven mid-tempo (Heaven and Hell)
    Riff break               E   140   syncopated heavy riff (Sacred Heart)
@@ -108,8 +112,9 @@ BPB = 4.0
 
 
 def section(bpm, key, extra=(), name="", beats=4.0):
-    global BPB
-    BPB = beats
+    global BPB, BPM, CUR_KEY
+    flush_leads()
+    BPB, BPM, CUR_KEY = beats, bpm, key
     tempos.append((pos, bpm))
     sigs.append((pos, int(beats), 4))
     allow.append((pos, key.pcs(), set(extra), name))
@@ -158,13 +163,18 @@ def bend_curve(ch, t0, t1, v0, v1, steps=12):
 
 
 def vib(ch, t0, t1, base=0, depth=170, step=40):
-    """Finger vibrato around `base`, easing in, ending back on it."""
-    k, tk = 0, t0
+    """Finger vibrato around `base`: it starts slow and narrow, then widens and speeds up the
+    longer the note is held, at a rate of its own each time (not one fixed wobble)."""
+    period0 = rng.uniform(260, 360)             # ticks per cycle at the start ...
+    period1 = period0 * rng.uniform(0.62, 0.8)  # ... and at the end of the note
+    ph, tk = rng.uniform(0, 0.3), t0
+    span = max(1, t1 - t0)
     while tk < t1 - step:
-        ease = min(1.0, (tk - t0) / max(1, (t1 - t0) / 3))
-        bend(ch, tk, base + depth * ease * math.sin(k * math.pi / 3))
+        u = (tk - t0) / span
+        ease = min(1.0, 0.45 + 0.55 * (tk - t0) / max(1, span / 3))
+        bend(ch, tk, base + depth * ease * math.sin(ph * 2 * math.pi))
+        ph += step / (period0 + (period1 - period0) * u)
         tk += step
-        k += 1
     bend(ch, t1, base)
 
 
@@ -192,27 +202,175 @@ def mel(ch, bar, key, spec, vel=100, shift=0, gate=0.95, jitter=3, stretch=1, oc
              vel + (5 if abs(b % 1) < 1e-6 else 0), jitter=jitter, gate=gate)
 
 
-def sing(bar, tpl, key, vel=108, stretch=1, shift=0, harmony=None, depth=170):
+LEADQ = []          # lead phrases of the current section, written when it ends (closing rule)
+BPM, CUR_KEY = 60, None
+
+
+def sing(bar, tpl, key, vel=108, stretch=1, shift=0, harmony=None, depth=170, ch=None, close=None):
     """The lead guitar sings a phrase (a list of bars); long notes get vibrato.
-    harmony: a channel that doubles it a diatonic third below (twin guitars)."""
+    harmony: a channel that doubles it a diatonic third below (twin guitars).
+    Queued: the section's last phrase is closed onto the tonic when the section ends."""
+    LEADQ.append(("sing", pos, (bar, [list(b) for b in tpl], key, vel, stretch, shift, harmony, depth,
+                                ch if ch is not None else C1, close)))
+
+
+def scream(bar, beat, n, beats, vel=124, up=TONE):
+    """A held high note bent up and shaken (the screamed words), released onto a note below."""
+    LEADQ.append(("scream", pos, (bar, beat, n, beats, vel, up, CUR_KEY)))
+
+
+def _closing(tpl, key, shift):
+    """Rewrite a phrase's last note so the line comes home: down by step onto the tonic (up a
+    step or two from the 6th / 7th), the held note keeping half its length."""
+    for bi in range(len(tpl) - 1, -1, -1):
+        if tpl[bi]:
+            break
+    else:
+        return tpl
+    spec = sorted(tpl[bi], key=lambda r: r[0])
+    b, d, ln = spec[-1]
+    deg = d + shift
+    if deg % 7 == 0:
+        return tpl
+    r = deg % 7
+    target = deg - r if r <= 4 else deg + (7 - r)
+    path = list(range(deg - 1, target, -1)) if target < deg else list(range(deg + 1, target))
+    end = b + ln
+    if ln >= 1.5:
+        hold = ln / 2
+    elif bi + 1 < len(tpl) and not tpl[bi + 1]:
+        tpl[bi + 1] = [(0, target - shift, 2)]            # the rest after it takes the tonic
+        tpl[bi] = spec
+        return tpl
+    else:
+        hold = max(0.25, ln / 2)
+    room = end - (b + hold)
+    each = min(0.5, room / (len(path) + 1.5)) if path else 0
+    out = spec[:-1] + [(b, d, hold)]
+    tk = b + hold
+    for p in path:
+        out.append((tk, p - shift, each))
+        tk += each
+    out.append((tk, target - shift, max(0.25, end - tk)))
+    tpl[bi] = out
+    return tpl
+
+
+def _sing_now(bar, tpl, key, vel, stretch, shift, harmony, depth, ch, close):
+    if close:
+        tpl = _closing(tpl, key, shift)
     for i, spec in enumerate(tpl):
         b0 = bar + i * stretch
-        mel(C1, b0, key, spec, vel, shift=shift, stretch=stretch)
+        mel(ch, b0, key, spec, vel, shift=shift, stretch=stretch)
         if harmony is not None:
             mel(harmony, b0, key, spec, vel - 8, shift=shift - 2, stretch=stretch)
         for b, d, ln in spec:
             if ln * stretch >= 1.5:
                 t0 = t(b0, (b + 0.4) * stretch if stretch > 1 else b + 0.4)
                 t1 = t(b0, (b + ln) * stretch) - 40
-                vib(C1, t0, t1, 0, depth)
+                vib(ch, t0, t1, 0, depth)
 
 
-def scream(bar, beat, n, beats, vel=124, up=TONE):
-    """A held high note bent up and shaken (the screamed words)."""
-    note(C1, t(bar, beat), n, beats, vel, jitter=0, gate=0.97)
+def _scream_now(bar, beat, n, beats, vel, up, key):
+    release = min(0.75, beats / 3)
+    note(C1, t(bar, beat), n, beats - release, vel, jitter=0, gate=0.97)
     bend_curve(C1, t(bar, beat + 0.15), t(bar, beat + 0.6), 0, up, 6)
-    vib(C1, t(bar, beat + 0.6), t(bar, beat + beats - 0.1), up, 320)
-    bend(C1, t(bar, beat + beats) - 10, 0)
+    vib(C1, t(bar, beat + 0.6), t(bar, beat + beats - release - 0.1), up, 320)
+    bend_curve(C1, t(bar, beat + beats - release - 0.1), t(bar, beat + beats - release) - 10, up, 0, 4)
+    tonic = (key.tonic if key else 64) % 12
+    low = n - ((n - tonic) % 12 or 12)                      # the tonic below the scream
+    note(C1, t(bar, beat + beats - release), low, release, vel - 14, jitter=0, gate=0.9)
+
+
+def _lead_end(kind, at, a):
+    global pos
+    keep = pos
+    pos = at
+    try:
+        if kind == "scream":
+            bar, beat, n, beats = a[:4]
+            return t(bar, beat + beats)
+        bar, tpl, key, vel, stretch = a[:5]
+        return max((t(bar + i * stretch, (b + ln) * stretch) for i, sp in enumerate(tpl) for b, d, ln in sp),
+                   default=t(bar))
+    finally:
+        pos = keep
+
+
+def flush_leads():
+    """Write the section's queued lead phrases; the one that ends last closes the line."""
+    global pos
+    if not LEADQ:
+        return
+    last = max(range(len(LEADQ)), key=lambda i: _lead_end(LEADQ[i][0], LEADQ[i][1], LEADQ[i][2]))
+    keep = pos
+    for i, (kind, at, a) in enumerate(LEADQ):
+        pos = at
+        if kind == "scream":
+            _scream_now(*a)
+        else:
+            a = list(a)
+            if a[9] is None:
+                a[9] = (i == last)
+            _sing_now(*a)
+    pos = keep
+    LEADQ.clear()
+
+
+def thin16(roots, base, burst=False, accent="5"):
+    """16 sixteenth-note roots -> 8ths, with a 16th pair where an accent falls on the off-16th
+    (fast sections: continuous 16ths above 160 BPM were too fast); burst keeps the bar's last
+    beat in 16ths as a fill. Rows for riff(): (beat, root, beats, kind)."""
+    out = []
+    for i in range(0, 16, 2):
+        x, y = roots[i], roots[i + 1]
+        b = i * .25
+        if burst and i >= 12:
+            out += [(b, x, .25, "n" if x == base else accent), (b + .25, y, .25, "n" if y == base else accent)]
+        elif x == base and y != base:
+            out += [(b, x, .25, "n"), (b + .25, y, .25, accent)]
+        else:
+            out.append((b, x, .5, "n" if x == base else accent))
+    return out
+
+
+def siren(chs, t0, base, offsets, cycles=((3.4, 1.6, 3.2, -18), (2.4, 1.0, 6.0, -10))):
+    """An air-raid siren (the motor gesture, siren test round 2 'J'): held notes on a 24-semitone
+    bend, fast spin-up slowing near the top, a little wobble, a slow wind-down sinking below the
+    start, a second spin-up before it stops; louder as it climbs. Seconds at the section's tempo."""
+    semi = 8192 / 24.0
+    tk_s = lambda s: int(round(s * TPB * BPM / 60.0))
+    total = sum(r + h + f for r, h, f, _s in cycles)
+    for ch, off in zip(chs, offsets):
+        bend(ch, t0 - 10, -20 * semi)
+        events.append((t0, 2, mido.Message("note_on", channel=ch, note=base + off, velocity=110)))
+        events.append((t0 + tk_s(total) + 20, 0, mido.Message("note_off", channel=ch, note=base + off, velocity=0)))
+    tt = t0
+    for rise, hold, fall, frm in cycles:
+        n = max(8, int(rise / 0.03))
+        for k in range(n + 1):
+            u = k / n
+            x = 1 - (1 - u) ** 2.4
+            for ch in chs:
+                bend(ch, tt + tk_s(rise * u), (frm * (1 - x)) * semi)
+                cc(ch, tt + tk_s(rise * u), 11, 40 + 84 * x)
+        tt += tk_s(rise)
+        n = max(4, int(hold / 0.04))
+        for k in range(n + 1):
+            for ch in chs:
+                bend(ch, tt + tk_s(hold * k / n), 18 * math.sin(k * 0.9) + 10 * math.sin(k * 2.3))
+        tt += tk_s(hold)
+        n = max(8, int(fall / 0.03))
+        for k in range(n + 1):
+            u = k / n
+            x = u ** 1.7
+            for ch in chs:
+                bend(ch, tt + tk_s(fall * u), -22 * x * semi)
+                cc(ch, tt + tk_s(fall * u), 11, 124 - 94 * x)
+        tt += tk_s(fall)
+    for ch in chs:
+        bend(ch, tt + 30, 0)
+    return tt
 
 
 def ring(arp, i, most, step=.5):
@@ -399,7 +557,9 @@ for k, arp in enumerate(HALLOW):
     for i, n in enumerate(arp):
         note(C2, t(k, i * .5), n, ring(arp + sum(HALLOW[k + 1:k + 2], []), i, 1.5), 92 if i == 0 else 84, jitter=2)
     note(C5, t(k), arp[0] - 12, 4, 84)
-sing(0, [[(0, 4, 2), (2, 6, 2)], [(0, 7, 3), (3, 6, 1)], [(0, 5, 2), (2, 6, 1), (3, 5, 1)], [(0, 4, 4)]], KE, 98, depth=140)
+prog(C12, t(0) - 30, 27, vol=112, pan=84, rev=80, cho=50)          # Clean guitar lead (gets a clean-gt insert)
+sing(0, [[(0, 4, 2), (2, 6, 2)], [(0, 7, 3), (3, 6, 1)], [(0, 5, 2), (2, 6, 1), (3, 5, 1)], [(0, 4, 4)]], KE, 100,
+     depth=700, ch=C12)
 drum(t(3, 3), CRASH, 90)
 advance(4)
 
@@ -495,34 +655,54 @@ def chorus(organ=False, choir_from=8):
 chorus()
 
 # ======================================================================================
-# 6  Bridge - E, 92 BPM, 10 bars: an air-raid siren over a ticking hi-hat, then sustained
-#    chord hits ringing into the silence
+# 6  Bridge (War Pigs) - E, 86 BPM: an air-raid siren (five voices: two saws a minor third
+#    apart, both doubled an octave down, a whistle on top), then the big E chord left ringing
+#    with a wide, slow vibrato, the hi-hat ticking in the gap, a two-chord pickup into the next hit
 # ======================================================================================
-section(92, KE, name="bridge (War Pigs)")
-prog(C13, t(0) - 30, 125, vol=100, pan=64, rev=70, expr=110, msb=5)   # Siren (SC SFX; GM: Helicopter)
-note(C13, t(0), 60, 9, 104, jitter=0, gate=1.0)
-nocheck.append((C13, t(0), t(3)))
+section(86, KE, name="bridge (War Pigs)")
+SIRENS = [(C13, 81, 118), (C14, 81, 112), (C12, 81, 104), (C6, 81, 100), (C7, 78, 100)]
+for ch_, pc_, vol_ in SIRENS:
+    prog(ch_, t(0) - 60, pc_, vol=vol_, pan=64, rev=90, cho=20)
+    bend_range(ch_, t(0) - 50, 24)
+s_end = siren([c for c, _p, _v in SIRENS], t(0), 73, [0, 3, -12, -9, 12])
+for ch_, _p, _v in SIRENS:
+    nocheck.append((ch_, t(0), s_end + TPB))
+    bend_range(ch_, s_end + 120, 2)
 for i in range(16):
     drum(t(0, i * .5), CHH, 56 if i % 2 else 68)
 advance(2)
-WAR = [[(0, E2, 3, "p")], [(0, G2, .5, "p"), (.5, A2, 2.5, "p")], [(0, E2, 3, "p")], [(0, Cn3, .5, "p"), (.5, D3, 2.5, "p")],
-       [(0, E2, 3, "p")], [(0, G2, .5, "p"), (.5, A2, 2.5, "p")], [(0, Cn3, 2, "p"), (2, D3, 2, "p")], [(0, B2, 3.5, "p")]]
+
+
+def iommi(t0, t1):
+    """A wide, slow vibrato on the held chord (both rhythm guitars, +-0.35 semitone)."""
+    k, tk = 0, t0
+    while tk < t1:
+        v = 1430 * min(1.0, (tk - t0) / TPB) * math.sin(k * 2 * math.pi / 10)
+        for ch_ in (C3, C8):
+            bend(ch_, tk, v)
+        tk += 30
+        k += 1
+    for ch_ in (C3, C8):
+        bend(ch_, t1, 0)
+
+
+PICK = [(G2, A2), (Cn3, D3), (G2, A2), (D3, Cn3)]
 BRA = [[(0, 9, 1), (1, 9, .5), (1.5, 11, .5), (2, 12, 2)], [(0, 11, 1), (1, 9, 1), (2, 7, 2)]]
 BRB = [[(0, 7, .5), (.5, 9, .5), (1, 11, 1), (2, 14, 2)], [(0, 13, 1), (1, 12, 1), (2, 11, 2)]]
-BRD = [[(0, 11, .5), (.5, 12, .5), (1, 13, .5), (1.5, 14, .5), (2, 14, 2)], []]
-for k, sp in enumerate(WAR):
-    riff([C3, C8], k, sp, 110, gate=0.97)
-    for b, r, ln, kind in sp:
-        drum(t(k, b), CRASH if b == 0 else SPLASH, 108)
-        drum(t(k, b), KICK, 108)
-    for i in range(8):
-        drum(t(k, i * .5), CHH, 64 if i % 2 else 76)
-    if k % 2 == 1:
-        drum(t(k, 3), SNARE, 104)
-for i, ph in enumerate((BRA, BRB, BRA, BRD)):
-    sing(i * 2, ph, KE, 108)
-scream(7, 0, KE(14), 3.6)
-fill(7, 2, "down", 104)
+for k in range(8):
+    riff([C3, C8], k, [(0, E2, 3.0, "p")], 114, gate=0.97)            # the big hit, left to ring
+    drum(t(k), CRASH, 116)
+    drum(t(k), KICK, 114)
+    iommi(t(k, 1.0), t(k, 2.9))
+    if k < 7:
+        p1, p2 = PICK[k % 4]
+        riff([C3, C8], k, [(3.25, p1, .25, "p"), (3.5, p2, .5, "p")], 108, gate=0.9)   # into the next hit
+        drum(t(k, 3.5), SNARE, 104)
+    for i in range(8):                                               # the hi-hat ticks through the gap
+        drum(t(k, i * .5), CHH, 60 if i % 2 else 74)
+sing(4, BRA, KE, 106)
+sing(6, BRB, KE, 106)
+fill(7, 3, "down", 104)
 advance(8)
 
 # ======================================================================================
@@ -683,7 +863,7 @@ drum(t(0), CRASH, 116)
 PK = [[E2, E2, E2, G2, E2, E2, A2, E2, E2, E2, E2, B2, E2, A2, G2, E2],
       [E2, E2, E2, G2, E2, E2, A2, E2, E2, E2, D3, Cn3, B2, A2, G2, D3]]
 for k in range(2, 6):
-    riff([C3, C8], k, [(i * .25, n, .25, "n" if n == E2 else "5") for i, n in enumerate(PK[k % 2])], 110, gate=0.7)
+    riff([C3, C8], k, thin16(PK[k % 2], E2, burst=(k % 2 == 1)), 110, gate=0.8)
     dkick_kit(k, 108, crash=(k % 2 == 0))
 note(C1, t(3, 2), KE(11), 2, 120, jitter=0)                         # Halford's cry
 bend_curve(C1, t(3, 2.2), t(3, 2.6), 0, TONE, 5)
@@ -747,7 +927,7 @@ section(190, KE, name="verse 3 (Jawbreaker)")
 JAW = [[E2, E2, G2, E2, E2, A2, E2, E2, B2, E2, E2, D3, E2, Cn3, B2, A2],
        [E2, E2, G2, E2, E2, A2, E2, E2, B2, E2, D3, E2, Cn3, D3, E3, D3]]
 for k in range(4):
-    riff([C3, C8], k, [(i * .25, n, .25, "n" if n == E2 else "5") for i, n in enumerate(JAW[k % 2])], 110, gate=0.7)
+    riff([C3, C8], k, thin16(JAW[k % 2], E2, burst=(k % 2 == 1)), 110, gate=0.8)
     (dkick_kit if k < 2 else skank_kit)(k, 108, crash=(k % 2 == 0))
 riff([C3, C8], 4, [(0, E2, 7.8, "p")], 118, gate=0.99)               # "...reaching for the SKYYY!"
 drum(t(4), CRASH, 122)
@@ -850,7 +1030,7 @@ section(176, KD, extra={3, 8}, name="verse 5 (Domination)")
 DOM = [[D2, D2, F2, D2, D2, G2, D2, D2, Gs2, G2, D2, D2, F2, D2, Eb2, D2],
        [D2, D2, F2, D2, D2, G2, D2, D2, A2, Gs2, G2, F2, Eb2, D2, Eb2, F2]]
 for k in range(4):
-    riff([C3, C8], k, [(i * .25, n, .25, "n" if n == D2 else "5") for i, n in enumerate(DOM[k % 2])], 110, gate=0.7)
+    riff([C3, C8], k, thin16(DOM[k % 2], D2, burst=(k % 2 == 1)), 110, gate=0.8)
     skank_kit(k, 106, crash=(k % 2 == 0))
 note(C1, t(3, 2.5), KD(18), 1.2, 118, jitter=0)                    # a pinch squeal into the breakdown
 bend_curve(C1, t(3, 2.6), t(3, 3), 0, TONE, 5)
@@ -881,7 +1061,7 @@ advance(8)
 section(200, KD, extra={3, 8}, name="thrash burst (Art of Shredding)")
 SHRED = [[D2] * 4 + [Eb2, D2, D2, D2] + [D2] * 4 + [Gs2, G2, F2, Eb2], [D2] * 4 + [F2, D2, D2, D2] + [G2, D2, Gs2, D2] + [A2, Gs2, G2, F2]]
 for k in range(4):
-    riff([C3, C8], k, [(i * .25, n, .25, "5") for i, n in enumerate(SHRED[k % 2])], 108, gate=0.7)
+    riff([C3, C8], k, thin16(SHRED[k % 2], D2, burst=(k % 2 == 1)), 108, gate=0.8)
     dkick_kit(k, 106, crash=(k % 2 == 0))
 mel(C1, 3, KD, [(i * .25, 14 - i, .25) for i in range(16)], 112, gate=0.8, jitter=1)
 advance(4)
@@ -925,14 +1105,14 @@ section(216, KE, extra={5, 10, 3}, name="verse 6 (thrash)")
 TREM = [[E2] * 8 + [F2] * 4 + [E2] * 4, [G2] * 4 + [Fs2] * 4 + [F2] * 4 + [E2] * 4]
 for k in range(11):
     if k < 6:
-        riff([C3, C8], k, [(i * .25, n, .25, "n") for i, n in enumerate(TREM[k % 2])], 106, gate=0.7)
+        riff([C3, C8], k, thin16(TREM[k % 2], E2, burst=(k % 2 == 1), accent="n"), 106, gate=0.8)
         skank_kit(k, 106, crash=(k % 4 == 0))
     elif k == 6:                                                   # "We are here to witness Slayer!"
         riff([C3, C8], k, [(0, E2, 4, "p")], 116, gate=0.97)
         drum(t(k), CRASH, 120)
         drum(t(k), KICK, 120)
     else:                                                          # whammy chaos over the tremolo
-        riff([C3, C8], k, [(i * .25, n, .25, "n") for i, n in enumerate(TREM[k % 2])], 106, gate=0.7)
+        riff([C3, C8], k, thin16(TREM[k % 2], E2, burst=(k % 2 == 1), accent="n"), 106, gate=0.8)
         dkick_kit(k, 108, crash=(k == 7))
 sing(0, VC, KE, 112)
 sing(2, [VD[0], []], KE, 114)
@@ -1202,6 +1382,10 @@ for k in range(4):                                                 # the horseme
 nocheck.append((C13, t(6), t(10)))
 ramp(C13, 11, t(6), t(8), 20, 110)
 ramp(C13, 10, t(6), t(10), 16, 108)
+for ch_ in (C3, C8):                                               # the guitars swell in with the riders
+    ramp(ch_, 11, t(6), t(8) - 20, 30, 127)
+riff([C3, C8], 6, [(0, E2, 3.9, "p")], 96, gate=0.98, bass=False)
+riff([C3, C8], 7, [(0, E2, 3.6, "p")], 104, gate=0.98, bass=False)
 advance(8)
 section(72, KEh, name="closer (Black Horsemen) epic")
 BHR = [(E2, 0), (Cn3, 5), (A2, 3), (B2, 4), (E2, 0), (Cn3, 5), (B2, 4), (E2, 0)]
@@ -1240,6 +1424,7 @@ end_tick = t(3) + TPB * 2
 # ======================================================================================
 # checks: notes in key, no program change under a held note, no unintended silence
 # ======================================================================================
+flush_leads()
 allow.sort(key=lambda a: a[0])
 bad = []
 for tk, _o, m in events:
