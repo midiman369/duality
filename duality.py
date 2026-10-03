@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.050"
+VERSION = "0.19.051"
 
 
 """
@@ -52,7 +52,8 @@ Anima (opt-in)
     dirt inserts' Level follows a CC7/CC11 fade-out. CC16 drives only wah
     and rotary types (on EFX Control 1 or 2, whichever holds the knob),
     each unit on its own: the wah follows the player (picks quack, held
-    notes cry open, bends open it, fast runs stay narrow, silence = heel)
+    notes cry open, then rock / hold / close / follow the vibrato, seeded
+    per note; bends open it, fast runs stay narrow, silence = heel)
     over a low Manual base (20; a hard high note held 0.5 s lifts it to 38, at most once per 8 s);
     lead lines get GTR Multi 3 Peak 80, rhythm parts (chords, low notes)
     Peak 48 and 60% of the pedal; rotary flips speed on a held chord. A
@@ -818,7 +819,12 @@ ANIMA_WAH_PICK = 0.45        # a pick's quack, x velocity/127
 ANIMA_WAH_QUACK_SEC = 0.12   # quack decay
 ANIMA_WAH_HOLD_OPEN = 0.40   # a held note sweeps open by this much ...
 ANIMA_WAH_HOLD_SEC = (0.20, 0.80)   # ... starting after 0.2 s, fully open at 0.8 s
-ANIMA_WAH_ROCK = (0.10, 1.6)        # then rocks: depth, Hz
+ANIMA_WAH_ROCK = (0.10, 1.6)        # then moves (0.19.051: a seeded gesture per held note) ...
+ANIMA_WAH_GESTURES = (("rock", 45), ("hold", 20), ("close", 15), ("follow", 20))   # ... picked by weight
+ANIMA_WAH_ROCK_DEPTH = (0.06, 0.14)       # rock: depth range ...
+ANIMA_WAH_ROCK_BEATS = (0.5, 1.0, 1.0, 2.0)   # ... one cycle per this many beats (else 0.7-2.3 Hz) ...
+ANIMA_WAH_ROCK_DRIFT = 0.30               # ... speeding up by up to this much over 2 s, like a tiring foot
+ANIMA_WAH_CLOSE = (0.12, 0.25)            # close: per second, at most (toe slowly eases back)
 ANIMA_WAH_BEND_OPEN = 0.35   # a bend up opens it this much more at full bend
 ANIMA_WAH_REGISTER = 0.15    # high notes sit this much more open (E4 .. A6)
 ANIMA_WAH_FAST_RATE = (5.0, 10.0)   # notes/s where runs start / finish narrowing the quack
@@ -5837,8 +5843,7 @@ class Duality:
             vel = max(v for _t, v in notes.values())
             lo, hi = ANIMA_WAH_HOLD_SEC
             hold = min(1.0, max(0.0, (age - lo) / max(0.01, hi - lo)))
-            st["ph"] = (float(st.get("ph") or 0.0) + dt * ANIMA_WAH_ROCK[1] * 6.28318530718) if hold >= 1.0 else 0.0
-            rock = ANIMA_WAH_ROCK[0] * math.sin(st["ph"]) if hold >= 1.0 else 0.0
+            rock = self._anima_wah_gesture(port, owners, st, newest, age, hold, dt)
             reg = min(1.0, max(0.0, (top - 64) / 29.0))
             bend = max((self.pitch[c] or 0) for c in owners if self.pitch[c] is not None) \
                 if any(self.pitch[c] is not None for c in owners) else 0
@@ -5901,6 +5906,62 @@ class Duality:
             self._anima_efx_ours = True
             self._safe_out_send(port, self._gs_dt1([0x40, 0x03, man], [want]))
             self._anima_feedback("efx-param", f"P{port + 1} wah {'scream' if scream else 'base'} Manual {want}")
+
+    def _anima_wah_gesture(self, port: int, owners, st: dict, newest: float, age: float,
+                           hold: float, dt: float) -> float:
+        """What the foot does once a held note is fully open: one seeded gesture per note.
+
+        rock (tempo-tied rate, varied depth and phase, speeding up a little), hold (stays
+        open), close (eases back), follow (moves with the player's vibrato). Was a fixed
+        1.6 Hz rock on every held note until 0.19.051.
+        """
+        g = st.get("gest")
+        if g is None or g.get("t0") != newest:
+            n = int(st.get("gest_n") or 0) + 1
+            st["gest_n"] = n
+            r = self._anima_mix(port * 131 + 7, n * 37)
+            vals = []
+            for _ in range(5):                       # small LCG off the seeded mix
+                r = (r * 1103 + 12345) & 0xFFFF
+                vals.append(r / 65535.0)
+            tot = sum(w for _k, w in ANIMA_WAH_GESTURES)
+            x, kind = vals[0] * tot, ANIMA_WAH_GESTURES[-1][0]
+            for k, w in ANIMA_WAH_GESTURES:
+                if x < w:
+                    kind = k
+                    break
+                x -= w
+            beat = self._anima_beat_sec()
+            if beat > 0:
+                m = ANIMA_WAH_ROCK_BEATS[int(vals[1] * len(ANIMA_WAH_ROCK_BEATS)) % len(ANIMA_WAH_ROCK_BEATS)]
+                hz = min(2.6, max(0.5, 1.0 / (beat * m)))
+            else:
+                hz = 0.7 + 1.6 * vals[1]
+            lo, hi = ANIMA_WAH_ROCK_DEPTH
+            g = st["gest"] = {"t0": newest, "kind": kind, "hz": hz, "depth": lo + (hi - lo) * vals[2],
+                              "ph": vals[3] * 6.28318530718, "drift": ANIMA_WAH_ROCK_DRIFT * vals[4],
+                              "avg": None}
+        if hold < 1.0:
+            return 0.0
+        t_open = max(0.0, age - ANIMA_WAH_HOLD_SEC[1])
+        kind = g["kind"]
+        if kind == "follow":
+            pb = [self.pitch[c] for c in owners if self.pitch[c] is not None]
+            cur = float(max(pb, key=abs)) if pb else 0.0
+            avg = cur if g["avg"] is None else g["avg"] + (cur - g["avg"]) * min(1.0, dt / 0.4)
+            g["avg"] = avg
+            if abs(cur - avg) > 0.4 or g.get("moving"):
+                g["moving"] = True
+                return max(-0.15, min(0.15, 0.06 * (cur - avg)))
+            kind = "rock" if t_open > 0.5 else "hold"    # no vibrato to follow: rock after a beat
+        if kind == "rock":
+            speed = 1.0 + g["drift"] * min(1.0, t_open / 2.0)
+            g["ph"] += dt * g["hz"] * speed * 6.28318530718
+            return g["depth"] * math.sin(g["ph"])
+        if kind == "close":
+            rate, most = ANIMA_WAH_CLOSE
+            return -min(most, rate * t_open)
+        return 0.02 * math.sin(t_open * 1.9)           # hold: open, barely moving
 
     def _anima_cc16_send(self, port: int, owners, value: int, st: dict) -> None:
         """CC16 to one unit on its owner channels; skip only an unchanged value."""
