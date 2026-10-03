@@ -99,7 +99,8 @@ on a program change under a held note. Offline with seeds 0436, 1A2B, 7A18 (and 
 type change under a sounding player, nothing hanging, about 99.8% of what Duality sends inside the
 file's local key (the rest are chords held longer than the 2 s check window). Seeds `FC6C`, `36D9`, `7386` (0.19.045) put the prog
 organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop;
-`946F` does the same with Rotary (21 of 240 scanned gave both).
+`946F` does the same with Rotary (21 of 240 scanned gave both). Seeds like `0197` and `6030` (0.19.052, 6 of 120 scanned) put the prog organ on Tremolo Chorus
+and the solo guitar on GTR Multi 3 instead: `0197`, `6030`, `5094`, `B42E`, `4890`, `EBA8`.
 
 `python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
 (11:53): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
