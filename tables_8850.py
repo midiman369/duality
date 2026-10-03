@@ -571,6 +571,9 @@ ANIMA_TONE_PREFS: dict = {
         (8, 4, 25): {'w': 4, 'note': '12 string style color.'},  # 12-str.Gt
         (9, 4, 25): {'note': 'great separation, probably good for solos.'},  # Nylon+Steel
     },
+    30: {  # 031 DistortionGt
+        (26, 4, 30): {'w': 1.0, 'note': 'palm-muted chug, no sustain: for riffing, not held notes or leads. Step to Rock Rhythm2 when held.'},  # Dist Rtm GTR
+    },
     32: {  # 033 Acoustic Bs.
         (1, 4, 32): {'w': 6},  # Rockabilly
         (16, 4, 32): {'w': 1.0},  # Bass + OHH
@@ -1265,6 +1268,8 @@ ANIMA_TONE_TRAITS = {
     # 0.19.050: a squeal at each note's start that sweeps down (~2 s at C2, none by C5)
     (42, 4, 38):    frozenset({"sweep"}),           # 303SqDistBs3: full squeal; slower bass lines only
     (41, 4, 38):    frozenset({"sweep"}),           # 303SqDistBs2: the same, milder
+    # 0.19.052
+    (26, 4, 30):    frozenset({"short"}),           # Dist Rtm GTR: palm-muted chug, no sustain
 }
 
 # "sweep" time per tone (x ANIMA_TRAIT_SWEEP's seconds); unlisted = 1.0
@@ -1277,6 +1282,7 @@ ANIMA_TONE_SWEEP_SCALE = {
 ANIMA_TONE_STEPDOWN = {
     (42, 4, 38): (41, 4, 38),                       # 303SqDistBs3 -> 303SqDistBs2 (less squeal)
     (41, 4, 38): (40, 4, 38),                       # 303SqDistBs2 -> 303SqDistBs (no squeal, same tone)
+    (26, 4, 30): (25, 4, 30),                       # Dist Rtm GTR -> Rock Rhythm2 (same family, sustains)
 }
 
 

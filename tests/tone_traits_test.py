@@ -188,6 +188,8 @@ for name, slot, notes, want in (
     ("303SqDistBs3 long at C2", (42, 4, 38), [(1.0 + k * 3.0, 36, 2.6) for k in range(5)], []),
     ("303SqDistBs3 short at C5", (42, 4, 38), [(1.0 + k * 0.3, 72, 0.2) for k in range(10)], []),
     ("303SqDistBs2 1.2 s at C2", (41, 4, 38), [(1.0 + k * 1.5, 36, 1.2) for k in range(6)], []),
+    ("Dist Rtm GTR held", (26, 4, 30), [(1.0 + k * 1.2, 52, 0.9) for k in range(4)], [(25, 4, 30)]),
+    ("Dist Rtm GTR chugging", (26, 4, 30), [(1.0 + k * 0.2, 40, 0.12) for k in range(20)], []),
 ):
     d, pcs, ev = run_fallback(slot[2], slot, notes)
     steps = []
