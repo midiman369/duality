@@ -102,13 +102,13 @@ organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio sect
 `946F` does the same with Rotary (21 of 240 scanned gave both).
 
 `python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
-(11:51): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
+(11:53): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
 muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm
 duo (ch3 / ch8, ch8 also plays the twin-guitar harmonies), bass and the SC-88Pro map's Standard 1 kit.
 The verses that name the bands take each reference's key, tempo, tuning, groove and signature intro or
 sound, with original riffs and melodies (no quotes): Black Sabbath (G against its tritone, rain, thunder,
 a church bell), Hallowed Be Thy Name's bell intro, a Maiden twin gallop, Iron Man (B minor, a slow dive),
-War Pigs (an air-raid siren, ringing hits), Iron Maiden (gallop, gang chant), Rime's becalmed sea, Heaven
+War Pigs (a five-voice air-raid siren from `make_siren_test.py` round 2, the big E chord ringing with a wide vibrato, two-chord pickups), Iron Maiden (gallop, gang chant), Rime's becalmed sea, Heaven
 and Hell, Sacred Heart, a drop-D Sabbath crawl taking flight, a Judas Priest suite (Night Crawler, a
 Painkiller drum intro, a Metal Meltdown dive bomb, The Sentinel's twin leads, The Ripper's scream,
 Turbo Lover's guitar synths, Jawbreaker), Rainbow / Dio (Tarot Woman's synth, Stargazer's drums and
@@ -121,11 +121,16 @@ and SC variation tones for the effects (ch9 church bell; ch13-14 rain, thunder, 
 horse gallop; a plain GM synth plays tubular bells, Seashore, Helicopter, Bird). GM capitals, GS reset,
 no file EFX, channel 16 left for foley. The build fails on a note outside its section's key (plus the
 section's extras: tritones, chromatic power chords), a program change under a held note, or a silence
-over 1.5 s. The rock organ's program change comes just before its first note, so it takes a unit when
+over 1.5 s. Each section's last lead phrase walks down onto the tonic; above 160 BPM the rhythm guitars pick 8ths with 16th pairs on the accents. The rock organ's program change comes just before its first note, so it takes a unit when
 it is heard. Offline on six GS units: no type change under a sounding player, nothing hanging, hitches
 only on Anima's foley. Seeds `0197`, `00A2`, `6030`, `68F2` (Rotary Multi), `FC6C` and `2CEF` (Rotary)
 give the lead GTR Multi 3 on its own unit all song and the organ a rotary type from Holy Diver through
 chorus 2 and the big finish (6 of 40 scanned).
+
+`python tests/make_siren_test.py` writes `tests/midi/siren_test2.mid` (`ROUND=1`: `siren_test.mid`): air-raid
+siren candidates for the medley, the motor gesture (fast spin-up, wobble, slow wind-down, a second
+spin-up) on held notes with a 24-semitone bend, then two of them over an Iommi-style intro. Round 2's
+"J" (two saws a minor third apart, both doubled an octave down, a whistle on top) is the one in the medley.
 
 ## Tests
 
