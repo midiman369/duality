@@ -27,6 +27,9 @@
      any unit; a kit switch (ch10 PC 48) writes the effects again
  12. a GM System On (and a GM2 one) while Voodoo plays keeps Voodoo on with nothing resent;
      a GS reset still leaves it (format not locked)
+ 13. wire pacing (0.19.059): with a driver that takes SysEx at once, the load still lasts as long as
+     the bytes take on a 31250-baud line (each unit's), never less; no step goes to a unit before
+     its line has delivered the one before
 """
 import sys
 import time as _time
@@ -365,6 +368,31 @@ for data, nm in (([0x7E, 0x7F, 0x09, 0x01], "GM"), ([0x7E, 0x7F, 0x09, 0x03], "G
 send(d, mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41]))
 if d.voodoo_active and not d.voodoo_loading:
     fails.append("12: a GS reset no longer leaves Voodoo")
+
+# 13. wire pacing
+REC.clear()
+CLOCK[0] = 1000.0
+tags = [D.parse_out_spec(f"P{i+1}:{s}")[1] for i, s in enumerate(["cm64", "cm64", "mt32"])]
+d = D.Duality("in", ["P1", "P2", "P3"], show_status=False, out_formats=tags, input_format="gm",
+              poly_limits=[32] * 3)
+REC.clear()
+t0 = CLOCK[0]
+d._voodoo_begin("test")
+while d.voodoo_loading:
+    CLOCK[0] += 0.002
+    d._voodoo_tick()
+took = CLOCK[0] - t0
+per, line_free, early = {}, {}, 0
+for tk, p, m in REC:
+    if m.type != "sysex":
+        continue
+    if tk + 1000.0 < line_free.get(p, 0.0) - 1e-6:
+        early += 1
+    line_free[p] = max(line_free.get(p, 0.0), tk + 1000.0) + (len(m.data) + 2) / 3125.0
+    per[p] = per.get(p, 0) + len(m.data) + 2
+wire = max(per.values()) / 3125.0
+if took < wire - 0.05 or early:
+    fails.append(f"13: load took {took:.2f} s for {wire:.2f} s of SysEx a unit; {early} sends before the line was free")
 
 if fails:
     print("FAILS")

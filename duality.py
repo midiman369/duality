@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.058"
+VERSION = "0.19.059"
 
 
 """
@@ -261,6 +261,7 @@ VOODOO_SYSEX_GAP = 0.035          # seconds between DT1 SysEx during bank load
 # Bench: ~75ms of wall time per unit per paced step when all units share one
 # USB MIDI device — estimate uses max(gap, units × this) so the UI is honest.
 VOODOO_SEC_PER_UNIT_STEP = 0.075
+MIDI_WIRE_BYTES_PER_SEC = 3125.0  # 31250 baud, 10 bits a byte: a unit cannot take SysEx faster
 VOODOO_CATCHUP_MIN_GAP = 0.001    # floor gap between catch-up sends (was 8ms → too slow)
 VOODOO_CATCHUP_SPEED = 8.0        # compress original spacing by this factor
 VOODOO_CATCHUP_BURST = 48         # max messages drained per run-loop tick
@@ -1188,6 +1189,7 @@ class Duality:
         self._voodoo_send_list: list = []  # entries: (payload_bytes, ports|None)
         self._voodoo_send_idx = 0
         self._voodoo_next_send = 0.0
+        self._voodoo_wire: dict[int, float] = {}   # port -> when its MIDI line is free again
         self._voodoo_targets: list[int] = []
         self._voodoo_catchup_idx = 0
         self._voodoo_catchup_end = 0
@@ -3675,6 +3677,12 @@ class Duality:
         n_units = max(1, len(targets))
         # Honest ETA: paced gap is a floor; shared USB MIDI scales with unit count.
         est = n * max(VOODOO_SYSEX_GAP, n_units * VOODOO_SEC_PER_UNIT_STEP)
+        per_unit: dict[int, int] = {}
+        for it in self._voodoo_send_list:
+            for pl, ports in (it if isinstance(it, list) else [it]):
+                for d_ in (ports if ports is not None else targets):
+                    per_unit[d_] = per_unit.get(d_, 0) + len(pl) + 2
+        est = max(est, max(per_unit.values(), default=0) / MIDI_WIRE_BYTES_PER_SEC)
         multi = " 16ch" if len(targets) >= 2 else ""
         self._set_status(
             f"Voodoo: loading {bank_label(self.voodoo_bank)}{multi} "
@@ -4117,11 +4125,30 @@ class Duality:
         now = time.monotonic()
         if self.voodoo_loading:
             # One SysEx per tick keeps the Live panel + hotkeys responsive
+            # Wire pacing (0.19.059): a driver that buffers (virtual cables, the
+            # gearmulator, some USB interfaces) takes SysEx faster than a unit's
+            # MIDI line can deliver it. Each unit's line is tracked; a step waits
+            # until its units' lines are free, and "ready" until every line is.
+            wire = self._voodoo_wire
+            item = (
+                self._voodoo_send_list[self._voodoo_send_idx]
+                if self._voodoo_send_idx < len(self._voodoo_send_list) else None
+            )
+            pairs = item if isinstance(item, list) else ([item] if item is not None else [])
+            pairs = [p_ if isinstance(p_, tuple) else (p_, None) for p_ in pairs]
+            dests = {
+                d_ for _pl, ports in pairs
+                for d_ in (ports if ports is not None else self._voodoo_targets)
+            }
+            if item is not None and any(wire.get(d_, 0.0) > now for d_ in dests):
+                return
             if (
                 self._voodoo_send_idx < len(self._voodoo_send_list)
                 and now >= self._voodoo_next_send
             ):
-                item = self._voodoo_send_list[self._voodoo_send_idx]
+                for pl, ports in pairs:
+                    for d_ in (ports if ports is not None else self._voodoo_targets):
+                        wire[d_] = max(wire.get(d_, 0.0), now) + (len(pl) + 2) / MIDI_WIRE_BYTES_PER_SEC
                 # Formats:
                 #   (payload, ports|None) — None = all voodoo targets
                 #   [(payload, ports), ...] — parallel step (different maps to
@@ -4157,6 +4184,10 @@ class Duality:
                     self._voodoo_fanout(dest, payload)
                 self._voodoo_send_idx += 1
                 self._voodoo_next_send = step_t0 + VOODOO_SYSEX_GAP
+            if self._voodoo_send_idx >= len(self._voodoo_send_list) and any(
+                w > time.monotonic() for w in self._voodoo_wire.values()
+            ):
+                return   # the last bytes are still on their way to a unit
             if self._voodoo_send_idx >= len(self._voodoo_send_list):
                 self.voodoo_loading = False
                 self.voodoo_active = True
