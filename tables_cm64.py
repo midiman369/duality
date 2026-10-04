@@ -83,6 +83,75 @@ CM64_PCM_TONES = (
     'ORCH HIT',
 )
 
+# PCM tone (PC 1-64) -> the nearest GM program: Anima's categories and GM-numbered sets on the PCM
+# channels (11-16) of a native CM-64 stream.
+CM64_PCM_GM = (
+      0,  #  1 A.PIANO 1
+      0,  #  2 A.PIANO 2
+      1,  #  3 A.PIANO 3
+      3,  #  4 A.PIANO 4
+      0,  #  5 A.PIANO 5
+      0,  #  6 A.PIANO 7
+      1,  #  7 A.PIANO 9
+      4,  #  8 E.PIANO 1
+      4,  #  9 E.PIANO 3
+      4,  # 10 E.PIANO 5
+     24,  # 11 A.GUITAR 1
+     25,  # 12 A.GUITAR 3
+     25,  # 13 A.GUITAR 4
+     27,  # 14 E.GUITAR 1
+     28,  # 15 E.GUITAR 2
+     36,  # 16 SLAP 3
+     36,  # 17 SLAP 4
+     37,  # 18 SLAP 5
+     37,  # 19 SLAP 6
+     36,  # 20 SLAP 9
+     36,  # 21 SLAP 10
+     37,  # 22 SLAP 11
+     37,  # 23 SLAP 12
+     33,  # 24 FINGERED 1
+     33,  # 25 FINGERED 2
+     34,  # 26 PICKED 1
+     34,  # 27 PICKED 2
+     35,  # 28 FRETLESS 1
+     32,  # 29 AC.BASS
+     52,  # 30 CHOIR 1
+     53,  # 31 CHOIR 2
+     52,  # 32 CHOIR 3
+     53,  # 33 CHOIR 4
+     48,  # 34 STRINGS 1
+     48,  # 35 STRINGS 2
+     49,  # 36 STRINGS 3
+     48,  # 37 STRINGS 4
+     16,  # 38 E.ORGAN 2
+     17,  # 39 E.ORGAN 4
+     16,  # 40 E.ORGAN 6
+     16,  # 41 E.ORGAN 8
+     18,  # 42 E.ORGAN 9
+     16,  # 43 E.ORGAN 10
+     17,  # 44 E.ORGAN 11
+     18,  # 45 E.ORGAN 12
+     16,  # 46 E.ORGAN 13
+     59,  # 47 SOFT TP 1
+     59,  # 48 SOFT TP 3
+     56,  # 49 TP/TRB 1
+     57,  # 50 TP/TRB 2
+     56,  # 51 TP/TRB 3
+     56,  # 52 TP/TRB 4
+     61,  # 53 TP/TRB 5
+     61,  # 54 TP/TRB 6
+     65,  # 55 SAX 1
+     66,  # 56 SAX 2
+     64,  # 57 SAX 3
+     67,  # 58 SAX 5
+     61,  # 59 BRASS 1
+     61,  # 60 BRASS 2
+     61,  # 61 BRASS 3
+     61,  # 62 BRASS 4
+     61,  # 63 BRASS 5
+     55,  # 64 ORCH HIT
+)
+
 # CM-32L sound effects in the rhythm part (CM-64 manual p.11; factory map read from a fresh
 # gearmulator CM-64 with tools/cm_rhythm_dump.py, 2026-10-04): key -> (timbre, level, pan, reverb).
 # Keys 76-108 hold rhythm timbres 94-126 in order, all centre pan with reverb.

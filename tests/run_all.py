@@ -20,6 +20,7 @@ RUNS = [
     ("tone traits", "tone_traits_test.py", {}),
     ("CM-64 outs", "cm64_test.py", {}),
     ("CM-64 Voodoo PCM", "cm64_voodoo_test.py", {}),
+    ("Anima on LA outs", "anima_la_test.py", {}),
     ("onestop 22:00", "onestop_replay.py", {}),
     ("onestop 22:16", "onestop_replay2.py", {}),
     ("onestop 22:29", "onestop_replay4.py", {}),

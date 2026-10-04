@@ -13,6 +13,140 @@ MT32_REVERB_MODES = {
     2: "Plate",
     3: "Tap Delay",
 }
+# MT-32 / CM-32L LA patches (CM-64 manual p.8-9, PC 1-128) -> the nearest GM program, for Anima's
+# GM-numbered sets (mallet sticking, unroll, Hetfield, acoustic strum) on native MT-32 streams.
+MT32_TO_GM = (
+      0,  #   1 AcouPiano 1
+      1,  #   2 AcouPiano 2
+      0,  #   3 AcouPiano 3
+      4,  #   4 ElecPiano 1
+      5,  #   5 ElecPiano 2
+      4,  #   6 ElecPiano 3
+      5,  #   7 ElecPiano 4
+      3,  #   8 Honkytonk
+     16,  #   9 Elec Org 1
+     17,  #  10 Elec Org 2
+     18,  #  11 Elec Org 3
+     16,  #  12 Elec Org 4
+     19,  #  13 Pipe Org 1
+     19,  #  14 Pipe Org 2
+     20,  #  15 Pipe Org 3
+     21,  #  16 Accordion
+      6,  #  17 Harpsi 1
+      6,  #  18 Harpsi 2
+      6,  #  19 Harpsi 3
+      7,  #  20 Clavi 1
+      7,  #  21 Clavi 2
+      7,  #  22 Clavi 3
+      8,  #  23 Celesta 1
+      8,  #  24 Celesta 2
+     62,  #  25 SynBrass 1
+     63,  #  26 SynBrass 2
+     62,  #  27 SynBrass 3
+     63,  #  28 SynBrass 4
+     38,  #  29 Syn Bass 1
+     39,  #  30 Syn Bass 2
+     38,  #  31 Syn Bass 3
+     39,  #  32 Syn Bass 4
+     88,  #  33 Fantasy
+     89,  #  34 Harmo Pan
+     91,  #  35 Chorale
+     98,  #  36 Glasses
+     97,  #  37 Soundtrack
+     99,  #  38 Atmosphere
+     98,  #  39 Warm Bell
+     85,  #  40 Funny Vox
+    102,  #  41 Echo Bell
+     96,  #  42 Ice Rain
+     68,  #  43 Oboe 2001
+     75,  #  44 Echo Pan
+     80,  #  45 DoctorSolo
+    100,  #  46 Schooldaze
+     98,  #  47 Bellsinger
+     80,  #  48 SquareWave
+     48,  #  49 Str Sect 1
+     49,  #  50 Str Sect 2
+     48,  #  51 Str Sect 3
+     45,  #  52 Pizzicato
+     40,  #  53 Violin 1
+     40,  #  54 Violin 2
+     42,  #  55 Cello 1
+     42,  #  56 Cello 2
+     43,  #  57 Contrabass
+     46,  #  58 Harp 1
+     46,  #  59 Harp 2
+     24,  #  60 Guitar 1
+     25,  #  61 Guitar 2
+     26,  #  62 Elec Gtr 1
+     27,  #  63 Elec Gtr 2
+    104,  #  64 Sitar
+     32,  #  65 AcouBass 1
+     32,  #  66 AcouBass 2
+     33,  #  67 ElecBass 1
+     34,  #  68 ElecBass 2
+     36,  #  69 SlapBass 1
+     37,  #  70 SlapBass 2
+     35,  #  71 Fretless 1
+     35,  #  72 Fretless 2
+     73,  #  73 Flute 1
+     73,  #  74 Flute 2
+     72,  #  75 Piccolo 1
+     72,  #  76 Piccolo 2
+     74,  #  77 Recorder
+     75,  #  78 Pan Pipes
+     64,  #  79 Sax 1
+     65,  #  80 Sax 2
+     66,  #  81 Sax 3
+     67,  #  82 Sax 4
+     71,  #  83 Clarinet 1
+     71,  #  84 Clarinet 2
+     68,  #  85 Oboe
+     69,  #  86 Engl Horn
+     70,  #  87 Bassoon
+     22,  #  88 Harmonica
+     56,  #  89 Trumpet 1
+     56,  #  90 Trumpet 2
+     57,  #  91 Trombone 1
+     57,  #  92 Trombone 2
+     60,  #  93 Fr Horn 1
+     60,  #  94 Fr Horn 2
+     58,  #  95 Tuba
+     61,  #  96 Brs Sect 1
+     61,  #  97 Brs Sect 2
+     11,  #  98 Vibe 1
+     11,  #  99 Vibe 2
+     11,  # 100 Syn Mallet
+     14,  # 101 Windbell
+      9,  # 102 Glock
+     14,  # 103 Tube Bell
+     13,  # 104 Xylophone
+     12,  # 105 Marimba
+    107,  # 106 Koto
+    109,  # 107 Sho
+     77,  # 108 Shakuhachi
+     78,  # 109 Whistle 1
+     78,  # 110 Whistle 2
+     76,  # 111 Bottleblow
+     76,  # 112 Breathpipe
+     47,  # 113 Timpani
+    117,  # 114 MelodicTom
+    118,  # 115 Deep Snare
+    118,  # 116 ElecPerc 1
+    118,  # 117 ElecPerc 2
+    116,  # 118 Taiko
+    116,  # 119 Taiko Rim
+    119,  # 120 Cymbal
+    115,  # 121 Castanets
+    115,  # 122 Triangle
+     55,  # 123 Orche Hit
+    124,  # 124 Telephone
+    123,  # 125 Bird Tweet
+     98,  # 126 OneNoteJam
+    112,  # 127 WaterBells
+    101,  # 128 JungleTune
+)
+
+
 def _gm_category(program: int) -> str:
     """Map GM program 0–127 to a coarse articulation category."""
     p = max(0, min(127, int(program)))
