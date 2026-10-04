@@ -11,6 +11,9 @@
      sticking); MT-32 Marimba (PC 105) and Harp (PC 58) are; GM equivalents from MT32_TO_GM
   7. native CM-64 stream: a PCM part on ch11 with PC 24 (FINGERED 1) is a bass for Anima, not
      the LA patch 24 (Celesta 2); the LA part on ch2 with the same PC stays a celesta
+  8. mixed rig (two SC-8850s + a CM-64), 0.19.063: under Voodoo, and with a native MT-32 stream
+     routed to the CM-64 only, Anima plans nothing on the idle GS units (no inserts, seats or
+     GS SysEx, no EFX messages); a GS stream on the same rig still gets its inserts
 """
 import sys
 import time as _time
@@ -193,6 +196,45 @@ if d._anima_category(10) != "bass":
     fails.append(f"7: PCM ch11 PC 24 is '{d._anima_category(10)}', want bass")
 if d._anima_category(1) == "bass":
     fails.append("7: LA ch2 PC 24 (Celesta 2) taken for a bass")
+
+# 8. mixed rig: idle GS units get no Anima EFX
+def mixed(fmt, voodoo):
+    REC.clear()
+    CLOCK[0] = 1000.0
+    tags = [D.parse_out_spec(f"P{i+1}:{s}")[1] for i, s in enumerate(["8850", "8850", "cm64"])]
+    dd = D.Duality("in", ["P1", "P2", "P3"], show_status=False, out_formats=tags, crucible=True,
+                   input_format=fmt, poly_limits=[32] * 3, anima=True, anima_seed=0x2222)
+    msgs = []
+    _fb = dd._anima_feedback
+    dd._anima_feedback = lambda kind, text, status=False: (msgs.append(kind), _fb(kind, text, status=status))[1]
+    if voodoo:
+        dd.format_locked = True
+        dd._voodoo_begin("test")
+        while dd.voodoo_loading:
+            CLOCK[0] += 0.5
+            dd._voodoo_tick()
+    REC.clear()
+    for c, p_ in ((0, 0), (1, 48), (2, 29), (3, 61), (4, 89), (5, 24)):
+        pc(dd, c, p_)
+    for k in range(8):
+        for c in range(6):
+            on(dd, c, 52 + c * 3 + k % 3, 96)
+        step(dd, 0.25, dt=0.01)
+        for c in range(6):
+            off(dd, c, 52 + c * 3 + k % 3)
+    gs_sx = [m for _t, p_, m in REC if p_ in (0, 1) and m.type == "sysex" and m.data[0] == 0x41 and m.data[2] == 0x42]
+    return dd, gs_sx, msgs
+
+
+for fmt, voodoo, label in (("gm", True, "Voodoo"), ("mt32", False, "native MT-32")):
+    dd, gs_sx, msgs = mixed(fmt, voodoo)
+    if dd._anima_gs_ports() or gs_sx or "efx" in msgs:
+        fails.append(f"8: {label}: GS units {dd._anima_gs_ports()}, {len(gs_sx)} GS SysEx, efx messages {msgs.count('efx')}")
+    if voodoo:
+        dd._voodoo_exit("test")
+dd, gs_sx, msgs = mixed("gs", False)
+if dd._anima_gs_ports() != [0, 1] or not gs_sx:
+    fails.append(f"8: a GS stream lost its inserts (GS units {dd._anima_gs_ports()}, {len(gs_sx)} GS SysEx)")
 
 if fails:
     print("FAILS")
