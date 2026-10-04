@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.061"
+VERSION = "0.19.062"
 
 
 """
@@ -672,6 +672,7 @@ ANIMA_MALLET_ODDS = {                      # share of roomy notes that get each 
 ANIMA_MALLET_HAND_GAP = 0.018  # second hand of a chord lands this much after the first
 ANIMA_MALLET_MIN_SPACE = 0.20  # the part's usual gap between notes, at least
 ANIMA_MALLET_ROLL_SPACE = 0.45 # a roll needs this much room
+ANIMA_MALLET_WAIT_MAX = 0.25   # a stroke waits at most this long for its note's queued on
 ANIMA_MALLET_ROLL_STEP = 0.075 # hands alternate this fast in a roll
 ANIMA_MALLET_END = 0.70        # extra strokes finish within this share of the gap
 ANIMA_MALLET_VEL = 0.68        # first extra stroke vs the note's velocity
@@ -9875,30 +9876,50 @@ class Duality:
 
     def _anima_mallet_drain(self) -> None:
         """Fire due mallet strokes. Re-strike a key the file still holds (off + on,
-        the file's off ends it); otherwise play a short stroke with its own off."""
+        the file's off ends it); otherwise play a short stroke with its own off.
+        A stroke on a key one of ours still sounds on ends that one first, so a
+        key never has two note-ons for one note-off (0.19.062)."""
         if not self._anima_mallet_q:
             return
         now = time.monotonic()
-        keep = []
-        for item in self._anima_mallet_q:
+        due = [it for it in self._anima_mallet_q if it[0] <= now]
+        rest = [it for it in self._anima_mallet_q if it[0] > now]
+        due.sort(key=lambda it: (it[0], 0 if it[4] else 1))   # own offs first
+        while due:
+            item = due.pop(0)
             when, port, msg, ch, own_off = item
-            if when > now:
-                keep.append(item)
-                continue
             if own_off:
                 self._send_routed(port, msg)
                 self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
                 continue
             key = (ch, msg.note)
             off = mido.Message("note_off", channel=ch, note=msg.note, velocity=0)
-            if key in self.active:
+            info = self.active.get(key)
+            if info is not None and info.get("strum_pending"):
+                # The file's own note-on for this key is still in the strum queue:
+                # re-striking now would put an off before it and leave two ons
+                # for one off (a hanging voice). Wait for it to go out first
+                # (a stroke that waited this long has lost its place: drop it).
+                if now - when < ANIMA_MALLET_WAIT_MAX:
+                    rest.append(item)
+                continue
+            if info is not None:
                 self._send_routed(port, off)
                 self._send_routed(port, msg)
-            else:
-                self._send_routed(port, msg)
-                self.voice_counts[port] += 1
-                keep.append([now + ANIMA_MALLET_LEN, port, off, ch, True])
-        self._anima_mallet_q = keep
+                continue
+            prev = next(
+                (it for it in due + rest
+                 if it[4] and it[1] == port and it[3] == ch and it[2].note == msg.note),
+                None,
+            )
+            if prev is not None:                      # our last stroke still rings
+                (due if prev in due else rest).remove(prev)
+                self._send_routed(port, prev[2])
+                self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+            self._send_routed(port, msg)
+            self.voice_counts[port] += 1
+            rest.append([now + ANIMA_MALLET_LEN, port, off, ch, True])
+        self._anima_mallet_q = rest
 
     def _anima_mallet_cancel(self, ch: int) -> None:
         """The part plays again: drop its pending strokes and end the sounding ones now."""
@@ -9917,7 +9938,13 @@ class Duality:
     def _anima_strum_drain(self) -> None:
         if self.anima:
             self._anima_foley_tick()
+        self._anima_strum_q_drain()
+        if self.anima:
+            # After the strum queue: a mallet stroke due in the same pass as the
+            # note it re-strikes must find that note already sounding (0.19.062).
             self._anima_mallet_drain()
+
+    def _anima_strum_q_drain(self) -> None:
         if not self._anima_strum_q:
             return
         now = time.monotonic()
