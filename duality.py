@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.054"
+VERSION = "0.19.055"
 
 
 """
@@ -29,8 +29,9 @@ Crucible (format-aware routing)
 
 Voodoo (MT-32 GM)
   • MT-TO-GM or KQ6 bank on :mt32/:cm32/:cm64 — --voodoo / M while already MT-32
-  • CM-64: ch11-16 of an LA stream go to its PCM half (31 partials, own steal);
-    Voodoo turns that half off while the LA half plays GM
+  • CM-64: ch11-16 of an LA stream go to its PCM half (31 partials, own steal)
+  • Voodoo on CM-64s: GM programs with a PCM tone (tables_cm64) play on PCM parts
+    (pool on 2+ units, fixed seats for the free channels on one unit), or layered
   • Paced SysEx + queued input with elastic catch-up; exit on real MT-32 SysEx
   • 1/2/3-unit maps; 4+ even units can use pairs (P); LA32 pan table
 
@@ -185,6 +186,12 @@ from rich.progress import BarColumn, Progress, TextColumn
 from rich.table import Table
 from rich.text import Text
 from rich.markup import escape
+
+try:
+    from tables_cm64 import cm64_gm_pick, CM64_PCM_TONES
+except ImportError:   # older install: the CM-64 PCM half stays off under Voodoo
+    cm64_gm_pick = None
+    CM64_PCM_TONES = ()
 
 try:
     from tables_voodoo import (
@@ -342,6 +349,9 @@ CM64_PCM_PARTIALS = (
 # Power-on PCM parts 1-6 (manual p.18): FRETLESS 1, CHOIR 1, A.PIANO 1, E.ORGAN 1,
 # E.GUITAR 1, SOFT TP 1 — used until a part gets a program change.
 CM64_PCM_DEFAULT_PARTIALS = (1, 1, 2, 2, 1, 1)
+CM64_PCM_RESERVE = (0x52, 0x00, 0x04)          # partial reserve of PCM parts 1-6 (package of 6)
+CM64_VOODOO_RESERVE = (6, 5, 5, 5, 5, 5)       # Voodoo: even split of the 31 PCM partials
+CM64_POOL_IDLE_SEC = 10.0                      # a pool part whose owner rested this long may be taken
 
 # GM-family tags used when stream format is unknown (exclude pure MT-32)
 GM_FAMILY_TAGS = frozenset({"gm", "gm2", "gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820", "xg"})
@@ -510,6 +520,21 @@ def _voodoo_channel_plan(
     for i, ch in enumerate(melody):
         buckets[i % n_units].append(ch)
     return [b[:8] for b in buckets]
+
+
+_CM64V_TYPES = frozenset({
+    "note_on", "note_off", "control_change", "program_change", "pitchwheel", "aftertouch",
+    "polytouch",
+})
+
+
+def _bank_la_channels(bank: list) -> list[int]:
+    """0-based MIDI channels of LA parts 1-8 as a Voodoo bank's System block sets them."""
+    for m in bank:
+        b = list(m)
+        if len(b) >= 7 + 21 and b[:7] == [0x41, 0x10, 0x16, 0x12, 0x10, 0x00, 0x00]:
+            return [v for v in b[7 + 13:7 + 21] if v < 16]
+    return list(range(1, 9))   # factory MT-32 map: parts on ch 2-9
 
 
 def _voodoo_unit_map_sysex(melody_chs: list[int]) -> list[bytes]:
@@ -939,6 +964,7 @@ class Duality:
             i for i, t in enumerate(self.out_formats) if t and "cm64" in t
         )
         self._ch_program: list[int | None] = [None] * 16   # last PC per channel (any mode)
+        self._cm64v_reset()
 
         # GS part Rx channel (0–15). Defaults 1:1. YS4 stacks parts 7+16
         # on ch7 and writes Key Shift after/before the remap.
@@ -1624,6 +1650,10 @@ class Duality:
         tags = self.out_formats[port_idx]
         if not tags or "any" in tags:
             return True
+        # Voodoo plays the GM stream on the LA outs (a single unit has no
+        # channel map, so this is its only way in under Crucible).
+        if (tags & LA_TAGS) and (self.voodoo_active or self.voodoo_loading or self.voodoo_catchup):
+            return True
 
         if fmt_display is None:
             # No detect/set/lock: do not send to pure MT-32 ports
@@ -2169,6 +2199,8 @@ class Duality:
         """On a CM-64 out: True for the PCM half (ch11-16), False for LA. None elsewhere."""
         if port not in self._cm64_ports:
             return None
+        if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
+            return False   # Voodoo: the PCM parts are driven by _cm64v_*, not this path
         return ch is not None and (ch & 0x0F) in CM64_PCM_CHANNELS
 
     def _cm64_pcm_partials(self, ch: int) -> int:
@@ -3535,12 +3567,11 @@ class Duality:
         banner_load = bytes(self._mt32_display_msg("Duality Voodoo...").data)
         banner_gm = bytes(self._mt32_display_msg(("Loading " + bank_display(self.voodoo_bank))[:20]).data)
         send_list = _all([banner_load, banner_gm])
-        # CM-64: the PCM half stops listening (channel OFF) while the LA half
-        # plays GM, so ch11-16 do not double with CM-32P sounds.
+        # CM-64: the PCM half stops listening (channel OFF) until its parts are
+        # placed below, so GM data never doubles with CM-32P sounds.
         for port in targets:
             if port in self._cm64_ports:
                 send_list.extend(_one([_mt32_dt1(CM64_PCM_RX, [16] * 6)], port))
-                self._log_line(f"VOODOO port{port + 1}: CM-64 PCM half off")
         send_list += _all(bank) + _all(kit)
 
         # Phase V2: with 2+ MT-32s, program alternating channel map + equal reserve
@@ -3582,6 +3613,8 @@ class Duality:
         else:
             # Single unit: no remap – leave factory/bank receive channels as-is
             self._voodoo_ch_owners = [[] for _ in range(16)]
+
+        self._cm64v_plan(targets, bank, plan if len(targets) >= 2 else None, send_list, _one)
 
         # Master volume last so it wins over any level in the bank dump.
         # MT-32 scale is 0–100; GM banks at 100 often clip on original hardware.
@@ -3639,6 +3672,7 @@ class Duality:
                 self._voodoo_display("Voodoo Off")
             except Exception:
                 pass
+            self._cm64v_release_all()
             # CM-64: the PCM half listens on ch11-16 again (factory map).
             pcm_on = mido.Message(
                 "sysex", data=list(_mt32_dt1(CM64_PCM_RX, list(range(10, 16))))
@@ -3647,6 +3681,260 @@ class Duality:
                 self._safe_out_send(p, pcm_on)
             self._set_status(f"Voodoo: exited ({reason})", duration=3.0)
             self._log_line(f"VOODOO exit ({reason})")
+
+    # ------------------------------------------------------------------
+    # CM-64 PCM half under Voodoo (0.19.055)
+    #
+    # The LA maps stay as they are. Each CM-64 adds 6 PCM parts:
+    #   1 unit  - fixed seats: the parts listen on the melody channels the
+    #             bank's LA parts leave free (MTGM: 9, 11-15) and always play
+    #             PCM (the program's nearest tone, tables_cm64).
+    #   2+ units - a pool: a GM channel whose program is "pcm" / "layer" in
+    #             tables_cm64 claims a part; Duality sends it that channel's
+    #             traffic on the part's own receive channel (one the unit's LA
+    #             parts do not use), with the PC translated to the PCM tone.
+    # Notes sent to a part are kept here (not in self.active), so a note-off
+    # always reaches the part its note went to, and the 31 PCM partials are
+    # counted and stolen per CM-64.
+    # ------------------------------------------------------------------
+    def _cm64v_reset(self) -> None:
+        self._cm64v_parts: list[dict] = []
+        self._cm64v_active: dict = {}      # (gm ch, note) -> [part, partials, vel, t]
+        self._cm64v_state = [
+            {"cc": {7: 100, 10: 64, 11: 127, 64: 0}, "pitch": 0} for _ in range(16)
+        ]
+        self._cm64v_seats = False
+
+    def _cm64v_plan(self, targets, bank, plan, send_list, _one) -> None:
+        """Place the PCM parts of every CM-64 Voodoo target (receive channels + reserve)."""
+        self._cm64v_reset()
+        if cm64_gm_pick is None:
+            return
+        seats = plan is None
+        self._cm64v_seats = seats
+        for u, port in enumerate(targets):
+            if port not in self._cm64_ports:
+                continue
+            if seats:
+                la = set(_bank_la_channels(bank))
+            else:
+                la = {c - 1 for c in plan[u]}
+            la.add(9)
+            rx = [c for c in range(16) if c not in la][:6]
+            for k, c in enumerate(rx):
+                self._cm64v_parts.append({
+                    "port": port, "k": k, "rx": c,
+                    "owner": c if seats else None, "prev": None,
+                    "prog": None, "last": 0.0, "primed": False,
+                })
+            rx_data = rx + [16] * (6 - len(rx))
+            send_list.extend(_one([
+                _mt32_dt1(CM64_PCM_RESERVE, list(CM64_VOODOO_RESERVE)),
+                _mt32_dt1(CM64_PCM_RX, rx_data),
+            ], port))
+            what = "seats" if seats else "pool"
+            self._log_line(
+                f"VOODOO port{port + 1}: CM-64 PCM {what} on ch "
+                + ",".join(str(c + 1) for c in rx)
+            )
+
+    def _cm64v_pick(self, ch: int):
+        prog = self._ch_program[ch]
+        return cm64_gm_pick(prog if prog is not None else 0)
+
+    def _cm64v_owned(self, ch: int):
+        for part in self._cm64v_parts:
+            if part["owner"] == ch:
+                return part
+        return None
+
+    def _cm64v_sounding(self, part) -> bool:
+        return any(rec[0] is part for rec in self._cm64v_active.values())
+
+    def _cm64v_send(self, part, msg: mido.Message) -> None:
+        # Straight to the port: the PCM half pans continuously (no LA pan table).
+        out = msg.copy(channel=part["rx"])
+        self._send(part["port"], out)
+        self._log_msg(part["port"], out, note="CM-64 PCM")
+
+    def _cm64v_level(self, value: int, pct: int) -> int:
+        return max(0, min(127, int(round(value * pct / 100.0))))
+
+    def _cm64v_claim(self, ch: int):
+        """A free pool part for GM channel `ch` (None: play on LA)."""
+        now = time.monotonic()
+        owners = set(self._voodoo_ch_owners[ch]) if self._voodoo_ch_owners else set()
+        load = {}
+        for part in self._cm64v_parts:
+            if part["owner"] is not None:
+                load[part["port"]] = load.get(part["port"], 0) + 1
+
+        def _rank(part):
+            return (part["port"] not in owners, load.get(part["port"], 0), part["port"], part["k"])
+
+        free = [p for p in self._cm64v_parts if p["owner"] is None and not self._cm64v_sounding(p)]
+        if not free:
+            # A part whose owner has rested a while and has nothing sounding.
+            free = [
+                p for p in self._cm64v_parts
+                if not self._cm64v_sounding(p) and now - p["last"] >= CM64_POOL_IDLE_SEC
+            ]
+        if not free:
+            return None
+        part = min(free, key=_rank)
+        if part["owner"] is not None:
+            self._log_line(f"CM-64 PCM part {part['k'] + 1} port{part['port'] + 1}: "
+                           f"ch{part['owner'] + 1} rested, now ch{ch + 1}")
+        part["owner"] = ch
+        part["prev"] = None
+        part["last"] = now
+        self._cm64v_prime(part, ch)
+        return part
+
+    def _cm64v_prime(self, part, ch: int) -> None:
+        """Bring a part up to its channel: program, then the controllers."""
+        use, pcm, _la, lv = self._cm64v_pick(ch)
+        part["primed"] = True
+        self._cm64v_prog(part, pcm)
+        st = self._cm64v_state[ch]
+        for cc, val in st["cc"].items():
+            if cc == 7:
+                val = self._cm64v_level(val, lv)
+            self._cm64v_send(part, mido.Message("control_change", channel=ch, control=cc, value=val))
+        self._cm64v_send(part, mido.Message("pitchwheel", channel=ch, pitch=st["pitch"]))
+
+    def _cm64v_prog(self, part, pcm: int) -> None:
+        if part["prog"] != pcm:
+            part["prog"] = pcm
+            self._cm64v_send(part, mido.Message("program_change", channel=0, program=pcm & 0x7F))
+
+    def _cm64v_release(self, part) -> None:
+        part["prev"] = part["owner"]
+        part["owner"] = None
+
+    def _cm64v_release_all(self) -> None:
+        """Voodoo ends: silence every part and drop the plan."""
+        for part in self._cm64v_parts:
+            self._cm64v_send(part, mido.Message("control_change", channel=0, control=64, value=0))
+            self._cm64v_send(part, mido.Message("control_change", channel=0, control=123, value=0))
+        self._cm64v_reset()
+
+    def _cm64v_note_on(self, part, msg: mido.Message, pcm: int) -> None:
+        if not part["primed"]:
+            self._cm64v_prime(part, msg.channel & 0x0F)
+        self._cm64v_prog(part, pcm)
+        need = CM64_PCM_PARTIALS[pcm] if pcm < len(CM64_PCM_PARTIALS) else 1
+        port = part["port"]
+
+        def _used():
+            return sum(r[1] for r in self._cm64v_active.values() if r[0]["port"] == port)
+
+        while _used() + need > CM64_PCM_POLY:
+            mine = [(r[2], r[3], k) for k, r in self._cm64v_active.items() if r[0]["port"] == port]
+            if not mine:
+                break
+            _v, _t, k = min(mine)
+            r = self._cm64v_active.pop(k)
+            self._cm64v_send(r[0], mido.Message("note_off", channel=k[0], note=k[1], velocity=0))
+            self.steal_count += 1
+        now = time.monotonic()
+        key = (msg.channel & 0x0F, msg.note)
+        old = self._cm64v_active.pop(key, None)
+        if old is not None:
+            self._cm64v_send(old[0], mido.Message("note_off", channel=key[0], note=key[1], velocity=0))
+        self._cm64v_send(part, msg)
+        self._cm64v_active[key] = [part, need, msg.velocity, now]
+        part["last"] = now
+
+    def _cm64v_route(self, msg: mido.Message):
+        """
+        Voodoo with CM-64 PCM parts. Returns the message for the normal (LA)
+        path, possibly with CC7 scaled for a layer, or None when it was played
+        on a PCM part only.
+        """
+        if not self.voodoo_active:
+            return msg
+        ch = msg.channel & 0x0F
+        if ch == 9:
+            return msg
+        t = msg.type
+        st = self._cm64v_state[ch]
+        if t == "control_change" and msg.control in st["cc"]:
+            st["cc"][msg.control] = msg.value
+        elif t == "control_change" and msg.control == 121:
+            st["cc"].update({11: 127, 64: 0})
+            st["pitch"] = 0
+        elif t == "pitchwheel":
+            st["pitch"] = msg.pitch
+        use, pcm, la_lv, pcm_lv = self._cm64v_pick(ch)
+        part = self._cm64v_owned(ch)
+
+        if self._cm64v_seats:
+            if part is None:
+                return msg                      # an LA channel on the single unit
+            use = "pcm"
+        elif t == "program_change":
+            if use in ("pcm", "layer"):
+                if part is not None:
+                    self._cm64v_prime(part, ch)
+                else:
+                    part = self._cm64v_claim(ch)   # primes the part it takes
+            elif part is not None:
+                self._cm64v_release(part)
+                part = None
+            # The LA part takes the PC too, so it is ready to play again;
+            # a layer runs its LA side at the layer level, and leaving one
+            # puts the file's volume back.
+            if use == "layer" and la_lv != 100:
+                self._cm64v_la_level(ch, la_lv)
+                st["la_scaled"] = True
+            elif st.get("la_scaled"):
+                self._cm64v_la_level(ch, 100)
+                st["la_scaled"] = False
+            return msg
+        elif part is None and t == "note_on" and msg.velocity > 0 and use in ("pcm", "layer"):
+            part = self._cm64v_claim(ch)
+
+        if t == "program_change":
+            # Seat: the part follows the program to its nearest PCM tone.
+            self._cm64v_prime(part, ch)
+            return None
+        if t in ("note_on", "note_off"):
+            key = (ch, msg.note)
+            if t == "note_on" and msg.velocity > 0:
+                if part is None:
+                    return msg
+                self._cm64v_note_on(part, msg, pcm)
+                return msg if use == "layer" else None
+            rec = self._cm64v_active.pop(key, None)
+            if rec is not None:
+                self._cm64v_send(rec[0], msg)
+                if use != "layer" and (msg.channel, msg.note) not in self.active:
+                    return None
+            return msg
+        # Controllers, bend, pressure: the owning part (and a part still
+        # sounding notes this channel left behind) gets them too.
+        targets = [part] if part is not None else []
+        for p in self._cm64v_parts:
+            if p is not part and p["prev"] == ch and self._cm64v_sounding(p):
+                targets.append(p)
+        for p in targets:
+            if t == "control_change" and msg.control == 7:
+                self._cm64v_send(p, msg.copy(value=self._cm64v_level(msg.value, pcm_lv)))
+            else:
+                self._cm64v_send(p, msg)
+        if self._cm64v_seats:
+            return None
+        if t == "control_change" and msg.control == 7 and use == "layer" and la_lv != 100:
+            return msg.copy(value=self._cm64v_level(msg.value, la_lv))
+        return msg
+
+    def _cm64v_la_level(self, ch: int, pct: int) -> None:
+        """CC7 on the channel's LA owners at `pct` of the file's volume."""
+        val = self._cm64v_level(self._cm64v_state[ch]["cc"][7], pct)
+        m = mido.Message("control_change", channel=ch, control=7, value=val)
+        for port in (self._voodoo_ports_for_channel(ch) or []):
+            self._send_routed(port, m)
 
     def _voodoo_tick(self) -> None:
         """Advance paced bank load or elastic catch-up. Call from run loop."""
@@ -9820,6 +10108,11 @@ class Duality:
                 self._voodoo_enqueue(msg)
                 return
 
+        if self._cm64v_parts and msg.type in _CM64V_TYPES:
+            msg = self._cm64v_route(msg)
+            if msg is None:
+                return
+
         if msg.type in ("note_on", "note_off"):
             key = (msg.channel, msg.note)
             is_note_on = msg.type == "note_on" and msg.velocity > 0
@@ -10627,6 +10920,10 @@ class Duality:
                 except Exception:
                     break  # port is gone; skip remaining channels
         self._anima_ghosts = {}
+        # CM-64 PCM parts were silenced and reset with the rest (CC123 / CC121).
+        self._cm64v_active = {}
+        for part in self._cm64v_parts:
+            part["primed"] = False
         self._anima_ghost_sound = {}
         self._anima_wave_sub_armed = set()
         self._anima_wave_sub_saved = {}
