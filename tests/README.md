@@ -102,6 +102,16 @@ organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio sect
 `946F` does the same with Rotary (21 of 240 scanned gave both). Seeds like `0197` and `6030` (0.19.052, 6 of 120 scanned) put the prog organ on Tremolo Chorus
 and the solo guitar on GTR Multi 3 instead: `0197`, `6030`, `5094`, `B42E`, `4890`, `EBA8`.
 
+`python tests/make_voodoo_demo.py` writes `tests/midi/point_and_click_overture.mid` (Format 1), "Point & Click Overture"
+(4:56), a Voodoo demo: a GM file (GM System On, GM capitals) in five original scenes in the style of LucasArts and
+Sierra adventure games (Monkey Island calypso, Sam & Max noir swing, King's Quest 3/4 storybook, Space Quest sci-fi
+march, Leisure Suit Larry lounge) and a finale on all 15 melody channels. Scene changes are CM-32L sound effects on
+ch10 (keys 82-108 as the CM-64 manual lists them, and Laughing / Screaming / Punch / Heartbeat / Footsteps 1-2 on
+keys 24-29, where Duality moves them for CM outs) over a melodic bridge (music box + pad) that plain MT-32s play
+alone; the build fails if a sound effect is ever the only thing sounding. Offline with the format locked to GM: three
+CM-64s (pool) 0 steals, 0 drops, at most 22 PCM partials and 10 of 18 parts in use; one CM-64, live seats, 0 / 0, 28
+partials; fixed seats 0 / 0 (ch16 has no seat there).
+
 `python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
 (11:53): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
 muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm
