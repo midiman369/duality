@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.056"
+VERSION = "0.19.057"
 
 
 """
@@ -30,6 +30,7 @@ Crucible (format-aware routing)
 Voodoo (MT-32 GM)
   • MT-TO-GM or KQ6 bank on :mt32/:cm32/:cm64 — --voodoo / M while already MT-32
   • CM-64: ch11-16 of an LA stream go to its PCM half (31 partials, own steal)
+  • Voodoo on CM-32L / CM-64: the CM sound effects stay on drum keys 82-108 (76-81 move to 24-29)
   • Voodoo on CM-64s: GM programs with a PCM tone (tables_cm64) play on PCM parts
     (pool on 2+ units; one unit: live seats, or --cm64-seats fixed), or layered
   • Paced SysEx + queued input with elastic catch-up; exit on real MT-32 SysEx
@@ -188,10 +189,11 @@ from rich.text import Text
 from rich.markup import escape
 
 try:
-    from tables_cm64 import cm64_gm_pick, CM64_PCM_TONES
+    from tables_cm64 import cm64_gm_pick, CM64_PCM_TONES, CM_VOODOO_SFX
 except ImportError:   # older install: the CM-64 PCM half stays off under Voodoo
     cm64_gm_pick = None
     CM64_PCM_TONES = ()
+    CM_VOODOO_SFX = {}
 
 try:
     from tables_voodoo import (
@@ -3488,6 +3490,36 @@ class Duality:
                 out.append(i)
         return out
 
+    def _cm_port_indices(self) -> list[int]:
+        """LA outs with the CM-32L rhythm sound effects (cm32 / cm64 tags)."""
+        return [i for i, tags in enumerate(self.out_formats) if tags and (tags & {"cm32", "cm64"})]
+
+    def _cm_sfx_items(self, targets) -> list:
+        """Voodoo send-list steps that put the CM sound effects back on their keys
+        (tables_cm64.CM_VOODOO_SFX) on every CM target, after a kit was written."""
+        items = []
+        if not CM_VOODOO_SFX:
+            return items
+        cm = [p for p in targets if p in set(self._cm_port_indices())]
+        base = (0x03 << 14) | (0x01 << 7) | 0x10          # rhythm setup, key 24
+        keys = sorted(CM_VOODOO_SFX)
+        runs, run = [], [keys[0]]
+        for k in keys[1:]:
+            if k == run[-1] + 1:
+                run.append(k)
+            else:
+                runs.append(run)
+                run = [k]
+        runs.append(run)
+        for run in runs:
+            a = base + 4 * (run[0] - 24)
+            addr = ((a >> 14) & 0x7F, (a >> 7) & 0x7F, a & 0x7F)
+            data = [x for k in run for x in CM_VOODOO_SFX[k]]
+            payload = _mt32_dt1(addr, data)
+            for p in cm:
+                items.append((payload, [p]))
+        return items
+
     def _mt32_display_msg(self, text: str) -> mido.Message:
         """
         Build MT-32 / CM-32 display SysEx (addr 20 00 00, 20 ASCII chars).
@@ -3581,6 +3613,7 @@ class Duality:
             if port in self._cm64_ports:
                 send_list.extend(_one([_mt32_dt1(CM64_PCM_RX, [16] * 6)], port))
         send_list += _all(bank) + _all(kit)
+        send_list += self._cm_sfx_items(targets)
 
         # Phase V2: with 2+ MT-32s, program alternating channel map + equal reserve
         if len(targets) >= 2:
@@ -4340,7 +4373,7 @@ class Duality:
         banner = bytes(self._mt32_display_msg(f"Kit: {label}"[:20]).data)
         kit_items = [(banner, None)] + [
             (b if isinstance(b, (bytes, bytearray)) else bytes(b), None) for b in blob
-        ]
+        ] + self._cm_sfx_items(targets)
         if not self.voodoo_loading:
             self.voodoo_loading = True  # brief — only kit msgs
             self._voodoo_full_bank = False
@@ -10291,6 +10324,20 @@ class Duality:
                 voodoo_ports = self._voodoo_ports_for_channel(msg.channel)
                 if voodoo_ports is not None:
                     eligible = list(voodoo_ports)
+                # CM sound-effect keys exist only on CM units (an MT-32 plays the
+                # Voodoo kit's own sounds there): send them to CM units only.
+                if (
+                    (msg.channel & 0x0F) == 9
+                    and msg.note in CM_VOODOO_SFX
+                    and (self.voodoo_active or self.voodoo_catchup)
+                ):
+                    cm = set(self._cm_port_indices())
+                    pool = eligible if eligible else list(range(self.n_ports))
+                    only = [p for p in pool if p in cm]
+                    if only:
+                        eligible = only
+                        if voodoo_ports is not None:
+                            voodoo_ports = only
 
                 if not eligible:
                     self.drop_count += 1
