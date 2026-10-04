@@ -32,10 +32,11 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 - Full panic / All Notes Off; **X** sends dialect resets to tagged outs and clears Anima locks
 
 ### Crucible (format-aware routing)
-- Optional **output** tags: what each device can accept (`gs`, `xg`, `gm`, `gm2`, `mt32`, plus `gs+gm2`, …)
+- Optional **output** tags: what each device can accept (`gs`, `xg`, `gm`, `gm2`, `mt32`, `cm32`, `cm64`, plus `gs+gm2`, …)
 - **Input / stream format** (what the feed *is*): SysEx detect, `--input-format`, or hotkeys — not the same as output tags
 - Affinity: notes and SysEx go to compatible ports
 - Unknown input → GM-family ports only (**pure MT-32 excluded** until the stream is MT-32)
+- An MT-32 stream plays on every LA out (`mt32`, `cm32`, `cm64`); on a CM-64, ch 11–16 go to its PCM half (see [CM-64 notes](#cm-64-notes))
 - No silent “send to all” when nothing matches
 - `GM` → `gm` / `gm2`; `--crucible-gm-wide` also reaches `gs` / `xg`
 - **Set** format (G/R/Y/M) vs **lock** (L): lock blocks SysEx override and idle clear
@@ -47,11 +48,11 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 *Same notes, four input dialects, same outs (four `8850+gm2`, one `xg`, one `mt32`). GM and GS land on the 8850 outs, XG only on the XG out, MT-32 only on the MT-32 out. Stills: [GM](docs/images/crucible-gm.svg) · [GS](docs/images/crucible-gs.svg) · [XG](docs/images/crucible-xg.svg) · [MT-32](docs/images/crucible-mt32.svg).*
 
 ### Voodoo (MT-32 GM)
-- Roland **MT-TO-GM** (1993) or Sierra **KQ6** bank on `:mt32` / `:mt` / `:cm` outs
+- Roland **MT-TO-GM** (1993) or Sierra **KQ6** bank on `:mt32` / `:cm32` / `:cm64` outs (`:mt` / `:cm` work too)
 - Paced SysEx + input queue with elastic catch-up (does not dump the buffer)
 - 1 / 2 / 3 unit maps; 4+ even units can use **pairs** (hotkey **P**)
 - LA32 pan table (8 real positions, center split L1 / C)
-- Auto when every out is MT-32 and the stream is not; exit on real MT-32 SysEx
+- Auto when every out is LA (MT-32 / CM-32L / CM-64) and the stream is not; exit on real MT-32 SysEx
 - `--voodoo` at launch seeds MT-32 format so you can **L**ock it
 
 ### Anima (opt-in phrasing)
@@ -208,7 +209,7 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | Option | Description |
 |--------|-------------|
 | `--input` | MIDI input port (partial name ok) |
-| `--outs` | `Name` or `Name:tag` or `Name:tag+tag` (`gs`, `xg`, `gm`, `gm2`, `mt32`, `mt`, `cm`) |
+| `--outs` | `Name` or `Name:tag` or `Name:tag+tag` (`gs`, `xg`, `gm`, `gm2`, `mt32` / `mt`, `cm32` / `cm-32` / `cm`, `cm64` / `cm-64`) |
 | `--poly` | One limit for all, or one per port |
 | `--sync-delay` | Per-port delay in ms. Negatives = relative. ±500 max. `0` = fast path |
 | `--mode` | `balance` (default) or `rr` |
@@ -351,6 +352,21 @@ Think “Super Munt GM,” but on hardware. `--voodoo` or **M** while the input 
 - Init is paced on purpose (MT-32 buffer). Several units in parallel still share the host MIDI interface, so wall-clock time grows with unit count.
 - Incoming MIDI is queued during load, then caught up with a speed ceiling — not dumped.
 - Real MT-32 SysEx in the stream drops Voodoo and returns to normal MT-32 routing.
+
+---
+
+## CM-64 notes
+
+The CM-64 is a CM-32L (LA, parts 1–8 on ch 2–9 plus rhythm on ch 10) and a CM-32P (PCM, parts 1–6 on ch 11–16, 31 voices) in one box. Tag it `:cm64` (or `:cm-64`); the panel shows CM-64.
+
+- Ch 1–10 behave as on a CM-32L: the CM-32L pan table, Voodoo, the LCD text, **X** sends the MT-32 reset.
+- Ch 11–16 of an MT-32-format stream go only to CM-64 outs (an MT-32 or CM-32L would ignore them). With no CM-64 out they route as before.
+- Voices are counted per half: the LA half uses the port's `--poly`, the PCM half has 31; a full half steals only its own notes. The PCM half pans continuously, so its CC10 is passed through as is.
+- Voodoo (GM on the LA half) sets the PCM parts' MIDI channels to OFF (`52 00 0A`..`0F` = 16) for the session and back to ch 11–16 when Voodoo ends, so GM data on ch 11–16 does not double with CM-32P sounds.
+
+```bash
+python duality.py --outs "MT-32 A:mt32" "MT-32 B:mt32" "CM-64:cm64"
+```
 
 ---
 
