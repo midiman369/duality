@@ -112,6 +112,15 @@ alone; the build fails if a sound effect is ever the only thing sounding. Offlin
 CM-64s (pool) 0 steals, 0 drops, at most 22 PCM partials and 10 of 18 parts in use; one CM-64, live seats, 0 / 0, 28
 partials; fixed seats 0 / 0 (ch16 has no seat there).
 
+`python tests/make_voodoo_demo2.py` writes `tests/midi/adventure_game_night.mid` (Format 1), "Adventure Game Night"
+(3:21), the second Voodoo demo: two original tunes over one progression (I vi IV V I vi ii V) that work as
+counterpoint. The Rascal's tune carries the LucasArts half (Monkey Island reggae, Sam & Max bebop chase at 208 with a
+big-band shout chorus), the Hero's tune the Sierra half (King's Quest dark forest in E minor, Space Quest synth
+odyssey, Leisure Suit Larry disco), and the finale plays both (no minor 2nd, major 7th or tritone between them at any
+of their 76 meetings), then all 15 melody channels. Sound-effect bridges as in the first demo. Offline: three CM-64s,
+one MT-32 + two CM-64s, three MT-32s and one CM-64 on fixed seats 0 steals, 0 drops; one CM-64 on live seats 1 steal
+(the PCM half full at 31 partials in the finale).
+
 `python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
 (11:53): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
 muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm
