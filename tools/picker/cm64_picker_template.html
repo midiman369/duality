@@ -1,0 +1,308 @@
+<title>CM-64 PCM Picks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&display=swap">
+<style>
+/* Same system as the Tone Palettes page: group rail on the left, LCD-style header per group,
+   one row per GM program with the half picker (LA / PCM / Layer), the PCM tone and a level per half. */
+:root{
+  --bg:#eef1ee; --surface:#f8faf8; --sunk:#e3e8e4; --ink:#18221e; --muted:#5b6862;
+  --line:#cfd7d1; --accent:#1f7a64; --accent-soft:#d3ebe3; --accent-ink:#0f4d3e;
+  --fav:#b07410; --fav-soft:#f6e7c8; --warn:#9a4b18; --warn-soft:#f5e1d4; --lcd:#c9dccf; --lcd-ink:#20332a;
+  --la:#6b5a2e; --la-soft:#efe6cf; --pcm:#1d5f86; --pcm-soft:#d6e8f3;
+  --shadow:0 1px 2px rgba(20,40,30,.08);
+  --sans:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#101613; --surface:#172019; --sunk:#0c110e; --ink:#e2ebe5; --muted:#93a39a;
+    --line:#2b3a32; --accent:#5cc3a3; --accent-soft:#193a30; --accent-ink:#bfeede;
+    --fav:#e3a94a; --fav-soft:#3a2d14; --warn:#e39263; --warn-soft:#3b2519; --lcd:#1c2b23; --lcd-ink:#aee3c9;
+    --la:#d9c07a; --la-soft:#332b17; --pcm:#7cc0ea; --pcm-soft:#17303f;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#101613; --surface:#172019; --sunk:#0c110e; --ink:#e2ebe5; --muted:#93a39a;
+  --line:#2b3a32; --accent:#5cc3a3; --accent-soft:#193a30; --accent-ink:#bfeede;
+  --fav:#e3a94a; --fav-soft:#3a2d14; --warn:#e39263; --warn-soft:#3b2519; --lcd:#1c2b23; --lcd-ink:#aee3c9;
+  --la:#d9c07a; --la-soft:#332b17; --pcm:#7cc0ea; --pcm-soft:#17303f;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html,body{overflow-anchor:none}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:20px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+h1{font-size:28px;font-weight:700;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.sub{color:var(--muted);margin:4px 0 0;max-width:72ch}
+.status{font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{border:1px solid var(--line);border-radius:999px;padding:2px 10px;background:var(--surface)}
+.pill.ok{color:var(--accent-ink);background:var(--accent-soft);border-color:transparent}
+.pill.bad{color:var(--warn)}
+.layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:820px){.layout{grid-template-columns:1fr}}
+nav.fams{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 40px);overflow:auto}
+@media (max-width:820px){nav.fams{position:static;max-height:none;flex-direction:row;overflow-x:auto;gap:6px}}
+.navhead{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 8px 4px}
+@media (max-width:820px){.navhead{display:none}}
+.fambtn{all:unset;cursor:pointer;display:grid;grid-template-columns:54px 1fr auto;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;white-space:nowrap}
+.fambtn:hover{background:var(--sunk)}
+.fambtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.fambtn[aria-current="true"]{background:var(--accent-soft);color:var(--accent-ink)}
+.rank{font-family:var(--mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.fambtn .cnt{font-family:var(--mono);font-size:12px;color:var(--pcm)}
+.fambtn .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--fav);margin-left:6px;vertical-align:middle}
+main{display:flex;flex-direction:column;gap:12px;min-width:0}
+.lcd{background:var(--lcd);color:var(--lcd-ink);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+.lcd .top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:baseline}
+.lcd h2{margin:0;font-size:22px;font-weight:700}
+.lcd .pcs{font-family:var(--mono);font-size:12px;opacity:.85}
+.lcd p{margin:0;max-width:78ch;font-size:14px}
+.search{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.search input{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:5px 10px;min-width:0;flex:1 1 220px}
+.search input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.act{font:inherit;font-size:13px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:3px 10px}
+button.act:hover{border-color:var(--accent)}
+button.act:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.act:disabled{opacity:.5;cursor:default}
+.prog{display:grid;grid-template-columns:minmax(150px,210px) auto minmax(0,1fr);gap:8px 14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.prog.use-pcm{border-color:var(--pcm)}
+.prog.use-layer{border-color:var(--fav)}
+@media (max-width:640px){.prog{grid-template-columns:1fr}}
+.pname{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pname h3{margin:0;font-size:16px;font-weight:600}
+.pname h3 .num{font-family:var(--mono);font-size:13px;color:var(--muted);font-weight:400;margin-right:6px}
+.pname .meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-size:13px}
+.seg button{all:unset;cursor:pointer;padding:3px 10px;color:var(--muted);border-left:1px solid var(--line)}
+.seg button:first-child{border-left:0}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.seg button[aria-pressed="true"].la{background:var(--la-soft);color:var(--la);font-weight:600}
+.seg button[aria-pressed="true"].pcm{background:var(--pcm-soft);color:var(--pcm);font-weight:600}
+.seg button[aria-pressed="true"].layer{background:var(--fav-soft);color:var(--fav);font-weight:600}
+.seg button:disabled{cursor:default}
+.ctl{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;min-width:0}
+.field{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+select{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:3px 6px;max-width:100%}
+select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.lvl{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:12px}
+.lvl .lab{padding:2px 6px;background:var(--sunk);color:var(--muted)}
+.lvl.la .lab{color:var(--la)}
+.lvl.pcm .lab{color:var(--pcm)}
+.lvl button{all:unset;cursor:pointer;padding:2px 7px;color:var(--ink);border-left:1px solid var(--line)}
+.lvl button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.lvl button:disabled{cursor:default;opacity:.45}
+.lvl .v{padding:2px 6px;min-width:42px;text-align:center;font-variant-numeric:tabular-nums;border-left:1px solid var(--line)}
+.lvl.off{opacity:.45}
+.note{font-size:11px;border-radius:4px;padding:0 6px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.note.seed{color:var(--pcm);background:var(--pcm-soft)}
+.addnote{all:unset;cursor:pointer;font-size:12px;color:var(--accent-ink);text-decoration:underline;text-underline-offset:2px}
+.addnote:focus-visible{outline:2px solid var(--accent)}
+textarea{grid-column:1/-1;font:inherit;font-size:13px;line-height:1.35;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:5px 8px;resize:vertical;min-height:44px;width:100%}
+textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.foot{color:var(--muted);font-size:13px;max-width:84ch;display:flex;flex-direction:column;gap:6px}
+.foot p{margin:0}
+.ro{border:1px dashed var(--warn);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:14px}
+.empty{color:var(--muted);font-size:14px}
+@media (prefers-reduced-motion:no-preference){.prog{transition:border-color .12s}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>CM-64 PCM Picks</h1>
+      <p class="sub">For each GM program, choose which half of a CM-64 plays it under Voodoo: the LA half (the MT-TO-GM bank), a PCM part, or both layered. Pick the PCM tone and a level for each half. Changes save as you click.</p>
+    </div>
+    <div class="status"><span id="sync" class="pill">Connecting…</span><span id="changed" class="pill"></span></div>
+  </header>
+  <div id="ro" class="ro" hidden></div>
+  <div class="layout">
+    <nav class="fams" id="fams" aria-label="GM instrument groups"></nav>
+    <main id="main"></main>
+  </div>
+  <div class="foot">
+    <p><b>How Duality uses this.</b> With two or more units, a channel whose program is PCM or Layer takes one of the CM-64s' PCM parts (6 per unit, 31 partials each) and plays the tone named here; LA programs stay on the LA maps. On a single CM-64 the PCM parts sit on channels 9 and 11–15 and always play PCM, so every program's PCM tone matters there even when its half is LA.</p>
+    <p><b>Levels</b> scale the file's volume (CC7) on that half: the PCM level applies whenever a PCM part plays the program, the LA level only to a layer. <b>Partials</b> come from the manual's sound list: a 2-partial tone takes twice the voices, so 15 notes fill a CM-64's PCM half. Card sounds (PC 65–128) are not offered yet.</p>
+  </div>
+</div>
+
+<script>
+const DATA = __DATA__;
+const GROUPS = [
+  ["Piano",0,7],["Chromatic perc.",8,15],["Organ",16,23],["Guitar",24,31],["Bass",32,39],
+  ["Strings",40,47],["Ensemble",48,55],["Brass",56,63],["Reed",64,71],["Pipe",72,79],
+  ["Synth lead",80,87],["Synth pad",88,95],["Synth FX",96,103],["Ethnic",104,111],["Percussive",112,119],["Sound FX",120,127],
+];
+const USES = [["la","LA"],["pcm","PCM"],["layer","Layer"]];
+const LV_MIN = 0, LV_MAX = 150, LV_STEP = 5;
+const TONES = DATA.tones;            // [name, partials] x 64
+const NAMES = DATA.gm;               // GM program names x 128
+const DEF = DATA.picks;              // pc -> {use, pcm, la, lv, note}
+const SEED = DATA.seed;              // pc -> use in the original seed (for the "seed" badge)
+const state = {};
+function defOf(pc){return Object.assign({note:""}, DEF[pc])}
+for (let pc=0; pc<128; pc++) state[pc] = defOf(pc);
+let cur = 0, query = "";
+let db = null, canWrite = true, loaded = false;
+const openNotes = new Set();
+try { const s = localStorage.getItem("cm64-picker-group"); if (s !== null && GROUPS[+s]) cur = +s; } catch(e){}
+
+const $ = s => document.querySelector(s);
+function esc(t){return String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function pad3(n){return String(n).padStart(3,"0")}
+function same(a,b){return a.use===b.use&&a.pcm===b.pcm&&a.la===b.la&&a.lv===b.lv&&(a.note||"")===(b.note||"")}
+function changed(pc){return !same(state[pc], defOf(pc))}
+function groupChanged(g){const [,a,b]=GROUPS[g];for(let p=a;p<=b;p++) if(changed(p)) return true;return false}
+function groupPcm(g){const [,a,b]=GROUPS[g];let n=0;for(let p=a;p<=b;p++) if(state[p].use!=="la") n++;return n}
+
+function renderNav(){
+  const nav = $("#fams");
+  nav.innerHTML = '<div class="navhead">GM programs · group · on PCM</div>' + GROUPS.map(([g,a,b],i)=>`
+    <button class="fambtn" data-g="${i}" aria-current="${i===cur&&!query}">
+      <span class="rank">${pad3(a+1)}–${pad3(b+1)}</span><span>${esc(g)}${groupChanged(i)?'<span class="dot" title="Changed from current"></span>':''}</span>
+      <span class="cnt" title="Programs on PCM or Layer">${groupPcm(i)||''}</span></button>`).join("");
+  nav.querySelectorAll(".fambtn").forEach(b=>b.onclick=()=>{cur=+b.dataset.g;query="";try{localStorage.setItem("cm64-picker-group",cur)}catch(e){};render();window.scrollTo(0,0);});
+  let n=0; for (let pc=0; pc<128; pc++) if (changed(pc)) n++;
+  $("#changed").textContent = n ? `${n} program${n===1?"":"s"} changed` : "Matches Duality "+DATA.version;
+}
+
+function lvl(pc, which, val, on){
+  const dis = (!canWrite||!on)?'disabled':'';
+  const lab = which==="la"?"LA":"PCM";
+  return `<span class="lvl ${which}${on?'':' off'}" role="group" aria-label="${lab} level">
+    <span class="lab">${lab}</span>
+    <button data-lv="${which}" data-d="-1" data-p="${pc}" aria-label="${lab} level down" ${dis||(val<=LV_MIN?'disabled':'')}>−</button>
+    <span class="v">${val}%</span>
+    <button data-lv="${which}" data-d="1" data-p="${pc}" aria-label="${lab} level up" ${dis||(val>=LV_MAX?'disabled':'')}>+</button></span>`;
+}
+
+function progRow(pc){
+  const s = state[pc], dis = canWrite?'':'disabled';
+  const opts = TONES.map(([n,pt],i)=>`<option value="${i}" ${i===s.pcm?'selected':''}>${pad3(i+1)} ${esc(n)}${pt>1?' · 2 partials':''}</option>`).join("");
+  const showNote = s.note || openNotes.has(pc);
+  const seedTag = SEED[pc]!=="la" ? '<span class="note seed" title="The manual has a fitting PCM tone">PCM tone</span>' : '';
+  return `<section class="prog use-${s.use}">
+    <div class="pname"><h3><span class="num">${pad3(pc+1)}</span>${esc(NAMES[pc])}</h3>
+      <span class="meta">${TONES[s.pcm][1]} partial${TONES[s.pcm][1]>1?'s':''} on PCM ${seedTag}${changed(pc)?` · <button class="act" data-rev="${pc}" ${dis}>Revert</button>`:''}</span></div>
+    <div class="seg" role="group" aria-label="Half">${USES.map(([u,l])=>`<button class="${u}" data-u="${u}" data-p="${pc}" aria-pressed="${s.use===u}" ${dis}>${l}</button>`).join("")}</div>
+    <div class="ctl">
+      <label class="field" for="t${pc}">PCM tone <select id="t${pc}" data-p="${pc}" ${dis}>${opts}</select></label>
+      ${lvl(pc,"pcm",s.lv,true)}
+      ${lvl(pc,"la",s.la,s.use==="layer")}
+      ${showNote?'':`<button class="addnote" data-n="${pc}" ${dis}>Add note</button>`}
+    </div>
+    ${showNote?`<textarea id="n${pc}" data-p="${pc}" placeholder="e.g. PCM piano too bright in the low end, LA sounds fuller" ${canWrite?'':'readonly'}>${esc(s.note||"")}</textarea>`:''}
+  </section>`;
+}
+
+function renderMain(){
+  let html = "";
+  const q = query.trim().toLowerCase();
+  if (q){
+    const hits = [];
+    for (let pc=0; pc<128; pc++){
+      const s = state[pc];
+      if (NAMES[pc].toLowerCase().includes(q) || TONES[s.pcm][0].toLowerCase().includes(q) || (s.note||"").toLowerCase().includes(q)) hits.push(pc);
+    }
+    html = `<section class="lcd"><div class="top"><h2>Search</h2><span class="pcs">${hits.length} program${hits.length===1?"":"s"}</span></div>
+      <div class="search"><input id="q" type="search" placeholder="Program, PCM tone or note" value="${esc(query)}" aria-label="Search programs"></div></section>`
+      + (hits.length ? hits.map(progRow).join("") : '<p class="empty">No program matches. Try part of a name, like “Sax” or “Organ”.</p>');
+  } else {
+    const [g,a,b] = GROUPS[cur];
+    html = `<section class="lcd"><div class="top"><h2>${esc(g)}</h2><span class="pcs">GM ${pad3(a+1)}–${pad3(b+1)} · ${groupPcm(cur)} of 8 on PCM</span></div>
+      <p>Programs marked “PCM tone” have a fitting sound in the CM-64's PCM list. The rest name their nearest tone for the single-unit seats.</p>
+      <div class="search"><input id="q" type="search" placeholder="Search all programs: name, PCM tone or note" value="" aria-label="Search programs"></div></section>`;
+    for (let p=a;p<=b;p++) html += progRow(p);
+  }
+  $("#main").innerHTML = html;
+  const qi = $("#q");
+  qi.oninput = ()=>{ query = qi.value; clearTimeout(qi._t); qi._t = setTimeout(()=>{ render(); const e=$("#q"); if(e){e.focus({preventScroll:true}); e.setSelectionRange(e.value.length,e.value.length);} },180); };
+  const M = $("#main");
+  M.querySelectorAll("button[data-u]").forEach(el=>el.onclick=()=>{ state[el.dataset.p].use = el.dataset.u; save(el.dataset.p); render(); });
+  M.querySelectorAll("select[data-p]").forEach(el=>el.onchange=()=>{ state[el.dataset.p].pcm = +el.value; save(el.dataset.p); render(); });
+  M.querySelectorAll("button[data-lv]").forEach(el=>el.onclick=()=>{
+    const s = state[el.dataset.p], k = el.dataset.lv==="la"?"la":"lv";
+    s[k] = Math.max(LV_MIN, Math.min(LV_MAX, s[k] + (+el.dataset.d)*LV_STEP)); save(el.dataset.p); render();
+  });
+  M.querySelectorAll("button[data-n]").forEach(el=>el.onclick=()=>{ openNotes.add(+el.dataset.n); render(); const t=document.getElementById("n"+el.dataset.n); if(t) t.focus(); });
+  M.querySelectorAll("textarea[data-p]").forEach(el=>el.oninput=()=>{ state[el.dataset.p].note = el.value.slice(0,600); save(el.dataset.p); renderNav(); });
+  M.querySelectorAll("button[data-rev]").forEach(el=>el.onclick=()=>{ state[el.dataset.rev] = defOf(+el.dataset.rev); save(el.dataset.rev); render(); });
+}
+function render(){
+  const y = window.scrollY, navY = $("#fams").scrollTop;
+  const fid = document.activeElement && document.activeElement.id;
+  renderNav(); renderMain();
+  $("#fams").scrollTop = navY;
+  window.scrollTo(0, y);
+  if (fid){ const el = document.getElementById(fid); if (el) try{ el.focus({preventScroll:true}); }catch(e){} }
+}
+
+// Storage: collection "cm64", one doc per GM program ("g001".."g128") with its full pick.
+const dirty = {}, seq = {}, pending = {}, busy = {};
+function save(pc){
+  if (!db || !canWrite) return;
+  dirty[pc] = true; seq[pc] = (seq[pc]||0) + 1;
+  clearTimeout(pending[pc]);
+  pending[pc] = setTimeout(()=>flush(pc), 500);
+  $("#sync").textContent="Saving…"; $("#sync").className="pill";
+}
+async function flush(pc){
+  if (busy[pc]) { pending[pc]=setTimeout(()=>flush(pc),300); return; }
+  busy[pc]=true;
+  const mySeq = seq[pc], s = state[pc];
+  try{
+    await db.doc("cm64/g"+pad3(+pc+1)).set({pc:+pc, use:s.use, pcm:s.pcm, la:s.la, lv:s.lv, note:s.note||""});
+    if (seq[pc] === mySeq) dirty[pc] = false;
+    $("#sync").textContent="Saved"; $("#sync").className="pill ok";
+  }catch(e){
+    if (e && (e.code==="invalid_argument"||e.code==="permission_denied")){ readOnly("You can view these picks but not change them."); }
+    else { $("#sync").textContent="Not saved: "+(e&&e.code||"error"); $("#sync").className="pill bad"; }
+  }finally{ busy[pc]=false; }
+}
+function readOnly(msg){
+  canWrite=false; $("#ro").hidden=false; $("#ro").textContent=msg;
+  $("#sync").textContent="Read only"; $("#sync").className="pill"; render();
+}
+function clampPick(v, pc){
+  const d = defOf(pc);
+  const int = (x,lo,hi,def)=>Number.isInteger(x)?Math.max(lo,Math.min(hi,x)):def;
+  return {
+    use: USES.some(([u])=>u===v.use) ? v.use : d.use,
+    pcm: int(v.pcm,0,TONES.length-1,d.pcm),
+    la: int(v.la,LV_MIN,LV_MAX,d.la),
+    lv: int(v.lv,LV_MIN,LV_MAX,d.lv),
+    note: typeof v.note==="string" ? v.note.slice(0,600) : "",
+  };
+}
+
+render();
+(async()=>{
+  const c = window.claude;
+  db = c && c.use ? await c.use("db") : null;
+  if (!db){ $("#sync").textContent="Offline: changes are not saved"; $("#sync").className="pill bad"; canWrite=false; render(); return; }
+  try{
+    const u = await c.use("user");
+    if (u && typeof u.can==="function"){ const ok = await u.can("data.write"); if (ok===false) readOnly("You can view these picks but not change them."); }
+  }catch(e){}
+  db.collection("cm64").onSnapshot(snap=>{
+    let ch = false;
+    for (const d of snap.docs){
+      const m = /^g(\d{3})$/.exec(d.id); if (!m) continue;
+      const pc = +m[1]-1;
+      if (pc < 0 || pc > 127 || dirty[pc]) continue;
+      const next = clampPick(d.data()||{}, pc);
+      if (!same(next, state[pc])){
+        const a = document.activeElement;
+        if (a && a.id === "n"+pc) continue;      // never yank a note out from under the cursor
+        state[pc] = next; ch = true;
+      }
+    }
+    if (!loaded){ loaded=true; ch=true; if(canWrite){$("#sync").textContent="Saved"; $("#sync").className="pill ok";} }
+    if (ch) render();
+  }, e=>{ $("#sync").textContent="Live updates stopped"; $("#sync").className="pill bad"; });
+})();
+</script>
