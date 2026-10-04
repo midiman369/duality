@@ -1,9 +1,9 @@
-"""CM-64 outs (0.19.053), no song.
+"""CM-64 outs (0.19.053-054), no song.
 
   1. tags: "cm64" and "cm-64" parse to cm64 and show as CM-64; cm32 still parses
   2. routing: an MT-32 stream on two :mt32 outs and a :cm64 out spreads ch2-10 over all three;
      ch11-16 (the PCM half) go to the CM-64 only
-  3. halves: on one :cm64 out (--poly 32) 20 quiet LA notes and 31 loud PCM notes all sound;
+  3. halves: on one :cm64 out (--poly 32) 20 quiet LA notes and 31 loud 1-partial PCM notes sound;
      the 32nd PCM note steals a PCM note (not a quieter LA one), and LA notes up to 32 steal
      nothing
   4. a :cm32-only out gets an MT-32 stream under Crucible; a :gs out does not
@@ -11,6 +11,9 @@
   6. Voodoo: the CM-64 gets its PCM part channels set OFF (52 00 0A = 16 x 6) at load, the
      MT-32 does not; leaving Voodoo sets them back to ch11-16
   7. pan: in Voodoo, CC10 on CM-64 ch2 is mapped to the CM-32L table, CC10 on ch11 is left as is
+  8. partials: the PCM half counts partials (manual p.12-13): 15 notes of A.PIANO 1 (2 partials)
+     fit, the 16th steals one; a 1-partial note then fits in the last partial; before any program
+     change a part counts its power-on patch (ch13 A.PIANO 1 = 2); an MT-32 reset forgets programs
 """
 import sys
 import time as _time
@@ -85,6 +88,8 @@ for ch in range(10, 16):
 
 # 3. halves
 d = fresh(["cm64"])
+for ch in range(10, 16):
+    d.process(mido.Message("program_change", channel=ch, program=33))   # STRINGS 1: 1 partial
 for i in range(20):
     note(d, 1, 30 + i, v=10)            # quiet LA notes
 for i in range(31):
@@ -153,6 +158,26 @@ on = bytes(D._mt32_dt1(D.CM64_PCM_RX, list(range(10, 16))))
 sent_on = [p for _t, p, m in REC if m.type == "sysex" and bytes(m.data) == on]
 if sent_on != [1]:
     fails.append(f"6: PCM channels restored on {sent_on}, want [port2]")
+
+# 8. partials
+d = fresh(["cm64"])
+d.process(mido.Message("program_change", channel=10, program=0))    # A.PIANO 1: 2 partials
+d.process(mido.Message("program_change", channel=11, program=33))   # STRINGS 1: 1 partial
+for i in range(15):
+    note(d, 10, 40 + i)
+if d.steal_count or d._port_notes(0, 10) != (30, 31):
+    fails.append(f"8: 15 A.PIANO 1 notes: steals {d.steal_count}, PCM {d._port_notes(0, 10)}, want 0 / (30, 31)")
+note(d, 10, 70)
+if d.steal_count != 1 or d._port_notes(0, 10) != (30, 31):
+    fails.append(f"8: 16th piano note: steals {d.steal_count}, PCM {d._port_notes(0, 10)}, want 1 / (30, 31)")
+note(d, 11, 72)
+if d.steal_count != 1 or d._port_notes(0, 11) != (31, 31):
+    fails.append(f"8: 1-partial note in the last partial: steals {d.steal_count}, PCM {d._port_notes(0, 11)}")
+if d._cm64_pcm_partials(12) != 2 or d._cm64_pcm_partials(10) != 2:
+    fails.append(f"8: ch13 power-on / ch11 piano partials {d._cm64_pcm_partials(12)} / {d._cm64_pcm_partials(10)}")
+d.process(mido.Message("sysex", data=[0x41, 0x10, 0x16, 0x12, 0x7F, 0x00, 0x00, 0x01, 0x00, 0x00]))
+if d._cm64_pcm_partials(11) != 1 or d._ch_program[10] is not None:
+    fails.append("8: MT-32 reset did not return the parts to their power-on patches")
 
 if fails:
     print("FAILS")

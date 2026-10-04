@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.053"
+VERSION = "0.19.054"
 
 
 """
@@ -29,7 +29,7 @@ Crucible (format-aware routing)
 
 Voodoo (MT-32 GM)
   • MT-TO-GM or KQ6 bank on :mt32/:cm32/:cm64 — --voodoo / M while already MT-32
-  • CM-64: ch11-16 of an LA stream go to its PCM half (31 voices, own steal);
+  • CM-64: ch11-16 of an LA stream go to its PCM half (31 partials, own steal);
     Voodoo turns that half off while the LA half plays GM
   • Paced SysEx + queued input with elastic catch-up; exit on real MT-32 SysEx
   • 1/2/3-unit maps; 4+ even units can use pairs (P); LA32 pan table
@@ -325,6 +325,23 @@ LA_TAGS = frozenset({"mt32", "cm32", "cm64"})
 CM64_PCM_CHANNELS = frozenset(range(10, 16))   # 0-based MIDI ch 11-16: the PCM half
 CM64_PCM_POLY = 31                             # PCM voices (the LA half uses the port's --poly)
 CM64_PCM_RX = (0x52, 0x00, 0x0A)               # CM-32P system area: MIDI channel of PCM parts 1-6
+# Partials per internal PCM tone, PC 1-64 (CM-64 manual p.12-13 "Ptl#"); the 31 PCM
+# voices are partials, so a 2-partial tone (A.PIANO 1-4, organs ...) fits 15 notes.
+# PC 65-128 are card sounds (not listed): counted as 1.
+CM64_PCM_PARTIALS = (
+    2, 2, 2, 2, 1, 1, 1, 2, 2, 2,   # 1-10   A.PIANO 1-9, E.PIANO 1/3/5
+    1, 2, 2, 1, 1,                  # 11-15  A.GUITAR 1/3/4, E.GUITAR 1/2
+    1, 2, 1, 1, 1, 2, 1, 1,         # 16-23  SLAP 3-12
+    1, 2, 1, 2, 1, 2,               # 24-29  FINGERED 1/2, PICKED 1/2, FRETLESS, AC.BASS
+    1, 1, 2, 2, 1, 1, 2, 2,         # 30-37  CHOIR 1-4, STRINGS 1-4
+    2, 2, 2, 2, 2, 2, 2, 2, 2,      # 38-46  E.ORGAN 2-13
+    1, 1, 1, 1, 1, 1, 2, 2,         # 47-54  SOFT TP 1/3, TP/TRB 1-6
+    1, 1, 1, 2,                     # 55-58  SAX 1/2/3/5
+    1, 1, 2, 2, 2, 1,               # 59-64  BRASS 1-5, ORCH HIT
+)
+# Power-on PCM parts 1-6 (manual p.18): FRETLESS 1, CHOIR 1, A.PIANO 1, E.ORGAN 1,
+# E.GUITAR 1, SOFT TP 1 — used until a part gets a program change.
+CM64_PCM_DEFAULT_PARTIALS = (1, 1, 2, 2, 1, 1)
 
 # GM-family tags used when stream format is unknown (exclude pure MT-32)
 GM_FAMILY_TAGS = frozenset({"gm", "gm2", "gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820", "xg"})
@@ -921,6 +938,7 @@ class Duality:
         self._cm64_ports = frozenset(
             i for i, t in enumerate(self.out_formats) if t and "cm64" in t
         )
+        self._ch_program: list[int | None] = [None] * 16   # last PC per channel (any mode)
 
         # GS part Rx channel (0–15). Defaults 1:1. YS4 stacks parts 7+16
         # on ch7 and writes Key Shift after/before the remap.
@@ -2097,6 +2115,8 @@ class Duality:
         Unknown slot → 1 (MIDI-note fallback). Rhythm / missing table → 1.
         """
         ch = ch & 0x0F
+        if port is not None and self._cm64_half(port, ch):
+            return self._cm64_pcm_partials(ch)
         if ch == 9 or (hasattr(self, "_anima_is_rhythm") and self._anima_is_rhythm(ch)):
             return 1
         slot = None
@@ -2151,6 +2171,16 @@ class Duality:
             return None
         return ch is not None and (ch & 0x0F) in CM64_PCM_CHANNELS
 
+    def _cm64_pcm_partials(self, ch: int) -> int:
+        """Partials one note uses on a CM-64 PCM part (channel 11-16, its current program)."""
+        ch &= 0x0F
+        prog = self._ch_program[ch]
+        if prog is None:
+            return CM64_PCM_DEFAULT_PARTIALS[ch - 10]
+        if prog < len(CM64_PCM_PARTIALS):
+            return CM64_PCM_PARTIALS[prog]
+        return 1
+
     def _port_voices(self, port: int, ch: int | None = None) -> tuple[int, int]:
         """(voices in use, limit) on `port`; a CM-64 counts only the half `ch` plays."""
         half = self._cm64_half(port, ch)
@@ -2165,13 +2195,15 @@ class Duality:
         return max(0, self.voice_counts[port] - pcm), self.poly_limits[port]
 
     def _port_notes(self, port: int, ch: int | None = None) -> tuple[int, int]:
-        """(notes sounding, limit) on `port`; a CM-64 counts only the half `ch` plays."""
+        """(notes sounding, limit) on `port`; a CM-64 counts only the half `ch` plays
+        (the PCM half in partials)."""
         half = self._cm64_half(port, ch)
         n = 0
         for (c, _), info in self.active.items():
             if port in info.get("ports", [info["port"]]):
                 if half is None or ((c & 0x0F) in CM64_PCM_CHANNELS) == half:
-                    n += 1
+                    # The PCM half's 31 voices are partials (1 or 2 per note).
+                    n += int(info.get("voices") or 1) if half else 1
         lim = CM64_PCM_POLY if half else self.poly_limits[port]
         return n, lim
 
@@ -4498,6 +4530,7 @@ class Duality:
         mt_body = [0x7F, 0x00, 0x00, 0x01, 0x00]
         mt_ck = _roland_checksum(mt_body)
         mt = mido.Message("sysex", data=[0x41, 0x10, 0x16, 0x12, *mt_body, mt_ck])
+        self._ch_program = [None] * 16
         sent = []
         for i, tags in enumerate(self.out_formats):
             names = {str(x).lower() for x in tags}
@@ -9765,6 +9798,11 @@ class Duality:
         if self._thin_high_rate(msg):
             return
 
+        if msg.type == "program_change":
+            self._ch_program[msg.channel & 0x0F] = msg.program & 0x7F
+        elif msg.type == "sysex" and list(msg.data[:5]) == [0x41, 0x10, 0x16, 0x12, 0x7F]:
+            self._ch_program = [None] * 16   # LA/PCM all-parameter reset: power-on patches
+
         # Anima bookkeeping (no-ops when disabled aside from the bool check)
         if self.anima:
             if msg.type == "control_change":
@@ -10005,11 +10043,15 @@ class Duality:
                         self._anima_seat_release(port, note_ch)
                 for port in targets:
                     # A CM-64 counts (and steals in) the half this channel plays.
+                    # The PCM half needs room for this note's partials (1 or 2).
+                    need = self._cm64_pcm_partials(note_ch) if self._cm64_half(port, note_ch) else 1
                     real_count, lim = self._port_notes(port, note_ch)
-                    if real_count >= lim:
+                    for _ in range(need):
+                        if real_count + need <= lim:
+                            break
                         self._steal_least_important(port, note_ch)
-                    real_count, lim = self._port_notes(port, note_ch)
-                    if real_count >= lim:
+                        real_count, lim = self._port_notes(port, note_ch)
+                    if real_count + need > lim:
                         continue  # this port full – try others when broadcasting
                     self._maybe_gs_efx_on_note(port, note_msg)
                     sent_ports.append(port)
