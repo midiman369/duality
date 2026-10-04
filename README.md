@@ -226,6 +226,7 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | `--anima-seed [HEX]` | Lock seed (`4A2F`, `0x4A2F`, or decimal). Bare flag locks first roll |
 | `--anima-efx-stable` | Deprecated alias for bare `--anima-seed` |
 | `--voodoo` | Load GM bank on MT-32 outs at start |
+| `--cm64-seats` | One CM-64 under Voodoo: `live` (default) or `fixed` PCM seats |
 | `--voodoo-bank` | `mtgm` (default) or `kq6` |
 | `--voodoo-layout` | `stripe` (default) or `pairs` |
 | `--alchemy` | **BROKEN/EXPERIMENTAL** GS↔XG rewrite; allows one output |
@@ -362,10 +363,11 @@ The CM-64 is a CM-32L (LA, parts 1–8 on ch 2–9 plus rhythm on ch 10) and a C
 
 - Ch 1–10 behave as on a CM-32L: the CM-32L pan table, Voodoo, the LCD text, **X** sends the MT-32 reset.
 - Ch 11–16 of an MT-32-format stream go only to CM-64 outs (an MT-32 or CM-32L would ignore them). With no CM-64 out they route as before.
-- Voices are counted per half: the LA half uses the port's `--poly`, the PCM half has 31 partials; a full half steals only its own notes. A PCM note takes 1 or 2 partials by its tone (manual p.12–13: A.PIANO 1–4, the organs, CHOIR 3/4 … are 2), so 15 notes of a 2-partial piano fill the half; a part with no program change yet counts its power-on patch. The PCM half pans continuously, so its CC10 is passed through as is.
+- Voices are counted per half: the LA half uses the port's `--poly`, the PCM half has 31 partials; a full half steals only its own notes. A PCM note takes 1 or 2 partials by its tone (manual p.12–13: A.PIANO 1–4, the organs, CHOIR 3/4 … are 2), so 15 notes of a 2-partial piano fill the half; a part with no program change yet counts its power-on patch. The PCM half pans continuously but reversed like the LA half (0 = right, 127 = left), so GM pan sent to it is flipped (127 − value); a native CM-64 stream's own pan is passed as is.
 - **Voodoo with the PCM half** (0.19.055): the LA maps stay as they are, and each CM-64 adds 6 PCM parts. `tables_cm64.py` says per GM program whether the LA half, a PCM part or both (layer) play it, which PCM tone, and a level per half (CC7 scale). The seed picks PCM wherever the manual has a fitting tone: pianos, Rhodes, organs, guitars, basses, strings, choir, orch hit, trumpet / trombone / brass, saxes.
   - **2+ units — pool**: a channel whose program is PCM claims a free part, preferring the unit that plays it on LA. Duality sends it that channel's traffic on the part's own receive channel (one the unit's LA parts don't use) with the program translated to the PCM tone. Back to an LA program, the channel plays on LA again; a held note's off still reaches its part. When all parts are taken, a part whose channel has rested 10 s can be taken; otherwise the newcomer plays on LA.
-  - **1 unit — seats**: the PCM parts listen on the melody channels the bank's LA parts leave free (MT-TO-GM: ch 9 and 11–15; ch 16 stays silent) and always play PCM, the program's nearest tone.
+  - **1 unit — live seats** (default, 0.19.056): the 15 GM melody channels share 8 LA + 6 PCM parts. Each part listens on its channel's own number (Duality rewrites receive channels: LA `10 00 0D`+part, PCM `52 00 0A`+part). At each program change a channel moves to the half its pick wants when a part there is free, or its channel has rested 10 s (a program change counts as use, so the song's opening burst settles cleanly); its sounding notes are ended first. A channel without a part takes one at its next note; with none free it stays silent. A layer plays on PCM here (one unit has no spare part for the LA side).
+  - **1 unit — fixed seats** (`--cm64-seats fixed`): the PCM parts stay on the melody channels the bank's LA parts leave free (MT-TO-GM: ch 9 and 11–15; ch 16 silent) and always play PCM, the program's nearest tone.
   - PCM partial reserve 6/5/5/5/5/5; parts go silent and back to ch 11–16 when Voodoo ends. Card sounds (PC 65–128) are not mapped yet.
 
 ```bash
