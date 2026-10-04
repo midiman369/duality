@@ -121,6 +121,15 @@ of their 76 meetings), then all 15 melody channels. Sound-effect bridges as in t
 one MT-32 + two CM-64s, three MT-32s and one CM-64 on fixed seats 0 steals, 0 drops; one CM-64 on live seats 1 steal
 (the PCM half full at 31 partials in the finale).
 
+`python tests/make_voodoo_demo3.py` writes `tests/midi/the_hint_line.mid` (Format 1), "The Hint Line" (3:57), the
+third Voodoo demo: a call to a game hint line (the phone rings, the operator answers, bossa hold music) where one
+original tune, the Wanderer, travels through five worlds in a key, metre and groove of their own: a Monkey Island
+hornpipe in 6/8 (D), a Sam & Max rockabilly road trip (A), a King's Quest royal procession (Bb), a Space Quest action
+chase (C minor, with a minor variant of bar 5), a Leisure Suit Larry cha-cha (G), then a finale on all 15 melody
+channels that broadens to 80 BPM before the phone rings again. Between worlds the hold music returns for two bars
+under the sound effects. Offline: three CM-64s, one MT-32 + two CM-64s, three MT-32s and one CM-64 (live or fixed
+seats) 0 steals, 0 drops; a CM-64 on live seats peaks at 29 PCM partials.
+
 `python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
 (11:53): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
 muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm
