@@ -74,6 +74,10 @@ The file's own insert always wins its home unit.
   off for chug-a-chug riffing and on for longer chord riffs, lead lines and solos. Test song:
   `tests/midi/dirty-women.mid` (Black Sabbath - Dirty Women; see tests/README.md).
   Per the user, once the insert is set the Wah Sw toggles On/Off with no hitching (no need to keep it off note onsets).
+- **CM-64 PCM half for GM (Voodoo)**: 0.19.053 routes ch11-16 of an LA stream to a `:cm64` out's PCM half
+  (31 voices, own steal) and turns that half OFF during Voodoo (`52 00 0A`..`0F` = 16, back to 10..15 on exit).
+  Next would be letting Voodoo map some GM parts onto the PCM half (CM-32P tones / card sounds). The user has a
+  real CM-64, three MT-32s and the gearmulator CM-64; CM-64 manual facts are in the 0.19.053 code comments.
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).

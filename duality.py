@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.052"
+VERSION = "0.19.053"
 
 
 """
@@ -28,7 +28,9 @@ Crucible (format-aware routing)
   • SCPOP / SC-ext (model-45 or banner, not LCD text) + optional --scpop
 
 Voodoo (MT-32 GM)
-  • MT-TO-GM or KQ6 bank on :mt32/:mt/:cm — --voodoo / M while already MT-32
+  • MT-TO-GM or KQ6 bank on :mt32/:cm32/:cm64 — --voodoo / M while already MT-32
+  • CM-64: ch11-16 of an LA stream go to its PCM half (31 voices, own steal);
+    Voodoo turns that half off while the LA half plays GM
   • Paced SysEx + queued input with elastic catch-up; exit on real MT-32 SysEx
   • 1/2/3-unit maps; 4+ even units can use pairs (P); LA32 pan table
 
@@ -298,6 +300,8 @@ FORMAT_ALIASES = {
     "cm": "cm32",
     "cm32": "cm32",
     "cm-32": "cm32",
+    "cm64": "cm64",
+    "cm-64": "cm64",
     "any": "any",
 }
 FORMAT_DISPLAY = {
@@ -312,8 +316,15 @@ FORMAT_DISPLAY = {
     "xg": "XG",
     "mt32": "MT-32",
     "cm32": "CM-32L",
+    "cm64": "CM-64",
     "any": "ANY",
 }
+# LA-family outs (Roland MT-32 SysEx model 16h). A CM-64 is a CM-32L (LA parts on
+# MIDI ch 2-10) plus a CM-32P (PCM parts on ch 11-16, its own 31 voices).
+LA_TAGS = frozenset({"mt32", "cm32", "cm64"})
+CM64_PCM_CHANNELS = frozenset(range(10, 16))   # 0-based MIDI ch 11-16: the PCM half
+CM64_PCM_POLY = 31                             # PCM voices (the LA half uses the port's --poly)
+CM64_PCM_RX = (0x52, 0x00, 0x0A)               # CM-32P system area: MIDI channel of PCM parts 1-6
 
 # GM-family tags used when stream format is unknown (exclude pure MT-32)
 GM_FAMILY_TAGS = frozenset({"gm", "gm2", "gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820", "xg"})
@@ -342,7 +353,7 @@ FORMAT_COMPAT = {
     "gm2": {"gm2"},
     "gs": {"gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820"},
     "xg": {"xg"},
-    "mt32": {"mt32"},
+    "mt32": set(LA_TAGS),   # an MT-32 stream plays on any LA-family out (CM-32L, CM-64 too)
 }
 
 from tables_gs import (
@@ -906,6 +917,10 @@ class Duality:
             if len(out_formats) != self.n_ports:
                 raise ValueError("out_formats length must match number of output ports")
             self.out_formats = out_formats
+        # CM-64 outs: two halves (LA ch1-10 at the port's --poly, PCM ch11-16 at 31).
+        self._cm64_ports = frozenset(
+            i for i, t in enumerate(self.out_formats) if t and "cm64" in t
+        )
 
         # GS part Rx channel (0–15). Defaults 1:1. YS4 stacks parts 7+16
         # on ch7 and writes Key Shift after/before the remap.
@@ -2130,15 +2145,49 @@ class Duality:
         # Optional: uncomment the next line if you want to see when it heals
         # self._set_status("Voice counts re-synchronized", duration=2.0)
 
-    def _steal_least_important(self, port: int):
+    def _cm64_half(self, port: int, ch: int | None):
+        """On a CM-64 out: True for the PCM half (ch11-16), False for LA. None elsewhere."""
+        if port not in self._cm64_ports:
+            return None
+        return ch is not None and (ch & 0x0F) in CM64_PCM_CHANNELS
+
+    def _port_voices(self, port: int, ch: int | None = None) -> tuple[int, int]:
+        """(voices in use, limit) on `port`; a CM-64 counts only the half `ch` plays."""
+        half = self._cm64_half(port, ch)
+        if half is None:
+            return self.voice_counts[port], self.poly_limits[port]
+        pcm = 0
+        for (c, _), info in self.active.items():
+            if (c & 0x0F) in CM64_PCM_CHANNELS and port in info.get("ports", [info["port"]]):
+                pcm += int(info.get("voices") or 1)
+        if half:
+            return pcm, CM64_PCM_POLY
+        return max(0, self.voice_counts[port] - pcm), self.poly_limits[port]
+
+    def _port_notes(self, port: int, ch: int | None = None) -> tuple[int, int]:
+        """(notes sounding, limit) on `port`; a CM-64 counts only the half `ch` plays."""
+        half = self._cm64_half(port, ch)
+        n = 0
+        for (c, _), info in self.active.items():
+            if port in info.get("ports", [info["port"]]):
+                if half is None or ((c & 0x0F) in CM64_PCM_CHANNELS) == half:
+                    n += 1
+        lim = CM64_PCM_POLY if half else self.poly_limits[port]
+        return n, lim
+
+    def _steal_least_important(self, port: int, ch: int | None = None):
         """
         Steal the least important note on the given port.
-        Priority: lowest velocity first, then oldest.
+        Priority: lowest velocity first, then oldest. On a CM-64 only the
+        half that `ch` plays is searched (LA and PCM voices are separate).
         """
+        half = self._cm64_half(port, ch)
         candidates = []
         for key, info in self.active.items():
             ports = info.get("ports", [info["port"]])
             if port in ports:
+                if half is not None and ((key[0] & 0x0F) in CM64_PCM_CHANNELS) != half:
+                    continue
                 candidates.append((info.get("velocity", 64), info["time"], key))
 
         if not candidates:
@@ -2163,11 +2212,20 @@ class Duality:
             self._anima_ghost_kill(key)
         self.steal_count += 1
 
-    def _choose_from_ports(self, eligible: list[int], is_chord: bool) -> int | None:
+    def _choose_from_ports(
+        self, eligible: list[int], is_chord: bool, ch: int | None = None
+    ) -> int | None:
         """Utilization / RR / chord pick among a concrete eligible list."""
         if not eligible:
             return None
         counts = self.voice_counts
+        if self._cm64_ports:
+            # A CM-64 is judged by the half this channel plays.
+            load = {i: self._port_voices(i, ch) for i in eligible}
+            counts = [load[i][0] if i in load else c for i, c in enumerate(counts)]
+            limits = [load[i][1] if i in load else l for i, l in enumerate(self.poly_limits)]
+        else:
+            limits = self.poly_limits
 
         if self.mode == "rr":
             for _ in range(self.n_ports):
@@ -2179,11 +2237,11 @@ class Duality:
 
         if is_chord and self.last_chord_port is not None and self.last_chord_port in eligible:
             preferred = self.last_chord_port
-            if counts[preferred] < self.poly_limits[preferred]:
+            if counts[preferred] < limits[preferred]:
                 return preferred
 
         def _util(i: int) -> float:
-            lim = self.poly_limits[i] or 1
+            lim = limits[i] or 1
             return counts[i] / lim
 
         min_util = min(_util(i) for i in eligible)
@@ -2206,7 +2264,6 @@ class Duality:
         prefer primary (native) ports with free polyphony; overflow to
         GS↔XG translate targets only when primary would steal/drop.
         """
-        counts = self.voice_counts
         if self.alchemy_all:
             return self._choose_from_ports(self._eligible_note_ports(), is_chord)
 
@@ -2214,7 +2271,12 @@ class Duality:
         overflow = self._overflow_note_ports() if self.alchemy else []
 
         def _free(pool: list[int]) -> list[int]:
-            return [i for i in pool if counts[i] < self.poly_limits[i]]
+            out = []
+            for i in pool:
+                n, lim = self._port_voices(i)
+                if n < lim:
+                    out.append(i)
+            return out
 
         free_primary = _free(primary)
         if free_primary:
@@ -2494,7 +2556,7 @@ class Duality:
             return "55"
         if tags & {"gs88"}:
             return "88"
-        if tags & {"xg", "mt32", "cm32"}:
+        if tags & ({"xg"} | LA_TAGS):
             return "none"
         # bare :gs / :gm / any → 8850-class (SCVA). Tag 88emu :gs+88pro.
         if tags & {"gs", "gm", "gm2", "any"} or not tags:
@@ -3215,10 +3277,12 @@ class Duality:
         return msg
 
     def _la_port_kind(self, port: int) -> str | None:
-        """Return 'mt32', 'cm32', or None for pan-table selection."""
+        """Return 'mt32', 'cm32', 'cm64', or None for pan-table selection."""
         tags = self.out_formats[port] if port < len(self.out_formats) else None
         if not tags:
             return None
+        if "cm64" in tags:
+            return "cm64"
         if "cm32" in tags or "cm" in tags:
             return "cm32"
         if "mt32" in tags:
@@ -3271,7 +3335,9 @@ class Duality:
         if not self._should_map_mt32_pan(port):
             return msg
         kind = self._la_port_kind(port)
-        positions = CM32_PAN_POSITIONS if kind == "cm32" else MT32_PAN_POSITIONS
+        if kind == "cm64" and (msg.channel & 0x0F) in CM64_PCM_CHANNELS:
+            return msg          # the PCM half pans continuously (CM-64 manual p.16)
+        positions = CM32_PAN_POSITIONS if kind in ("cm32", "cm64") else MT32_PAN_POSITIONS
         val = self._gm_pan_to_la(msg.value, positions, channel=msg.channel)
         try:
             return msg.copy(value=val)
@@ -3343,10 +3409,10 @@ class Duality:
     # Voodoo – Super-Munt-style GM bank for MT-32 hardware
     # ------------------------------------------------------------------
     def _mt32_port_indices(self) -> list[int]:
-        """Ports whose capability tags include mt32 or cm32 (LA family)."""
+        """Ports whose capability tags include mt32, cm32 or cm64 (LA family)."""
         out = []
         for i, tags in enumerate(self.out_formats):
-            if tags and (tags & {"mt32", "cm32"}):
+            if tags and (tags & LA_TAGS):
                 out.append(i)
         return out
 
@@ -3373,13 +3439,13 @@ class Duality:
             self._safe_out_send(p, msg)
 
     def _only_mt32_outs(self) -> bool:
-        """True when every port is mt32-capable and none offer gm/gs/xg/any."""
+        """True when every port is LA-family (mt32/cm32/cm64) and none offer gm/gs/xg/any."""
         if self.n_ports < 1:
             return False
         for tags in self.out_formats:
             if not tags or "any" in tags:
                 return False
-            if "mt32" not in tags:
+            if not (tags & LA_TAGS):
                 return False
             # pure mt32 (may also list nothing else) – reject if gm/gs/xg/gm2 present
             if tags & {"gm", "gm2", "gs", "xg"}:
@@ -3436,7 +3502,14 @@ class Duality:
 
         banner_load = bytes(self._mt32_display_msg("Duality Voodoo...").data)
         banner_gm = bytes(self._mt32_display_msg(("Loading " + bank_display(self.voodoo_bank))[:20]).data)
-        send_list = _all([banner_load, banner_gm]) + _all(bank) + _all(kit)
+        send_list = _all([banner_load, banner_gm])
+        # CM-64: the PCM half stops listening (channel OFF) while the LA half
+        # plays GM, so ch11-16 do not double with CM-32P sounds.
+        for port in targets:
+            if port in self._cm64_ports:
+                send_list.extend(_one([_mt32_dt1(CM64_PCM_RX, [16] * 6)], port))
+                self._log_line(f"VOODOO port{port + 1}: CM-64 PCM half off")
+        send_list += _all(bank) + _all(kit)
 
         # Phase V2: with 2+ MT-32s, program alternating channel map + equal reserve
         if len(targets) >= 2:
@@ -3534,6 +3607,12 @@ class Duality:
                 self._voodoo_display("Voodoo Off")
             except Exception:
                 pass
+            # CM-64: the PCM half listens on ch11-16 again (factory map).
+            pcm_on = mido.Message(
+                "sysex", data=list(_mt32_dt1(CM64_PCM_RX, list(range(10, 16))))
+            )
+            for p in sorted(self._cm64_ports):
+                self._safe_out_send(p, pcm_on)
             self._set_status(f"Voodoo: exited ({reason})", duration=3.0)
             self._log_line(f"VOODOO exit ({reason})")
 
@@ -4429,9 +4508,9 @@ class Duality:
             elif names & {"xg"}:
                 msgs = [gm, xg]
                 kind = "XG"
-            elif names & {"mt32", "mt-32", "mt", "cm"}:
+            elif names & (LA_TAGS | {"mt-32", "mt", "cm"}):
                 msgs = [mt]
-                kind = "MT-32"
+                kind = "CM-64" if "cm64" in names else ("CM-32L" if "cm32" in names else "MT-32")
             else:
                 msgs = [gm]
                 kind = "GM"
@@ -4904,7 +4983,7 @@ class Duality:
         fmt = (getattr(self, "detected_format", None) or "").upper()
         for i, tags in enumerate(self.out_formats):
             names = {str(t).lower() for t in tags}
-            if names & {"xg", "mt32", "mt-32", "mt"}:
+            if names & ({"xg", "mt-32", "mt"} | LA_TAGS):
                 continue
             cls = self._gs_canvas_class(names)
             # Insertion EFX only exists on 88Pro/880 and 8820/8850.
@@ -9770,6 +9849,20 @@ class Duality:
                     targets = [port]
                 else:
                     ch_n = msg.channel & 0x0F
+                    # CM-64: ch11-16 of an LA stream are the PCM half (CM-32P
+                    # parts) — only a CM-64 out has it; MT-32s ignore them.
+                    pcm_only = None
+                    if (
+                        self._cm64_ports
+                        and ch_n in CM64_PCM_CHANNELS
+                        and not self.voodoo_active
+                        and (self.detected_format == "MT-32" or self._only_mt32_outs())
+                    ):
+                        pcm_only = [p for p in eligible if p in self._cm64_ports]
+                        if pcm_only:
+                            eligible = pcm_only
+                        else:
+                            pcm_only = None
                     if self.anima:
                         fchs = getattr(self, "_anima_foley_ch", None) or []
                         blocked = [
@@ -9818,6 +9911,8 @@ class Duality:
                         port = self._choose_from_ports(
                             [p for p in eligible if p != wet_skip], is_chord
                         )
+                    elif pcm_only is not None:
+                        port = self._choose_from_ports(eligible, is_chord, ch_n)
                     else:
                         port = self._choose_port(is_chord)
                     if port is None:
@@ -9903,22 +9998,18 @@ class Duality:
                     if newv != note_msg.velocity and note_msg.velocity > 0:
                         note_msg = note_msg.copy(velocity=newv)
 
-                def _notes_on_port(p: int) -> int:
-                    return sum(
-                        1 for info in self.active.values()
-                        if p in info.get("ports", [info["port"]])
-                    )
-
+                note_ch = note_msg.channel & 0x0F
                 sent_ports = []
                 if self.anima and self._anima_seat_pan:
                     for port in targets:
-                        self._anima_seat_release(port, note_msg.channel & 0x0F)
+                        self._anima_seat_release(port, note_ch)
                 for port in targets:
-                    real_count = _notes_on_port(port)
-                    if real_count >= self.poly_limits[port]:
-                        self._steal_least_important(port)
-                    real_count = _notes_on_port(port)
-                    if real_count >= self.poly_limits[port]:
+                    # A CM-64 counts (and steals in) the half this channel plays.
+                    real_count, lim = self._port_notes(port, note_ch)
+                    if real_count >= lim:
+                        self._steal_least_important(port, note_ch)
+                    real_count, lim = self._port_notes(port, note_ch)
+                    if real_count >= lim:
                         continue  # this port full – try others when broadcasting
                     self._maybe_gs_efx_on_note(port, note_msg)
                     sent_ports.append(port)
@@ -11294,7 +11385,7 @@ def main():
         nargs="+",
         metavar="PORT",
         help=(
-            "MIDI output port names. Optional format tag: Name:gs|8850|8820|88pro|880|88|55|xg|gm|gm2|mt32. "
+            "MIDI output port names. Optional format tag: Name:gs|8850|8820|88pro|880|88|55|xg|gm|gm2|mt32|cm32|cm64. "
             "Minimum 2 ports (or 1 with --alchemy). Example: --outs \"SC:gs\" \"MU:xg\""
         ),
     )
