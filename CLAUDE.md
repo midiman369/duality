@@ -31,6 +31,8 @@
   PCM parts on 2+ units; on one CM-64 live seats (0.19.056, default: channels move half at a PC by
   rewriting part receive channels) or `--cm64-seats fixed` (ch9, 11-15 with MT-TO-GM). The PCM half's pan is
   reversed like LA's: GM CC10 sent to a PCM part is 127 - value.
+  0.19.061: PCM notes take the normal note path; `_send_routed` hands them to the part (`_cm64v_intercept`), so Anima and the
+  display see them. Anima's GM-numbered sets use `_anima_gm_pc` (MT32_TO_GM / CM64_PCM_GM on native LA streams).
   CM sound effects under Voodoo (0.19.057, `tables_cm64.CM_VOODOO_SFX`): keys 82-108 factory, 76-81 moved to 24-29,
   rewritten after the kit on cm32 / cm64 outs, notes routed to CM units only. Demo songs: `tests/make_voodoo_demo.py`, `make_voodoo_demo2.py`, `make_voodoo_demo3.py`.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their

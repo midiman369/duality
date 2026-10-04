@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.060"
+VERSION = "0.19.061"
 
 
 """
@@ -190,11 +190,12 @@ from rich.text import Text
 from rich.markup import escape
 
 try:
-    from tables_cm64 import cm64_gm_pick, CM64_PCM_TONES, CM_VOODOO_SFX
+    from tables_cm64 import cm64_gm_pick, CM64_PCM_TONES, CM_VOODOO_SFX, CM64_PCM_GM
 except ImportError:   # older install: the CM-64 PCM half stays off under Voodoo
     cm64_gm_pick = None
     CM64_PCM_TONES = ()
     CM_VOODOO_SFX = {}
+    CM64_PCM_GM = ()
 
 try:
     from tables_voodoo import (
@@ -463,6 +464,7 @@ from tables_xg import (
 )
 from tables_anima import (
     MT32_REVERB_MODES,
+    MT32_TO_GM,
     _MT32_DEFAULT_CAT,
     _gm_category,
     _mt32_category,
@@ -2206,13 +2208,29 @@ class Duality:
         """On a CM-64 out: True for the PCM half (ch11-16), False for LA. None elsewhere."""
         if port not in self._cm64_ports:
             return None
+        if ch is None:
+            return False
+        return self._pcm_ch(port, ch)
+
+    def _pcm_ch(self, port: int, ch: int) -> bool:
+        """Does channel `ch` sound on `port`'s PCM half? Native streams: ch11-16. Voodoo: a
+        channel with a PCM part on that unit (a layer counts on its LA side)."""
+        ch &= 0x0F
         if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
-            return False   # Voodoo: the PCM parts are driven by _cm64v_*, not this path
-        return ch is not None and (ch & 0x0F) in CM64_PCM_CHANNELS
+            part = self._cm64v_owned(ch) if self._cm64v_parts else None
+            if part is None or part["port"] != port:
+                return False
+            return self._cm64v_seats or self._cm64v_pick(ch)[0] == "pcm"
+        return ch in CM64_PCM_CHANNELS
 
     def _cm64_pcm_partials(self, ch: int) -> int:
-        """Partials one note uses on a CM-64 PCM part (channel 11-16, its current program)."""
+        """Partials one note uses on a CM-64 PCM part (channel 11-16, its current program;
+        under Voodoo the PCM tone its part plays)."""
         ch &= 0x0F
+        if self._cm64v_parts and (self.voodoo_active or self.voodoo_catchup):
+            part = self._cm64v_owned(ch)
+            pcm = part["prog"] if part and part["prog"] is not None else self._cm64v_pick(ch)[1]
+            return CM64_PCM_PARTIALS[pcm] if 0 <= pcm < len(CM64_PCM_PARTIALS) else 1
         prog = self._ch_program[ch]
         if prog is None:
             return CM64_PCM_DEFAULT_PARTIALS[ch - 10]
@@ -2227,7 +2245,7 @@ class Duality:
             return self.voice_counts[port], self.poly_limits[port]
         pcm = 0
         for (c, _), info in self.active.items():
-            if (c & 0x0F) in CM64_PCM_CHANNELS and port in info.get("ports", [info["port"]]):
+            if self._pcm_ch(port, c) and port in info.get("ports", [info["port"]]):
                 pcm += int(info.get("voices") or 1)
         if half:
             return pcm, CM64_PCM_POLY
@@ -2240,7 +2258,7 @@ class Duality:
         n = 0
         for (c, _), info in self.active.items():
             if port in info.get("ports", [info["port"]]):
-                if half is None or ((c & 0x0F) in CM64_PCM_CHANNELS) == half:
+                if half is None or self._pcm_ch(port, c) == half:
                     # The PCM half's 31 voices are partials (1 or 2 per note).
                     n += int(info.get("voices") or 1) if half else 1
         lim = CM64_PCM_POLY if half else self.poly_limits[port]
@@ -2257,7 +2275,7 @@ class Duality:
         for key, info in self.active.items():
             ports = info.get("ports", [info["port"]])
             if port in ports:
-                if half is not None and ((key[0] & 0x0F) in CM64_PCM_CHANNELS) != half:
+                if half is not None and self._pcm_ch(port, key[0]) != half:
                     continue
                 candidates.append((info.get("velocity", 64), info["time"], key))
 
@@ -3428,6 +3446,8 @@ class Duality:
 
     def _send_routed(self, port: int, msg: mido.Message) -> None:
         """Send with optional Alchemy prepare (skip if translation says None)."""
+        if self._cm64v_parts and self._cm64v_intercept(port, msg):
+            return   # played on a CM-64 PCM part only
         self._alchemy_last_label = None
         out_msg = self._alchemy_prepare(msg, port)
         if out_msg is None:
@@ -3988,7 +4008,7 @@ class Duality:
             self._cm64v_send(part, mido.Message("control_change", channel=0, control=123, value=0))
         self._cm64v_reset()
 
-    def _cm64v_note_on(self, part, msg: mido.Message, pcm: int) -> None:
+    def _cm64v_note_on(self, part, msg: mido.Message, pcm: int, layered: bool = False) -> None:
         if not part["primed"]:
             self._cm64v_prime(part, msg.channel & 0x0F)
         self._cm64v_prog(part, pcm)
@@ -4012,8 +4032,57 @@ class Duality:
         if old is not None:
             self._cm64v_send(old[0], mido.Message("note_off", channel=key[0], note=key[1], velocity=0))
         self._cm64v_send(part, msg)
-        self._cm64v_active[key] = [part, need, msg.velocity, now]
+        self._cm64v_active[key] = [part, need, msg.velocity, now, layered]
         part["last"] = now
+
+    def _cm64v_part_cc(self, part, msg: mido.Message) -> None:
+        """A controller / bend / pressure for a PCM part (CC7 at the part's level of the
+        file's own volume, so a layer's LA scaling never doubles up)."""
+        ch = msg.channel & 0x0F
+        if msg.type == "control_change" and msg.control == 7:
+            lv = self._cm64v_pick(ch)[3]
+            raw = self._cm64v_state[ch]["cc"].get(7, msg.value)
+            self._cm64v_send(part, msg.copy(value=self._cm64v_level(raw, lv)))
+        else:
+            self._cm64v_send(part, msg)
+
+    def _cm64v_intercept(self, port: int, msg) -> bool:
+        """Voodoo: a channel message sent to `port` for a channel with a PCM part there goes
+        to that part (receive channel, PCM tone, partials, reversed pan). True when the LA
+        copy must not go out: the channel plays on PCM only (a layer sends both); on a seat
+        the part listens on the channel itself, so its copy is the only one."""
+        if not (self.voodoo_active or self.voodoo_catchup):
+            return False
+        t = getattr(msg, "type", "")
+        if t not in _CM64V_TYPES or t == "program_change":
+            return False
+        ch = msg.channel & 0x0F
+        if ch == 9:
+            return False
+        if t in ("note_on", "note_off"):
+            key = (ch, msg.note)
+            if t == "note_on" and msg.velocity > 0:
+                part = self._cm64v_owned(ch)
+                if part is None or part["port"] != port:
+                    return False
+                use, pcm, _la, _lv = self._cm64v_pick(ch)
+                layered = use == "layer" and not self._cm64v_seats
+                self._cm64v_note_on(part, msg, pcm, layered)
+                return not layered
+            rec = self._cm64v_active.get(key)
+            if rec is None or rec[0]["port"] != port:
+                return False
+            self._cm64v_active.pop(key, None)
+            self._cm64v_send(rec[0], msg)
+            return not rec[4]
+        hit = False
+        for p in self._cm64v_parts:
+            if p["port"] != port:
+                continue
+            if p["owner"] == ch or (p["prev"] == ch and self._cm64v_sounding(p)):
+                self._cm64v_part_cc(p, msg)
+                hit = True
+        return hit and self._cm64v_seats
 
     def _cm64v_route(self, msg: mido.Message):
         """
@@ -4084,31 +4153,18 @@ class Duality:
             self._cm64v_prime(part, ch)
             return None
         if t in ("note_on", "note_off"):
-            key = (ch, msg.note)
-            if t == "note_on" and msg.velocity > 0:
-                if part is None:
-                    return msg
-                self._cm64v_note_on(part, msg, pcm)
-                return msg if use == "layer" else None
-            rec = self._cm64v_active.pop(key, None)
-            if rec is not None:
-                self._cm64v_send(rec[0], msg)
-                if use != "layer" and (msg.channel, msg.note) not in self.active:
-                    return None
+            # 0.19.061: notes take the normal path (Anima, counters, steals);
+            # _send_routed hands them to the PCM part (_cm64v_intercept).
             return msg
-        # Controllers, bend, pressure: the owning part (and a part still
-        # sounding notes this channel left behind) gets them too.
-        targets = [part] if part is not None else []
-        for p in self._cm64v_parts:
-            if p is not part and p["prev"] == ch and self._cm64v_sounding(p):
-                targets.append(p)
-        for p in targets:
-            if t == "control_change" and msg.control == 7:
-                self._cm64v_send(p, msg.copy(value=self._cm64v_level(msg.value, pcm_lv)))
-            else:
-                self._cm64v_send(p, msg)
-        if self._cm64v_seats:
-            return None
+        # Controllers, bend, pressure: the normal path sends them to the
+        # channel's units, and _send_routed passes them to a PCM part there.
+        # A part on a unit that does not carry the channel on LA gets them here.
+        if not self._cm64v_seats:
+            reached = set(self._voodoo_ports_for_channel(ch) or [])
+            for p in self._cm64v_parts:
+                mine = p is part or (p["prev"] == ch and self._cm64v_sounding(p))
+                if mine and p["port"] not in reached:
+                    self._cm64v_part_cc(p, msg)
         if t == "control_change" and msg.control == 7 and use == "layer" and la_lv != 100:
             return msg.copy(value=self._cm64v_level(msg.value, la_lv))
         return msg
@@ -4764,10 +4820,47 @@ class Duality:
                 return gm
         return prog
 
+    def _anima_la_native(self) -> bool:
+        """A native MT-32 / CM-32L / CM-64 stream (not Voodoo): program numbers are LA patches."""
+        if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
+            return False
+        fmt = (getattr(self, "detected_format", None) or "").upper()
+        return fmt in ("MT-32", "MT32", "MT") or getattr(self, "_anima_stream_map", None) == "mt32"
+
+    def _anima_pcm_native(self, ch: int) -> bool:
+        """Channel 11-16 of a native LA stream with a CM-64 out: a CM-32P part (PCM tones)."""
+        return bool(self._cm64_ports) and (ch & 0x0F) in CM64_PCM_CHANNELS and self._anima_la_native()
+
+    def _anima_gm_pc(self, ch: int) -> int:
+        """The GM program this part stands for, for Anima's GM-numbered sets (mallet sticking,
+        unroll, Hetfield, acoustic strum). Native LA streams map their LA patch (MT32_TO_GM) or,
+        on a CM-64's PCM channels, their PCM tone (CM64_PCM_GM); -1 when nothing fits."""
+        pc = self._anima_cat_pc(ch)
+        if not self._anima_la_native():
+            return pc
+        if self._anima_pcm_native(ch):
+            return CM64_PCM_GM[pc] if 0 <= pc < len(CM64_PCM_GM) else -1
+        bank = getattr(self, "_anima_stream_bank", None)
+        if bank and bank in ANIMA_SIERRA_PC:
+            spec = ANIMA_SIERRA_PC[bank].get(pc)
+            if isinstance(spec, str) and spec.startswith("P"):
+                try:
+                    return MT32_TO_GM[int(spec[1:]) & 0x7F]
+                except ValueError:
+                    return -1
+            return -1 if spec is not None else MT32_TO_GM[pc & 0x7F]
+        return MT32_TO_GM[pc & 0x7F]
+
     def _anima_category(self, ch: int) -> str:
         """Pick articulation family from the active tonemap."""
         if self._anima_is_rhythm(ch):
             return "sfx"
+        if self._anima_pcm_native(ch):
+            # a CM-64's PCM part plays CM-32P tones, not the LA patch of the same number
+            pc = self._anima_cat_pc(ch)
+            if 0 <= pc < len(CM64_PCM_GM):
+                return _gm_category(CM64_PCM_GM[pc])
+            return _mt32_category(pc)
         prog = self._anima_cat_pc(ch)
         voodoo_on = bool(
             getattr(self, "voodoo_active", False)
@@ -8538,7 +8631,7 @@ class Duality:
     def _anima_pluck_lift(self, ch: int, note: int, vel: int) -> int:
         """Acoustic guitar note: a little louder while a sustained part at least as
         loud sounds within an octave (03: steel guitar under flute, horns, strings)."""
-        if self._anima_category(ch) != "guitar" or self._anima_cat_pc(ch) not in ANIMA_ACOUSTIC_PCS:
+        if self._anima_category(ch) != "guitar" or self._anima_gm_pc(ch) not in ANIMA_ACOUSTIC_PCS:
             return vel
         mine = vel * self._anima_gain(ch)
         for (c, n), info in list(self.active.items()):
@@ -9535,7 +9628,8 @@ class Duality:
         for p in ports:
             if p < len(gap_t) and now - gap_t[p] < ANIMA_CC_GAP:
                 continue
-            self._safe_out_send(p, msg)
+            if not (self._cm64v_parts and self._cm64v_intercept(p, msg)):
+                self._safe_out_send(p, msg)
             if p < len(gap_t):
                 gap_t[p] = now
             sent_any = True
@@ -9562,7 +9656,7 @@ class Duality:
         """strum (guitar) / unroll (mallets, harp, pizz, ethnic plucked) / None."""
         if self._anima_is_rhythm(ch):
             return None
-        pc = self._anima_cat_pc(ch)
+        pc = self._anima_gm_pc(ch)
         if pc in ANIMA_UNROLL_PCS:
             return "unroll"
         if self._anima_category(ch) in ANIMA_STRUM_CATS:
@@ -9580,7 +9674,7 @@ class Duality:
         Default: alternate. Occasional double down/up for feel.
         Distortion/overdrive (Hetfield): down-picks only.
         """
-        pc = self._anima_prog[ch]
+        pc = self._anima_gm_pc(ch)
         if pc in ANIMA_HETFIELD_PC:
             return "hetfield"
         if self._anima_file_dirt[ch] and self._anima_hetfield_roll[ch]:
@@ -9655,7 +9749,7 @@ class Duality:
         self._anima_strum_last_t[ch] = now
         self._anima_strum_off_hold[ch] = release
         t0 = now + pickup + random.uniform(-jitter, jitter)
-        pc = self._anima_cat_pc(ch)
+        pc = self._anima_gm_pc(ch)
         if mode == "unroll":
             step = ANIMA_UNROLL_STEP
         elif pc in ANIMA_ACOUSTIC_PCS:
@@ -9714,7 +9808,7 @@ class Duality:
         space = gaps[len(gaps) // 2]
         if space < ANIMA_MALLET_MIN_SPACE:
             return
-        style = ANIMA_MALLET_PCS[self._anima_cat_pc(ch)]
+        style = ANIMA_MALLET_PCS[self._anima_gm_pc(ch)]
         damp = 1.0
         port0 = asc[0][1][0] if asc and asc[0][1] else None
         if port0 is not None and 0 <= port0 < len(self._anima_slots):
@@ -9773,7 +9867,7 @@ class Duality:
         song's beat.
         """
         for c in chs or []:
-            if self._anima_cat_pc(c) in ANIMA_MALLET_PCS:
+            if self._anima_gm_pc(c) in ANIMA_MALLET_PCS:
                 sp = self._anima_mallet_space(c)
                 if sp >= ANIMA_MALLET_MIN_SPACE:
                     return sp, True
@@ -10364,6 +10458,20 @@ class Duality:
                 voodoo_ports = self._voodoo_ports_for_channel(msg.channel)
                 if voodoo_ports is not None:
                     eligible = list(voodoo_ports)
+                # CM-64 pool: a channel on a PCM part plays on that part's unit
+                # (_send_routed hands the note to the part); a layer adds the unit.
+                pcm_layer_port = None
+                if (
+                    self._cm64v_parts and not self._cm64v_seats
+                    and voodoo_ports is not None and (msg.channel & 0x0F) != 9
+                ):
+                    vp = self._cm64v_owned(msg.channel & 0x0F)
+                    if vp is not None:
+                        if self._cm64v_pick(msg.channel & 0x0F)[0] == "pcm":
+                            voodoo_ports = [vp["port"]]
+                            eligible = [vp["port"]]
+                        else:
+                            pcm_layer_port = vp["port"]
                 # CM sound-effect keys exist only on CM units (an MT-32 plays the
                 # Voodoo kit's own sounds there): send them to CM units only.
                 if (
@@ -10482,6 +10590,8 @@ class Duality:
                     if self.anima:
                         self._anima_note_port[ch_n] = port
                     targets = [port]
+                if pcm_layer_port is not None and pcm_layer_port not in targets:
+                    targets.append(pcm_layer_port)
 
                 # Same key already down. Drums / rhythm parts often retrigger
                 # without an off — synthesize one so a later file-off is not
@@ -11266,7 +11376,11 @@ class Duality:
             "XG": "bright_yellow",
             "MT-32": "bright_red",
         }
-        if self.detected_format:
+        if self.voodoo_active and self._cm64v_parts:
+            # CM-64 enhanced Voodoo: the LA half plays the GM bank, the PCM half its parts
+            label = "[CM-64 LA+PCM*]" if self.format_locked else "[CM-64 LA+PCM]"
+            format_badge = f" [bold bright_red]{label}[/]"
+        elif self.detected_format:
             col = colours.get(self.detected_format, "white")
             # [GS] or [GS*] when locked (* = format lock via L)
             core = self.detected_format
