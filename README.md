@@ -56,6 +56,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 - `--voodoo` at launch seeds MT-32 format so you can **L**ock it
 
 ### Anima (opt-in phrasing)
+- On a mixed rig, Anima's GS layer (inserts, seats, hero split, foley) only uses GS units that can get notes: under Voodoo, or when Crucible sends an MT-32 stream to the LA outs only, the GS units are left alone (0.19.063).
 - On LA outs (MT-32 / CM-32L / CM-64): velocity humanizing, CC11 / CC1 swells, strum / unroll, mallet sticking and the lifts work as on GS; EFX, tone palettes, seats, foley and ghosts are GS-only. Native MT-32 streams look their LA patches up as the nearest GM program (`tables_anima.MT32_TO_GM`, from the CM-64 manual's sound list) for the GM-numbered sets, so MT-32 organs are no longer played as mallets; a native CM-64 stream's PCM channels (11–16) use the CM-32P tones (`tables_cm64.CM64_PCM_GM`) (0.19.061).
 - Velocity humanize, expression / mod ramps, guitar strum (including “Hetfield” down-pick on dirt tones)
 - **GS EFX**: one insertion per `:gs` unit, chosen by instrument-family priority; never retyped under a sounding part; guitars pair via OD1/OD2 by pan; file-driven EFX stays on its port

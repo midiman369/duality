@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.062"
+VERSION = "0.19.063"
 
 
 """
@@ -5609,11 +5609,20 @@ class Duality:
         return None
 
     def _anima_gs_ports(self) -> list[int]:
+        """GS units Anima's insert / seat / hero / foley layer may use: insert-capable Sound
+        Canvases that can get notes now. Under Voodoo, or when Crucible routes the stream to
+        other outs (an MT-32 stream on a mixed rig), the GS units sit idle: nothing is placed
+        there (0.19.063; before, inserts and seats were planned on them all the same)."""
+        if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
+            return []
         ports = []
         fmt = (getattr(self, "detected_format", None) or "").upper()
+        elig = set(self._eligible_note_ports())
         for i, tags in enumerate(self.out_formats):
             names = {str(t).lower() for t in tags}
             if names & ({"xg", "mt-32", "mt"} | LA_TAGS):
+                continue
+            if i not in elig:
                 continue
             cls = self._gs_canvas_class(names)
             # Insertion EFX only exists on 88Pro/880 and 8820/8850.
