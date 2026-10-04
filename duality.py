@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.057"
+VERSION = "0.19.058"
 
 
 """
@@ -34,6 +34,7 @@ Voodoo (MT-32 GM)
   • Voodoo on CM-64s: GM programs with a PCM tone (tables_cm64) play on PCM parts
     (pool on 2+ units; one unit: live seats, or --cm64-seats fixed), or layered
   • Paced SysEx + queued input with elastic catch-up; exit on real MT-32 SysEx
+    or a GS / XG reset (a GM / GM2 System On keeps the loaded bank)
   • 1/2/3-unit maps; 4+ even units can use pairs (P); LA32 pan table
 
 Anima (opt-in)
@@ -4272,8 +4273,10 @@ class Duality:
 
     def _voodoo_on_foreign_format(self, fmt: str) -> None:
         """
-        Leave Voodoo when the input stream identifies as a non-MT-32 format
-        (GS / XG / GM / GM2) and the user has not locked the format.
+        Leave Voodoo when the input stream identifies as GS or XG and the user
+        has not locked the format. A GM / GM2 System On keeps Voodoo running
+        (0.19.058): Voodoo is the GM player, and reloading the bank would
+        resend the whole setup for nothing.
 
         Restores normal Crucible routing (notes, pitch bends, CC, SysEx) to the
         appropriate tagged outs instead of keeping everything pinned to :mt32
@@ -4281,7 +4284,9 @@ class Duality:
         """
         if not (self.voodoo_active or self.voodoo_loading or self.voodoo_catchup):
             return
-        if not fmt or fmt == "MT-32":
+        if not fmt or fmt in ("MT-32", "GM", "GM2"):
+            if fmt in ("GM", "GM2"):
+                self._log_line(f"VOODOO stays on ({fmt} System On)")
             return
         if self.format_locked:
             # User intentionally locked (typically to MT-32) – stay in Voodoo
