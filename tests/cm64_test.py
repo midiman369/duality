@@ -10,7 +10,8 @@
   5. X reset sends the MT-32 reset (not GM System On) to :cm32 and :cm64 outs
   6. Voodoo: the CM-64 gets its PCM part channels set OFF (52 00 0A = 16 x 6) at load, the
      MT-32 does not; leaving Voodoo sets them back to ch11-16
-  7. pan: in Voodoo, CC10 on CM-64 ch2 is mapped to the CM-32L table, CC10 on ch11 is left as is
+  7. pan: in Voodoo, CC10 on CM-64 ch2 and ch11 (LA parts there) is mapped to the CM-32L table;
+     outside Voodoo, GM pan on the PCM half (ch11) is reversed (0 = right), not squeezed onto the table
   8. partials: the PCM half counts partials (manual p.12-13): 15 notes of A.PIANO 1 (2 partials)
      fit, the 16th steals one; a 1-partial note then fits in the last partial; before any program
      change a part counts its power-on patch (ch13 A.PIANO 1 = 2); an MT-32 reset forgets programs
@@ -149,8 +150,13 @@ m = d._apply_mt32_pan_invert(1, mido.Message("control_change", channel=1, contro
 if m.value not in D.CM32_PAN_POSITIONS:
     fails.append(f"7: CM-64 ch2 pan 0 -> {m.value}, want a CM-32L table value")
 m = d._apply_mt32_pan_invert(1, mido.Message("control_change", channel=10, control=10, value=20))
-if m.value != 20:
-    fails.append(f"7: CM-64 ch11 pan 20 -> {m.value}, want 20 (PCM half pans continuously)")
+if m.value not in D.CM32_PAN_POSITIONS:
+    fails.append(f"7: Voodoo CM-64 ch11 (LA part) pan 20 -> {m.value}, want a CM-32L table value")
+d.voodoo_active = False
+m = d._apply_mt32_pan_invert(1, mido.Message("control_change", channel=10, control=10, value=20))
+if m.value != 107:
+    fails.append(f"7: GM pan 20 on the PCM half -> {m.value}, want 107 (reversed)")
+d.voodoo_active = True
 
 REC.clear()
 d._voodoo_exit("test")

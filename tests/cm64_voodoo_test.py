@@ -4,7 +4,7 @@
      channels, none of them its own LA channels or ch10
   2. a GM piano (tables_cm64 "pcm") claims a part on the unit that owns its channel on LA:
      PC A.PIANO 1 and the controllers go to the part's channel, its notes play there and
-     never on LA; CC10 is sent as is (the PCM half pans continuously)
+     never on LA; CC10 is reversed (the PCM half pans 0 = right, like LA, but continuously)
   3. a square lead ("la") plays on its LA owner as before
   4. a program change to "la" with a note held: the note-off still reaches the PCM part,
      the next note plays on LA
@@ -14,8 +14,13 @@
   7. one MT-32 + one CM-64: six parts; a seventh PCM channel plays on LA until a part's
      owner has rested 10 s, then takes that part
   8. leaving Voodoo silences the parts and gives them back ch11-16
-  9. seats, one CM-64 (MT-TO-GM: LA parts on ch1-8): PCM parts on ch9 and 11-15, ch16 has
-     none; a seat plays the nearest PCM tone of any program (square lead -> SAX 1), ch1 stays LA
+  9. fixed seats, one CM-64 (--cm64-seats fixed; MT-TO-GM: LA parts on ch1-8): PCM parts on ch9
+     and 11-15, ch16 has none; a seat plays the nearest PCM tone of any program (square lead ->
+     SAX 1), ch1 stays LA
+ 10. live seats, one CM-64 (default): a PC burst moves the piano on ch1 to PCM, the lead on ch9 to
+     the LA part ch1 left (10 00 0D = ch9), and gives ch16 the PCM part ch9 left; a channel that had
+     a PC in the burst keeps its part; ch1's piano plays PCM on ch1, ch9's lead plays LA; a PC to a
+     lead on ch11 with a bass note held ends the note on PCM first and moves ch11 to LA
 """
 import sys
 import time as _time
@@ -49,12 +54,12 @@ fails = []
 REAL_PICK = D.cm64_gm_pick
 
 
-def fresh(specs):
+def fresh(specs, **kw):
     REC.clear()
     CLOCK[0] = 1000.0
     tags = [D.parse_out_spec(f"P{i+1}:{s}")[1] for i, s in enumerate(specs)]
     d = D.Duality("in", [f"P{i+1}" for i in range(len(specs))], show_status=False,
-                  out_formats=tags, crucible=True, input_format="gm", poly_limits=[32] * len(specs))
+                  out_formats=tags, crucible=True, input_format="gm", poly_limits=[32] * len(specs), **kw)
     d._voodoo_begin("test")
     for _ in range(20000):
         if not d.voodoo_loading:
@@ -131,8 +136,8 @@ else:
         fails.append("2: piano note not on the PCM part")
     if sent("note_on", ch=0):
         fails.append(f"2: piano note also on LA: {sent('note_on', ch=0)}")
-    if not sent("control_change", part["port"], part["rx"], control=10, value=20):
-        fails.append("2: CC10 20 not passed as is to the PCM part")
+    if not sent("control_change", part["port"], part["rx"], control=10, value=107):
+        fails.append("2: CC10 20 not reversed to 107 on the PCM part")
     off(d, 0, 60)
 
 # 3. square lead on LA
@@ -236,8 +241,8 @@ elif part_of(d, 0) is not None:
 off(d, 6, 62)
 d._voodoo_exit("test")
 
-# 9. seats on one CM-64
-d = fresh(["cm64"])
+# 9. fixed seats on one CM-64
+d = fresh(["cm64"], cm64_seats="fixed")
 rx = sorted(p["rx"] for p in d._cm64v_parts)
 if not d._cm64v_seats or rx != [8, 10, 11, 12, 13, 14]:
     fails.append(f"9: seats {d._cm64v_seats} on {rx}, want ch9 and 11-15")
@@ -260,6 +265,42 @@ REC.clear()
 on(d, 15, 60)
 if part_of(d, 15) is not None:
     fails.append("9: ch16 has a seat")
+
+# 10. live seats on one CM-64
+d = fresh(["cm64"])
+if not d._cm64v_live:
+    fails.append("10: one CM-64 is not on live seats by default")
+burst = [(0, 0), (1, 80), (8, 80), (10, 33), (15, 48)]   # piano, lead, lead, bass, strings
+for c, p in burst:
+    pc(d, c, p)
+
+
+def half(c):
+    return "pcm" if part_of(d, c) else ("la" if d._cm64v_la_owned(c) else None)
+
+
+got = {c + 1: half(c) for c, _p in burst}
+want = {1: "pcm", 2: "la", 9: "la", 11: "pcm", 16: "pcm"}
+if got != want:
+    fails.append(f"10: halves after the burst {got}, want {want}")
+la9 = d._cm64v_la_owned(8)
+la_rx9 = bytes(D._mt32_dt1((0x10, 0x00, 0x0D + (la9["i"] if la9 else 0)), [8]))
+if not any(m.type == "sysex" and bytes(m.data) == la_rx9 for _t, _p, m in REC):
+    fails.append("10: no LA receive-channel write giving ch9 its part")
+REC.clear()
+on(d, 0, 60)
+on(d, 8, 72)
+if not sent("note_on", 0, 0, note=60) or not part_of(d, 0) or part_of(d, 0)["rx"] != 0:
+    fails.append("10: ch1 piano not on its PCM part (rx ch1)")
+if not sent("note_on", 0, 8, note=72) or (8, 72) not in d.active:
+    fails.append("10: ch9 lead not on LA")
+off(d, 0, 60)
+off(d, 8, 72)
+on(d, 10, 40)
+REC.clear()
+pc(d, 10, 80)
+if not sent("note_off", 0, 10, note=40) or half(10) != "la" or (10, 40) in d._cm64v_active:
+    fails.append(f"10: PC to a lead with a bass note held: off {sent('note_off', 0, 10)}, half {half(10)}")
 
 if fails:
     print("FAILS")

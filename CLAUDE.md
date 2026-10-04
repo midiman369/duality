@@ -28,7 +28,9 @@
   (template `cm64_picker_template.html`). Picks live in its database (`cm64/g001`..`g128`: use la / pcm / layer, pcm
   tone 0-63, la and lv levels in %, note); apply with `tools/picker/apply_cm64_picks.py <dir>` (generated block
   `CM64_GM_PICKS` + `CM64_GM_NOTES` in `tables_cm64.py`). Duality 0.19.055 plays them under Voodoo: a pool of
-  PCM parts on 2+ units, fixed seats (ch9, 11-15 with MT-TO-GM) on one CM-64.
+  PCM parts on 2+ units; on one CM-64 live seats (0.19.056, default: channels move half at a PC by
+  rewriting part receive channels) or `--cm64-seats fixed` (ch9, 11-15 with MT-TO-GM). The PCM half's pan is
+  reversed like LA's: GM CC10 sent to a PCM part is 127 - value.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
   tone data (voices, waveforms, parameters) is an exact copy of an 8850 tone or of one already offered
   (by waveform alone was too strict: the 88Pro Piano 1 reuses samples yet is a different piano). The lists in
@@ -79,9 +81,8 @@ The file's own insert always wins its home unit.
   off for chug-a-chug riffing and on for longer chord riffs, lead lines and solos. Test song:
   `tests/midi/dirty-women.mid` (Black Sabbath - Dirty Women; see tests/README.md).
   Per the user, once the insert is set the Wah Sw toggles On/Off with no hitching (no need to keep it off note onsets).
-- **CM-64 Voodoo, next steps**: step 3 = live seats on one CM-64 (option B: at each PC, PCM programs take PCM
-  parts and the rest LA parts, 15 channels into 14 parts) to compare with the fixed seats; later, SN-U110 card
-  sounds (PC 65-128; the user owns cards). The user has a real CM-64, three MT-32s and the gearmulator CM-64.
+- **CM-64 Voodoo, next steps**: SN-U110 card sounds (PC 65-128; the user owns cards); a layer on one unit
+  (today it plays PCM only). The user has a real CM-64, three MT-32s and the gearmulator CM-64.
 - **Bulk-dump pacing for real hardware**: files that send a whole SC-8850 bulk dump at t=0 (e.g. Every
   Breath You Take) exceed the manual's 40 ms-per-packet rule; SC-VA does not care, a real unit may.
 - **Organ CC7 lift vs file fade**: the organ volume lift can fight a file's own fade (parked).
