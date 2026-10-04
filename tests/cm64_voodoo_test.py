@@ -30,6 +30,9 @@
  13. wire pacing (0.19.059): with a driver that takes SysEx at once, the load still lasts as long as
      the bytes take on a 31250-baud line (each unit's), never less; no step goes to a unit before
      its line has delivered the one before
+ 14. Voodoo kit tracking (0.19.060): ONESTOP2's ch10 PCs (Orchestra, Brush, Jazz, Standard, 30,
+     TR-808, Power, then Orchestra again) load a kit only when it changes (Orchestra / Standard /
+     Orchestra: 3 loads); the others send no SysEx and hold no input back
 """
 import sys
 import time as _time
@@ -393,6 +396,26 @@ for tk, p, m in REC:
 wire = max(per.values()) / 3125.0
 if took < wire - 0.05 or early:
     fails.append(f"13: load took {took:.2f} s for {wire:.2f} s of SysEx a unit; {early} sends before the line was free")
+
+# 14. kit tracking
+d = fresh(["mt32", "cm64"])
+loads = 0
+for p_ in (48, 40, 32, 0, 30, 25, 16, 48):
+    REC.clear()
+    pc(d, 9, p_)
+    held = d.voodoo_loading
+    for _ in range(400):
+        if not d.voodoo_loading:
+            break
+        CLOCK[0] += 0.05
+        d._voodoo_tick()
+    kit = [m for _t, _p, m in REC if m.type == "sysex" and list(m.data[4:7]) in ([3, 1, 16], [3, 3, 16])]
+    if kit:
+        loads += 1
+    elif held:
+        fails.append(f"14: ch10 PC {p_ + 1} held input back without sending a kit")
+if loads != 3:
+    fails.append(f"14: {loads} kit loads for ONESTOP2's kit changes, want 3")
 
 if fails:
     print("FAILS")

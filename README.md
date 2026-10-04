@@ -355,6 +355,7 @@ Think “Super Munt GM,” but on hardware. `--voodoo` or **M** while the input 
 - The pacing also follows the MIDI line itself (0.19.059): a unit cannot take SysEx faster than 31,250 baud (3,125 bytes/s), so a step waits until that unit's line has delivered the last one, and Voodoo reports ready only when every unit has its last byte. Drivers that buffer (virtual cables into the gearmulator, some USB interfaces) used to accept the bank in about half the time and show ready while the units were still receiving; with a driver that holds each send until it is out, nothing changes. A full MT-TO-GM load is about 28 KB a unit, about 9 s on the wire.
 - Incoming MIDI is queued during load, then caught up with a speed ceiling — not dumped.
 - Real MT-32 SysEx in the stream drops Voodoo and returns to normal MT-32 routing.
+- Drum kits: ch10 program 49 loads the Orchestra kit and every other kit program (Room, Power, Brush, Jazz, TR-808 …) the Standard kit. A kit change that lands on the kit already loaded sends nothing and holds no input back (0.19.060).
 - A GM or GM2 System On keeps Voodoo running (0.19.058): the bank stays loaded, nothing is resent. A GS or XG reset still leaves Voodoo unless the format is locked (**L**).
 
 ---

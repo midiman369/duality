@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.059"
+VERSION = "0.19.060"
 
 
 """
@@ -4390,15 +4390,19 @@ class Duality:
         targets = self._mt32_port_indices()
         if not targets:
             return False
-        if msg.program in GM_ORCHESTRA_KIT_PC:
-            if self.voodoo_kit == "orchestra":
-                return True  # already there – swallow duplicate
+        # Two Voodoo kits: Orchestra (GM 49) and Standard for every other kit PC
+        # (Room, Power, Brush, Jazz, TR-808 ...). A PC that lands on the kit already
+        # loaded is swallowed: no SysEx, no input held back (0.19.060; before, any
+        # Standard-family PC but 0 resent the Standard kit).
+        want = "orchestra" if msg.program in GM_ORCHESTRA_KIT_PC else "standard"
+        if self.voodoo_kit == want:
+            self._log_line(f"VOODOO kit: ch10 PC {msg.program + 1} → {want} (already loaded)")
+            return True
+        if want == "orchestra":
             blob = list(mtr_orch_sysex())
             label = "Orchestra"
             self.voodoo_kit = "orchestra"
         else:
-            if self.voodoo_kit == "standard" and msg.program == 0:
-                return True
             blob = list(mtr_stnd_sysex())
             label = "Standard"
             self.voodoo_kit = "standard"
