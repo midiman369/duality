@@ -8,7 +8,9 @@ A marimba (GM 13) plays four-note chords every 0.6 s, then single notes every
   - roll strokes alternate hands; extra strokes are softer than the note
   - a note arriving early cancels pending strokes (none after it on that key set)
   - a program change cancels pending strokes
-  - no hanging notes, voice counts back to 0
+  - no hanging notes, voice counts back to 0; strictly balanced per key (never a second
+    note-on while the key already sounds), also with the run loop stalling (queues drained
+    only every 0.2 s, so a stroke and the note it re-strikes come due together: 0.19.062)
   - a Stereo Delay on the marimba's unit is timed from the part's spacing
     (0.6 s chords: taps ~0.6 s / ~1.2 s, folded to fit) with 12% feedback
 """
@@ -45,7 +47,7 @@ D.mido.open_input = lambda *a, **k: FakeIn()
 fails = []
 kinds = collections.Counter()
 
-def run(seed):
+def run(seed, coarse=False):
     REC.clear()
     d = D.Duality("in", [f"P{i+1}" for i in range(2)], anima=True, show_status=False,
                   out_formats=[frozenset({"gs"})] * 2, anima_seed=seed, poly_limits=[64] * 2)
@@ -96,7 +98,11 @@ def run(seed):
         CLOCK[0] = 1000.0 + tt
         while i < len(ev) and ev[i][0] <= tt + 1e-9:
             d.process(ev[i][1]); i += 1
-        d._anima_tick()
+        if not coarse or abs(tt / 0.2 - round(tt / 0.2)) < 1e-6:
+            d._anima_tick()
+        if coarse:
+            tt = round(tt + 0.002, 3)
+            continue
         if not checked and tt >= chords[-1][0] + 0.05:
             checked = True
             pulse, mallet = d._anima_efx_dly_pulse([ch])
@@ -120,6 +126,24 @@ def run(seed):
             if dt1.get((0x40, 0x03, 0x05)) != 0x40 + D.ANIMA_MALLET_DLY_FB_PCT // 2:
                 fails.append(f"seed {seed:04X} delay feedback {dt1.get((0x40, 0x03, 0x05))}")
         tt = round(tt + 0.002, 3)
+    strict, double = collections.Counter(), []
+    for t0, p, m in REC:
+        k = (p, m.channel, m.note) if m.type in ("note_on", "note_off") else None
+        if k is None:
+            continue
+        if m.type == "note_on" and m.velocity:
+            if strict[k] > 0:
+                double.append((round(t0 - 1000.0, 3), k))
+            strict[k] += 1
+        elif strict[k] > 0:
+            strict[k] -= 1
+    tag = " (stalled loop)" if coarse else ""
+    if double:
+        fails.append(f"seed {seed:04X}{tag}: a second note-on while the key sounds at {double[:4]}")
+    if [k for k, v in strict.items() if v > 0]:
+        fails.append(f"seed {seed:04X}{tag}: hanging notes {[k for k, v in strict.items() if v > 0]}")
+    if coarse:
+        return []
     ons = [(t0 - 1000.0, p, m) for t0, p, m in REC if m.type == "note_on" and m.velocity and m.channel == ch]
     # chord onsets: two hands
     for tc, notes in chords[3:]:
@@ -160,6 +184,8 @@ def run(seed):
 rolls_alt = True
 for seed in (0x6BA1, 0x1234, 0xBEEF, 0x2927, 0x4BBD):
     log = run(seed)
+for seed in (0x6BA1, 0x1234, 0xBEEF, 0x2927, 0x4BBD):
+    run(seed, coarse=True)
 print("ornaments over 5 seeds:", dict(kinds))
 if not kinds.get("roll") or not kinds.get("double") or not kinds.get("triplet"):
     fails.append(f"expected rolls, doubles and triplets across seeds, got {dict(kinds)}")
