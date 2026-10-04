@@ -108,9 +108,10 @@ Sierra adventure games (Monkey Island calypso, Sam & Max noir swing, King's Ques
 march, Leisure Suit Larry lounge) and a finale on all 15 melody channels. Scene changes are CM-32L sound effects on
 ch10 (keys 82-108 as the CM-64 manual lists them, and Laughing / Screaming / Punch / Heartbeat / Footsteps 1-2 on
 keys 24-29, where Duality moves them for CM outs) over a melodic bridge (music box + pad) that plain MT-32s play
-alone; the build fails if a sound effect is ever the only thing sounding. Offline (0.19.058 keeps Voodoo through the file's GM System On): three
-CM-64s (pool) 0 steals, 0 drops, at most 22 PCM partials and 10 of 18 parts in use; one CM-64, live seats, 0 / 0, 28
-partials; fixed seats 0 / 0 (ch16 has no seat there).
+alone; the build fails if a sound effect is ever the only thing sounding. Sam & Max's second half keeps the piano below the tune (chord tones only, the tenor above it; a first cut packed
+9ths / 13ths around the tenor and sounded atonal), and maj7 chords leave their root to the bass. Offline (0.19.058
+keeps Voodoo through the file's GM System On): three CM-64s (pool) 0 steals, 0 drops, at most 22 PCM partials and 10
+of 18 parts in use; one CM-64, live seats, 0 / 0, 24 partials; fixed seats 0 / 0 (ch16 has no seat there).
 
 `python tests/make_voodoo_demo2.py` writes `tests/midi/adventure_game_night.mid` (Format 1), "Adventure Game Night"
 (3:21), the second Voodoo demo: two original tunes over one progression (I vi IV V I vi ii V) that work as

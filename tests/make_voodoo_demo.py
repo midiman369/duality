@@ -86,8 +86,11 @@ def chord_pcs(name):
 
 
 def voicing(name, low, n=3):
-    """Chord tones from `low` upward (close position, n notes)."""
+    """Chord tones from `low` upward (close position, n notes). A maj7 leaves its root to the
+    bass: a close maj7 puts the 7th a semitone under the root."""
     r, q = chord_pcs(name)
+    if name.endswith("maj7"):
+        q = [i for i in q if i != 0]
     out, x = [], low
     while len(out) < n:
         if (x - r) % 12 in q:
@@ -316,8 +319,10 @@ SM_T = ["r/1 4/.5 6/.5 7/1 6/.5 4/.5", "3/1.5 5/.5 4/1 2/1", "0/.5 2/.5 4/.5 7/1
         "1/.5 3/.5 5/.5 8/1.5 7/1", "4/.5 6#/.5 8/1 6#/1 4/1", "7/1.5 5/.5 4/1 2/1", "1/2 -1#/1 r/1"]
 WALK = {"Dm7": [38, 41, 45, 48], "G7": [43, 47, 50, 41], "Em7": [40, 43, 47, 50], "A7": [45, 49, 52, 43]}
 BIG = {   # two-hand piano voicings (A.PIANO 1 on PCM is 2 partials a note)
-    "Dm7": [38, 45, 48, 53, 57, 60, 64], "G7": [43, 53, 59, 64, 65, 69],
-    "Em7": [40, 50, 55, 59, 62, 67], "A7": [45, 55, 61, 64, 67, 71],
+    # chord tones only, below the tune (the first cut packed 9ths / 13ths into the middle,
+    # where the tenor played the tune, and sounded atonal)
+    "Dm7": [38, 45, 50, 53, 57, 60], "G7": [43, 50, 53, 55, 59, 62],
+    "Em7": [40, 47, 50, 55, 59, 62], "A7": [45, 52, 55, 57, 61, 64],
 }
 
 
@@ -341,10 +346,10 @@ def swing_bar(b, name, big=False):
 
 for b in range(20):
     swing_bar(b, SM[b % 8], big=b >= 12)
-    if b >= 4 and b % 2 == 0:
-        chord(C5, t(b, 0), voicing(SM[b % 8], 65, 4), 2, 70, roll=40)    # vibes
+    if 4 <= b < 12 and b % 2 == 0:
+        chord(C5, t(b, 0), voicing(SM[b % 8], 65, 4), 2, 70, roll=40)    # vibes (first half)
 line(C1, 4, KD, SM_T, 104)                                    # muted trumpet
-line(C2, 12, KDl, SM_T, 98)                                    # tenor sax answers, an octave down
+line(C2, 12, KD, SM_T, 98)                                     # tenor sax takes the tune, above the piano
 for b in range(12, 20):                                        # trombone guide tones
     r, q = chord_pcs(SM[b % 8])
     note(C15, t(b), 48 + (r + q[1] - 48) % 12, 4, 76, gate=0.97)
