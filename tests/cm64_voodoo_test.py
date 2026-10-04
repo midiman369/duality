@@ -21,6 +21,10 @@
      the LA part ch1 left (10 00 0D = ch9), and gives ch16 the PCM part ch9 left; a channel that had
      a PC in the burst keeps its part; ch1's piano plays PCM on ch1, ch9's lead plays LA; a PC to a
      lead on ch11 with a bass note held ends the note on PCM first and moves ch11 to LA
+ 11. CM sound effects (0.19.057), one MT-32 + two CM-64s: after the kit, each CM-64 (not the MT-32)
+     gets keys 24-29 = Laughing..Footsteps 2 (timbres 94-99) and 82-108 = Applause..Bubble (100-126)
+     from the factory map; a lasergun (98) and a laugh (24) on ch10 play on CM units only, a kick on
+     any unit; a kit switch (ch10 PC 48) writes the effects again
 """
 import sys
 import time as _time
@@ -301,6 +305,52 @@ REC.clear()
 pc(d, 10, 80)
 if not sent("note_off", 0, 10, note=40) or half(10) != "la" or (10, 40) in d._cm64v_active:
     fails.append(f"10: PC to a lead with a bass note held: off {sent('note_off', 0, 10)}, half {half(10)}")
+
+# 11. CM sound effects
+d = fresh(["mt32", "cm64", "cm64"])
+base = (0x03 << 14) | (0x01 << 7) | 0x10
+
+
+def dt1_at(key, data):
+    a = base + 4 * (key - 24)
+    return bytes(D._mt32_dt1(((a >> 14) & 0x7F, (a >> 7) & 0x7F, a & 0x7F), data))
+
+
+low = dt1_at(24, [x for i in range(6) for x in (94 + i, 100, 7, 1)])
+high = dt1_at(82, [x for i in range(27) for x in (100 + i, 100, 7, 1)])
+steps = [(bytes(pl), ports) for item in d._voodoo_send_list if isinstance(item, tuple) for pl, ports in [item]]
+for blob, nm in ((low, "keys 24-29"), (high, "keys 82-108")):
+    got = sorted(p[0] for pl, p in steps if pl == blob and p)
+    if got != [1, 2]:
+        fails.append(f"11: {nm} written to ports {got}, want the two CM-64s")
+kit_at = max(i for i, (pl, p) in enumerate(steps) if p is None and pl[4:7] in (bytes([3, 1, 16]), bytes([3, 3, 16])))
+if not all(i > kit_at for i, (pl, p) in enumerate(steps) if pl in (low, high)):
+    fails.append("11: sound effects written before the kit")
+for n, nm in ((98, "lasergun"), (24, "laugh")):
+    for _ in range(4):
+        REC.clear()
+        on(d, 9, n)
+        off(d, 9, n)
+        ports = {p for p, _m in sent("note_on", ch=9, note=n)}
+        if not ports or ports - {1, 2}:
+            fails.append(f"11: {nm} on ch10 reached ports {sorted(ports)}, want CM-64s only")
+            break
+kicks = set()
+for _ in range(6):
+    REC.clear()
+    on(d, 9, 36)
+    off(d, 9, 36)
+    kicks |= {p for p, _m in sent("note_on", ch=9, note=36)}
+if 0 not in kicks:
+    fails.append(f"11: kicks only reached {sorted(kicks)}, the MT-32 should share them")
+REC.clear()
+pc(d, 9, 48)
+for _ in range(200):
+    CLOCK[0] += 0.5
+    d._voodoo_tick()
+got = sorted(p for _t, p, m in REC if m.type == "sysex" and bytes(m.data) == high)
+if got != [1, 2]:
+    fails.append(f"11: after a kit switch the effects went to {got}, want the two CM-64s")
 
 if fails:
     print("FAILS")

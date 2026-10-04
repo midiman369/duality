@@ -83,6 +83,21 @@ CM64_PCM_TONES = (
     'ORCH HIT',
 )
 
+# CM-32L sound effects in the rhythm part (CM-64 manual p.11; factory map read from a fresh
+# gearmulator CM-64 with tools/cm_rhythm_dump.py, 2026-10-04): key -> (timbre, level, pan, reverb).
+# Keys 76-108 hold rhythm timbres 94-126 in order, all centre pan with reverb.
+CM32L_SFX_FACTORY = {k: (94 + k - 76, 100, 7, 1) for k in range(76, 109)}
+CM32L_SFX_NAMES = (
+    "Laughing", "Screaming", "Punch", "Heartbeat", "Footsteps 1", "Footsteps 2", "Applause", "Creaking",
+    "Door", "Scratch", "Windchime", "Engine", "Car-stop", "Car-pass", "Crash", "Siren", "Train", "Jet",
+    "Helicopter", "Starship", "Pistol", "Machinegun", "Lasergun", "Explosion", "Dog", "Horse", "Birds",
+    "Rain", "Thunder", "Wind", "Waves", "Stream", "Bubble",
+)   # keys 76-108
+# Under Voodoo a CM out keeps GM percussion on 35-81, so the six effects GM covers (76-81) move
+# to keys 24-29 (unused by GM1); 82-108 keep their factory places.
+CM_VOODOO_SFX = {**{24 + i: CM32L_SFX_FACTORY[76 + i] for i in range(6)},
+                 **{k: CM32L_SFX_FACTORY[k] for k in range(82, 109)}}
+
 # GM programs (0-based) the manual has a fitting PCM tone for: the seed's "pcm" picks.
 # The picker marks them; the picks below are free to differ.
 CM64_GM_FITTING = frozenset({
