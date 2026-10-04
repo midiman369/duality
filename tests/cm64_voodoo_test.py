@@ -25,6 +25,8 @@
      gets keys 24-29 = Laughing..Footsteps 2 (timbres 94-99) and 82-108 = Applause..Bubble (100-126)
      from the factory map; a lasergun (98) and a laugh (24) on ch10 play on CM units only, a kick on
      any unit; a kit switch (ch10 PC 48) writes the effects again
+ 12. a GM System On (and a GM2 one) while Voodoo plays keeps Voodoo on with nothing resent;
+     a GS reset still leaves it (format not locked)
 """
 import sys
 import time as _time
@@ -351,6 +353,18 @@ for _ in range(200):
 got = sorted(p for _t, p, m in REC if m.type == "sysex" and bytes(m.data) == high)
 if got != [1, 2]:
     fails.append(f"11: after a kit switch the effects went to {got}, want the two CM-64s")
+
+# 12. GM / GM2 System On keeps Voodoo
+d = fresh(["cm64", "cm64"])
+for data, nm in (([0x7E, 0x7F, 0x09, 0x01], "GM"), ([0x7E, 0x7F, 0x09, 0x03], "GM2")):
+    REC.clear()
+    send(d, mido.Message("sysex", data=data))
+    resent = [m for _t, _p, m in REC if m.type == "sysex" and list(m.data[:3]) == [0x41, 0x10, 0x16]]
+    if not d.voodoo_active or d.voodoo_loading or resent:
+        fails.append(f"12: {nm} System On: active {d.voodoo_active}, loading {d.voodoo_loading}, {len(resent)} LA SysEx resent")
+send(d, mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41]))
+if d.voodoo_active and not d.voodoo_loading:
+    fails.append("12: a GS reset no longer leaves Voodoo")
 
 if fails:
     print("FAILS")

@@ -354,6 +354,7 @@ Think “Super Munt GM,” but on hardware. `--voodoo` or **M** while the input 
 - Init is paced on purpose (MT-32 buffer). Several units in parallel still share the host MIDI interface, so wall-clock time grows with unit count.
 - Incoming MIDI is queued during load, then caught up with a speed ceiling — not dumped.
 - Real MT-32 SysEx in the stream drops Voodoo and returns to normal MT-32 routing.
+- A GM or GM2 System On keeps Voodoo running (0.19.058): the bank stays loaded, nothing is resent. A GS or XG reset still leaves Voodoo unless the format is locked (**L**).
 
 ---
 
