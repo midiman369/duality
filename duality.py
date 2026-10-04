@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.063"
+VERSION = "0.19.064"
 
 
 """
@@ -8396,6 +8396,8 @@ class Duality:
         key = (ch, note)
         if self.scpop_mode or getattr(self, "voodoo_active", False) or getattr(self, "voodoo_loading", False):
             return None   # no ghosts there, so no room to make
+        if self._anima_la_native():
+            return None   # native MT-32 / CM music: no ghosts on LA units (0.19.064)
         if key in (self._anima_ghosts or {}):
             scale = (getattr(self, "_anima_harm_hero", None) or {}).get(key)
             return {"mode": "keep", "hero": scale, "ivs": []} if scale else None
@@ -8693,6 +8695,12 @@ class Duality:
         if self.scpop_mode or getattr(self, "voodoo_active", False):
             return
         if getattr(self, "voodoo_loading", False):
+            return
+        # No ghosts on LA units: they were made for spare GS units, and on an LA unit they
+        # add notes (and partials) the game music never had (0.19.064).
+        if self._anima_la_native() or any(
+            self.out_formats[p] & LA_TAGS for p in hero_ports if p < len(self.out_formats)
+        ):
             return
         ch = msg.channel & 0x0F
         if self._anima_is_rhythm(ch):

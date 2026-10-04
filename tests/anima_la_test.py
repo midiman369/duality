@@ -14,6 +14,8 @@
   8. mixed rig (two SC-8850s + a CM-64), 0.19.063: under Voodoo, and with a native MT-32 stream
      routed to the CM-64 only, Anima plans nothing on the idle GS units (no inserts, seats or
      GS SysEx, no EFX messages); a GS stream on the same rig still gets its inserts
+  9. no harmony ghosts on native LA music (0.19.064): a held melody and bass on two MT-32s and on
+     one CM-64 get no ghost notes (no note on any other channel / unit than the file's)
 """
 import sys
 import time as _time
@@ -235,6 +237,26 @@ for fmt, voodoo, label in (("gm", True, "Voodoo"), ("mt32", False, "native MT-32
 dd, gs_sx, msgs = mixed("gs", False)
 if dd._anima_gs_ports() != [0, 1] or not gs_sx:
     fails.append(f"8: a GS stream lost its inserts (GS units {dd._anima_gs_ports()}, {len(gs_sx)} GS SysEx)")
+
+# 9. no ghosts on native LA music
+for specs in (["mt32", "mt32"], ["cm64"]):
+    dd = fresh(specs, fmt="mt32", voodoo=False)
+    dd.detected_format = "MT-32"
+    ghosts = []
+    _fb = dd._anima_feedback
+    dd._anima_feedback = lambda kind, text, status=False: (ghosts.append(text) if kind == "ghost" else None, _fb(kind, text, status=status))[1]
+    pc(dd, 1, 48)        # MT-32 Str Sect 1 (a held melody)
+    pc(dd, 2, 64)        # MT-32 AcouBass 1
+    for k in range(16):
+        on(dd, 1, 64 + (k % 5) * 2, 100)
+        on(dd, 2, 40 + (k % 3), 100)
+        step(dd, 0.6, dt=0.01)
+        off(dd, 1, 64 + (k % 5) * 2)
+        off(dd, 2, 40 + (k % 3))
+    sent = {(p_, m.channel, m.note) for _t, p_, m in REC if m.type == "note_on" and m.velocity}
+    extra = {k for k in sent if (k[1], k[2]) not in {(1, 64 + (j % 5) * 2) for j in range(5)} | {(2, 40 + j) for j in range(3)}}
+    if ghosts or extra or len({k[0] for k in sent if k[1] == 1}) > 1 and len(specs) == 1:
+        fails.append(f"9: {specs}: ghosts {ghosts[:2]}, extra notes {sorted(extra)[:4]}")
 
 if fails:
     print("FAILS")
