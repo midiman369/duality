@@ -352,6 +352,7 @@ Bass split: Finger / Picked (`bass_electric`) lean on **Bass Multi**; slap, fret
 Think “Super Munt GM,” but on hardware. `--voodoo` or **M** while the input format is already MT-32.
 
 - Init is paced on purpose (MT-32 buffer). Several units in parallel still share the host MIDI interface, so wall-clock time grows with unit count.
+- The pacing also follows the MIDI line itself (0.19.059): a unit cannot take SysEx faster than 31,250 baud (3,125 bytes/s), so a step waits until that unit's line has delivered the last one, and Voodoo reports ready only when every unit has its last byte. Drivers that buffer (virtual cables into the gearmulator, some USB interfaces) used to accept the bank in about half the time and show ready while the units were still receiving; with a driver that holds each send until it is out, nothing changes. A full MT-TO-GM load is about 28 KB a unit, about 9 s on the wire.
 - Incoming MIDI is queued during load, then caught up with a speed ceiling — not dumped.
 - Real MT-32 SysEx in the stream drops Voodoo and returns to normal MT-32 routing.
 - A GM or GM2 System On keeps Voodoo running (0.19.058): the bank stays loaded, nothing is resent. A GS or XG reset still leaves Voodoo unless the format is locked (**L**).
