@@ -131,6 +131,31 @@ channels that broadens to 80 BPM before the phone rings again. Between worlds th
 under the sound effects. Offline: three CM-64s, one MT-32 + two CM-64s, three MT-32s and one CM-64 (live or fixed
 seats) 0 steals, 0 drops; a CM-64 on live seats peaks at 29 PCM partials.
 
+Public-domain demos (`tests/make_pd_*.py`, shared helpers in `tests/pd_kit.py`): GM files (GM System On, GM capitals,
+Format 1) with our own arrangements of public-domain music, built with the checks of the Voodoo demos (notes in the
+section's key plus named chromatic notes, no program change under a held note, no silence over 1.5 s). The
+melodies were written from memory (no score at hand): each generator's docstring says which tunes are quoted and
+which parts are written in the composer's manner.
+
+- `make_pd_halloween.py` → `halloween_at_the_opera.mid` (6:05): the Dies irae as a thread through the Mountain King
+  (Grieg, accelerating to a tutti), midnight and a Danse macabre waltz (after Saint-Saëns), Night on Bald Mountain
+  (after Mussorgsky), dawn bells, and the Toccata and Fugue in D minor (BWV 565) on the church organ; CM-32L sound
+  effects.
+- `make_pd_jazz.py` → `jazz_age.mid` (4:00): The Entertainer (intro and A strain, piano then band), a habanera and
+  blues after Handy, hot jazz after the Tiger Rag (trombone smears in the breaks), and a Rhapsody after Gershwin
+  (the low trill, run and glissando), then the Entertainer in Bb. Bends only slide into or fall off a note, so a
+  wider LA bender range makes a longer smear, not a wrong note.
+- `make_pd_bolero.py` → `bolero_ladder.mid` (5:07): Ravel's form, snare rhythm and ostinato with two themes of our
+  own; ch1 changes program at each of the 8 statements, so under Voodoo it moves between PCM and LA (offline,
+  three CM-64s and one: LA for flute / clarinet / bassoon / oboe / horn, PCM for tenor sax / trombone / strings).
+- `make_pd_folk.py` → `shanties_and_folk.mid` (6:31): Drunken Sailor, Greensleeves, Scarborough Fair, Amazing Grace
+  (bagpipe over its drone), When the Saints (first line, then second line) and Korobeiniki (folk melody only).
+- `make_pd_mars.py` → `mars.mid` (2:34): after Holst: the 5/4 ostinato on G, horns over the pedal, a storm, the
+  tenor-tuba march, the return with organ, hammered chords onto C (lines our own; key check off).
+
+Offline, all five: three CM-64s, one CM-64 (live seats) and three MT-32s under Voodoo, and two / four SC-8850s
+(`gm2+8850`) with Anima: 0 hanging notes, 0 steals, 0 drops (one CM-64 peaks at 29 PCM partials, Halloween).
+
 `python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
 (11:53): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
 muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm

@@ -34,7 +34,9 @@
   0.19.061: PCM notes take the normal note path; `_send_routed` hands them to the part (`_cm64v_intercept`), so Anima and the
   display see them. Anima's GM-numbered sets use `_anima_gm_pc` (MT32_TO_GM / CM64_PCM_GM on native LA streams).
   CM sound effects under Voodoo (0.19.057, `tables_cm64.CM_VOODOO_SFX`): keys 82-108 factory, 76-81 moved to 24-29,
-  rewritten after the kit on cm32 / cm64 outs, notes routed to CM units only. Demo songs: `tests/make_voodoo_demo.py`, `make_voodoo_demo2.py`, `make_voodoo_demo3.py`.
+  rewritten after the kit on cm32 / cm64 outs, notes routed to CM units only. Demo songs: `tests/make_voodoo_demo.py`, `make_voodoo_demo2.py`, `make_voodoo_demo3.py`;
+  public-domain demos `tests/make_pd_*.py` (helpers `tests/pd_kit.py`; tunes from memory, docstrings say which
+  are quoted; our own arrangements, never a modern arrangement's harmony / riffs).
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
   tone data (voices, waveforms, parameters) is an exact copy of an 8850 tone or of one already offered
   (by waveform alone was too strict: the 88Pro Piano 1 reuses samples yet is a different piano). The lists in
