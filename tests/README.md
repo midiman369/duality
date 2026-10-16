@@ -150,8 +150,12 @@ which parts are written in the composer's manner.
   three CM-64s and one: LA for flute / clarinet / bassoon / oboe / horn, PCM for tenor sax / trombone / strings).
 - `make_pd_folk.py` → `shanties_and_folk.mid` (6:31): Drunken Sailor, Greensleeves, Scarborough Fair, Amazing Grace
   (bagpipe over its drone), When the Saints (first line, then second line) and Korobeiniki (folk melody only).
-- `make_pd_mars.py` → `mars.mid` (2:34): after Holst: the 5/4 ostinato on G, horns over the pedal, a storm, the
-  tenor-tuba march, the return with organ, hammered chords onto C (lines our own; key check off).
+- `make_pd_mars.py` → `mars.mid` (6:05): Holst's Mars, the Bringer of War, note for note from the full score
+  (Curwen edition, IMSLP #1014549; the transcription is `tests/mars_score.py`, bars 1-185, sounding pitches):
+  every part on 16 GM channels, one family each (strings col legno -> arco, organ after the harps), dynamics and
+  hairpins as velocities, fermatas and the final rall. as tempo. Offline: six and two SC-8850s (`gm2+8850`) with
+  Anima, three CM-64s, one CM-64 and three MT-32s under Voodoo: 0 hanging notes, 0 steals, 0 drops (one CM-64
+  peaks at 25 PCM partials).
 
 Offline, all five: three CM-64s, one CM-64 (live seats) and three MT-32s under Voodoo, and two / four SC-8850s
 (`gm2+8850`) with Anima: 0 hanging notes, 0 steals, 0 drops (one CM-64 peaks at 29 PCM partials, Halloween).
