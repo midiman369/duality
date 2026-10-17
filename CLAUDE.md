@@ -46,7 +46,7 @@
 - Halloween suite v2 (delivered 2026-10-17, 38:31): `tests/make_pd_halloween.py` plays complete pieces from
   scores, back to back, each a data module rendered by `tests/score_kit.py`: `hw_dies_irae.py` (LU 1810-1813; the
   prologue's setting lives in the generator), `hw_mountain_king.py`, `hw_danse_macabre.py`, `hw_bald_mountain.py`
-  (1867, 550 bars after the re-read; SPEED scales its tempo map; ppp bass-drum roll under its general pauses), then `bach_bwv565.py`:
+  (1867, 549 bars after the re-read; SPEED scales its tempo map; ppp bass-drum roll under its general pauses), then `bach_bwv565.py`:
   Diodati's SCPOP2000 MIDI (user's upload, local only in `tests/midi/` as "Bach - Toccata e Fuga in Re min BWV565
   2K.mid", a third-party performance: never in the repo; without it the suite skips Bach) for notes and timing,
   our organ registration (not his SCPOP SysEx), the fugue handed from the organ to the orchestra by voice roles
@@ -70,8 +70,11 @@
   descent (238-245), p. 75 three bars ([11] at 288), pp. 78-82 rebuilt (299-314), pp. 85-92 rebuilt from the first
   reading's bars (329-352, five fewer), pp. 101-102 and 108 one bar each fewer; `remove_bar()` drops a bar (both kinds
   are in INSERTED; `shifted()` maps first-reading numbers). Every page from p. 56 to the end now starts on the scan's
-  bar; the notes inside pp. 59-66, 71-82 and 93-141 are still the first reading's (approximate) and want the same
-  note-by-note pass (melody and brass first) as pp. 10-55. The piece is 550 bars, 12:52. `hw/bmw/firstbar.json`
+  bar. Note pass from bar 201 on (2026-10-17, the user: the opening "pretty good", "keep going ... through the end"):
+  pp. 57-69, 72-78, 83-86, 93-101, 113-118 read again (blocks after the "the note pass from bar 201 on" marker, before
+  "NOTE PASS END"); pp. 102-112 and 119-141 were compared at a glance and kept (they matched where checked). Bar 448
+  was another extra bar (remove_bar). The piece is 549 bars, 12:52. For close reading render from the PDF at 300 dpi
+  (`hw/cr.py pdf x0 x1 y0 y1 dpi`); the 1-bit OMR crops are too coarse for accidentals. `hw/bmw/firstbar.json`
   over-counts at every meter change; count bars by eye (two pages side by side at 60-90 dpi). Watch the first reading for
   transposing parts copied as written (the clarinets on p. 34 were) and for clef changes: horns I-II are in the
   bass clef (written + 2) up to p. 31 and the treble clef (written - 10) from p. 32 on; check each system's clefs. `ntv.py` follows the staff's skew (trust it over `zst.py`'s labels when they disagree by a
