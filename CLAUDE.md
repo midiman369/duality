@@ -73,8 +73,13 @@
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
-  caller names). Used by `make_pd_mars.py` (ROLE / ROLE4; the 4-port Brass Section layers now at 0.5 / 0.45 velocity);
-  not yet by the Halloween pieces (offer it once the user has checked Bald Mountain's notes).
+  caller names). Used by `make_pd_mars.py` (ROLE / ROLE4; the 4-port Brass Section layers now at 0.5 / 0.45 velocity)
+  and by the Halloween score pieces (`render(..., weight=True, roles=..., timp=...)`, `MIX4` for 4 ports). Winds are -3
+  dB and the line balance's PROG_DB no longer calls them soft ("our winds seem too loud with anything beside them").
+- Bass drum (2026-10-17, "a little too machine-gun"): `score_kit.bass_drum()` takes BD_TRIM off every Orchestra-kit
+  bass-drum stroke, shapes quick repeats (beat accent, alternating hands, a few ticks of timing) and doubles each
+  stroke on the timpani channel (BD_TIMP of its velocity, the nearest timpani note, else the tonic) with the
+  timpani panned right (the kit's drum sits left). Mars and the Halloween score pieces use it.
 - Line balance (2026-10-17; the user: Mars's little side-melody brass a little too quiet, the Halloween pieces
   less so, the prologue harp a bit quiet): `score_kit.balance(rows, progs, pcs, label)` runs in `score_kit.render`
   and both Mars renders before the per-channel merge (rows carry a tag: part, start beat, bar, articulations).
