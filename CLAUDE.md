@@ -46,8 +46,14 @@
 - Next (2026-10-17): Halloween suite v2 = COMPLETE pieces from scores, back to back (user's choice): Grieg In the Hall
   of the Mountain King (Peer Gynt Suite 1 no.4, IMSLP #363545), Saint-Saens Danse macabre (#21204), Mussorgsky's
   ORIGINAL 1867 St John's Night on Bald Mountain (#17143, not Rimsky), Bach BWV 565 (#01335, BG), Dies irae chant
-  (Liber Usualis, Missa pro defunctis). Waiting for the user's PDF uploads; then transcribe like Mars (one data
-  module per piece, `tests/make_pd_halloween.py` rebuilt from them; the old medley stays in git history).
+  (Liber Usualis, Missa pro defunctis). Transcribed like Mars (one data module per piece, rendered by
+  `tests/score_kit.py`; the old medley stays in git history): `tests/hw_dies_irae.py` (full sequence, LU 1810-1813;
+  prologue setting in `make_pd_halloween.py`: cantor / schola / choir alternatim, organ, brass, harp, bells),
+  `hw_mountain_king.py`, `hw_danse_macabre.py`, `hw_bald_mountain.py` (all 557 bars; SPEED scales its tempo map) are
+  done and wired in. Left: Bach BWV 565 from Diodati's SCPOP2000 MIDI (user's upload, kept local in `tests/midi/`
+  as "Bach - Toccata e Fuga in Re min BWV565 2K.mid", a third-party performance: never in the repo): his notes and
+  timing with OUR GS organ registration (not his SCPOP SysEx), opening as pipe organ then gradually reworked into
+  a full orchestra (user: "take our time with that one"); then replay on the rigs, README / CLAUDE.md, send MIDI.
 - Milestones (standing rule): when a milestone step is done (a song delivered, a version shipped), prepare for
   compaction: put what the next session needs in this file (or the relevant README) and commit it, then say so.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
