@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.047** (`python duality.py --version`).
+Current development line: **v0.19.065** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -70,6 +70,12 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 - 4-char hex **seed** on the badge; `--anima-seed` / **S** lock a keeper across **X**
 - Game mode (`--anima-game` / **A** cycle): 4 s of real silence resets; a real PC burst (new cue) rolls a new seed
 - Single output allowed when Anima is on
+
+### Player (0.19.065)
+- `--play` plays MIDI files through Duality itself: files, folders (their `.mid` / `.midi` / `.kar` files by name) or wildcards, as a playlist; `--play-loop` repeats it
+- Same path as live input, so routing, Crucible, Voodoo, Anima and `--record` all apply; `--input` is optional with `--play`, and when given, live input keeps playing alongside the songs
+- Reads what an outside player keeps to itself: the tempo map, every SysEx, and each track's MIDI Port marker (FF 21). Port A plays today; songs that use more ports (like Roland's 32-channel SC-8850 demos) are noted, and multi-port playback is next
+- Hotkeys: **Space** pause / play, **N** next, **Z** back (start of the song, or the one before), **T** stop; the panel shows song, time and ports
 
 ### Record + log
 - `--record [DIR]` / hotkey **W**: IN + each OUT as type-1 SMF (conductor + Ch1–Ch16 + SysEx), in `recordings/` by default
@@ -147,6 +153,13 @@ python duality.py --list
 python duality.py --input "loopMIDI Port" --outs "MS40 A" "MS40 B"
 ```
 
+### Play songs with Duality's own player
+```bash
+python duality.py --play "C:\MIDI\Halloween" --outs "SCVA:gm2+8850" "SCVA2:gm2+8850" --anima
+python duality.py --input "loopMIDI Port" --play song1.mid song2.mid --play-loop --outs "MS40 A" "MS40 B"
+```
+The first plays a folder with no live input; the second plays two songs on repeat while live input still comes in.
+
 ### Mixed polyphony
 ```bash
 python duality.py \
@@ -211,7 +224,9 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 
 | Option | Description |
 |--------|-------------|
-| `--input` | MIDI input port (partial name ok) |
+| `--input` | MIDI input port (partial name ok). Optional with `--play` |
+| `--play FILE…` | Play MIDI files / folders / wildcards through Duality (a playlist). Hotkeys **Space N Z T** |
+| `--play-loop` | With `--play`: start the playlist again after its last song |
 | `--outs` | `Name` or `Name:tag` or `Name:tag+tag` (`gs`, `xg`, `gm`, `gm2`, `mt32` / `mt`, `cm32` / `cm-32` / `cm`, `cm64` / `cm-64`) |
 | `--poly` | One limit for all, or one per port |
 | `--sync-delay` | Per-port delay in ms. Negatives = relative. ±500 max. `0` = fast path |
@@ -263,6 +278,10 @@ Format keys set the **input / stream format** for Crucible. They do **not** chan
 | **X** | Panic + dialect resets + Anima session reset (not format lock) |
 | **W** | Start / stop recording |
 | **C** | Start a new log file (a fixed `--log` path is cleared instead) |
+| **Space** | Player: pause / play (from stopped or the end: plays) |
+| **N** | Player: next song |
+| **Z** | Player: back to the start of the song (or, near its start, the song before) |
+| **T** | Player: stop (Space plays the song from the start) |
 | **Q** | Panic and quit |
 | **Ctrl+C** | Panic and quit |
 
@@ -278,6 +297,7 @@ While running:
 - Total / Peak / Util; Drops, Steals, Filtered
 - Per-channel voices, Volume, Pan, Mod, Pitch
 - Last chord, last activity, status + rolling history
+- With `--play`: a **Player** row (▶ / ⏸ / ■, song n of N, name, time / length, the ports a song uses)
 - Format badge (`[GS]`, `[GS*]`), Crucible / Voodoo / Anima / SCPOP
 - Activity pulse and decoded SysEx
 

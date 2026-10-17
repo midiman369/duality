@@ -11,6 +11,7 @@ RUNS = [
     ("onestop_harness", "onestop_harness.py", {}),
     ("onestop_early", "onestop_early.py", {}),
     ("tempo", "tempo_test.py", {}),
+    ("file player", "player_test.py", {}),
     ("mallet sticking", "mallet_test.py", {}),
     ("seat units", "seat_test.py", {}),
     ("EFX control CC16", "cc16_test.py", {}),

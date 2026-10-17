@@ -126,10 +126,25 @@ The file's own insert always wins its home unit.
   the setup burst with real-hardware pacing; check SC-VA / 88Emu50 support first. Needs the manual's User
   Instrument / User Drum MIDI Implementation pages.
 
+## Primary goal (2026-10-17, user's decision): the player and more than 16 channels
+
+In scope now and first in line: (1) a built-in MIDI file player in Duality (`--play` files / folders,
+the user plays songs with Windows Media Player today, which sends SysEx fine but only one port);
+DONE in 0.19.065: `PlayerSong` / `MidiPlayer` / `_NoInput` before `class Duality`, `_service()` is the shared
+loop pass (live input + `_player_tick`), hotkeys Space / N / Z / T, `--play` / `--play-loop`, `--input` optional
+with `--play`; port > 0 events are skipped with a note (`_player_send`) until multi-port lands; test
+`tests/player_test.py` (self-contained);
+(2) multi-port playback: each track's standard MIDI Port marker (FF 21, as in Roland's 32-channel
+`05ORCHE.MID` demo) routes its events to their own units, a once-only request in the file asks for
+"an open 8850" per port, a port with no unit that has the voices is dropped; test 2-4 ports;
+(3) multi-input (live sources on several ports) after that; (4) the Halloween medley v3 written
+for up to 4 ports, plus a 16-channel version for one-output players. One song can then drive
+several kinds of synth at once (a port per device type).
+
 ## Out of scope unless the user asks
 
 Seat units (0.19.024) only carry Anima's own harmony ghosts on a spare unit; generating new lines
 there (players, motifs) is still out of scope.
-Percussion / atonal mapping, SCPOP + Anima bypass, beat grid / motifs, extra orchestral players,
-multi-input, a built-in file player. Keep seed performance, tone lock, ghosts, foley and the widened
+Percussion / atonal mapping, SCPOP + Anima bypass, beat grid / motifs, extra orchestral players.
+Keep seed performance, tone lock, ghosts, foley and the widened
 family tables. Alchemy (GS↔XG rewrite) stays marked broken until the revival above is taken up. Anima is "for fun": a live stream player.

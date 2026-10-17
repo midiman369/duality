@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.064"
+VERSION = "0.19.065"
 
 
 """
@@ -113,6 +113,14 @@ Anima (opt-in)
   • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
   • Single output allowed
 
+Player (0.19.065)
+  • --play FILE|FOLDER|WILDCARD … plays MIDI files through Duality itself (a
+    playlist, --play-loop repeats it); Space pause/play, N next, Z back, T stop.
+    Same path as live input (which keeps working with --input): routing,
+    Crucible, Voodoo, Anima and --record all apply. Reads the file's tempo map,
+    every SysEx and each track's MIDI Port marker (FF 21); port A plays today,
+    other ports are noted (multi-port playback is next)
+
 Record / log / panel
   • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx) → recordings/
   • --log / --log-verbose → logs/duality-<stamp>.log, one per run and per
@@ -132,11 +140,15 @@ F clear input format   L lock/unlock input format
 G GM↔GM2   R GS   Y XG   M MT-32 (again = Voodoo GM)
 V Voodoo bank   P Voodoo layout   A Anima off/normal/game   S seed lock
 B balance↔rr   X reset+Anima   W record   C new log   Q quit
+With --play: Space pause/play   N next song   Z back   T stop
 
 Usage examples
 --------------
 # List ports
 python duality.py --list
+
+# Play a folder of songs (no live input), Anima on two SC-8850s
+python duality.py --play "C:\\MIDI\\Halloween" --outs "SCVA:gm2+8850" "SCVA2:gm2+8850" --anima
 
 # Two devices (classic)
 python duality.py --input "loopMIDI Port" --outs "MS40 A" "MS40 B"
@@ -912,6 +924,325 @@ ANIMA_FILE_WAH_MID = 55             # the pedal's usual playing position maps on
 ANIMA_FILE_WAH_SWING = 0.70         # ... and swings around it this much (the file's tone stays the centre)
 ANIMA_ROTARY_HOLD_SEC = 0.60
 
+# File player (0.19.065): Duality plays MIDI files itself (--play), so it sees what an
+# outside player keeps to itself: each track's MIDI Port marker (FF 21), the tempo map
+# and every SysEx. Its events take the same path as live input, which keeps working.
+PLAYER_EXTS = (".mid", ".midi", ".kar", ".smf")
+PLAYER_LEAD_IN = 0.5      # seconds of silence before a song's first event
+PLAYER_GAP = 2.0          # seconds between songs
+PLAYER_RESTART_SEC = 3.0  # Z within this much of a song's start goes to the previous song
+
+
+def player_playlist(paths: List[str]) -> List[str]:
+    """Files, folders (their MIDI files, by name) and wildcards → the playlist."""
+    import glob
+    out: List[str] = []
+    for raw in paths:
+        p = os.path.expanduser(str(raw).strip().strip('"'))
+        if os.path.isdir(p):
+            files = [f for f in glob.glob(os.path.join(p, "*")) if f.lower().endswith(PLAYER_EXTS)]
+            out += sorted(files, key=lambda f: os.path.basename(f).lower())
+        elif any(c in p for c in "*?["):
+            out += sorted((f for f in glob.glob(p) if os.path.isfile(f)),
+                          key=lambda f: os.path.basename(f).lower())
+        elif os.path.isfile(p):
+            out.append(p)
+        else:
+            raise ValueError(f"--play: no such file or folder: {raw}")
+    if not out:
+        raise ValueError("--play: no MIDI files in " + ", ".join(str(p) for p in paths))
+    return out
+
+
+class PlayerSong:
+    """A MIDI file as timed events [(seconds, port, message)] through its tempo map.
+    Format 0 / 1 tracks play together, Format 2 tracks one after another. A track's
+    port is its last MIDI Port meta (FF 21), port 0 until it has one."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self.name = os.path.basename(path)
+        mf = mido.MidiFile(path, clip=True)
+        tpb = mf.ticks_per_beat
+        rows, tempos, end_tick, offset = [], [], 0, 0
+        for ti, track in enumerate(mf.tracks):
+            tick, port = offset, 0
+            for seq, m in enumerate(track):
+                tick += m.time
+                if m.is_meta:
+                    if m.type == "set_tempo":
+                        tempos.append((tick, m.tempo))
+                    elif m.type == "midi_port":
+                        port = int(m.port)
+                    continue
+                rows.append((tick, ti, seq, port, m))
+            end_tick = max(end_tick, tick)
+            if mf.type == 2:
+                offset = tick
+        rows.sort(key=lambda r: (r[0], r[1], r[2]))
+        tempos.sort(key=lambda r: r[0])
+        segs = [(0, 0.0, 500000)]            # (tick, seconds, µs per beat): 120 BPM until the first tempo
+        for tk, us in tempos:
+            t0, s0, us0 = segs[-1]
+            if tk == t0:
+                segs[-1] = (t0, s0, us)
+            else:
+                segs.append((tk, s0 + (tk - t0) * us0 / 1e6 / tpb, us))
+        k = 0
+
+        def sec(tk):
+            nonlocal k
+            while k + 1 < len(segs) and segs[k + 1][0] <= tk:
+                k += 1
+            t0, s0, us = segs[k]
+            return s0 + (tk - t0) * us / 1e6 / tpb
+
+        self.events = [(sec(tk), port, m) for tk, _ti, _seq, port, m in rows]
+        self.length = sec(end_tick)            # end-of-track can leave room for a last ring-out
+        self.ports = sorted({p for _s, p, _m in self.events})
+
+
+class MidiPlayer:
+    """The playlist and its clock. tick(now) returns the (port, message) pairs that are due.
+    Pausing, skipping, stopping and a song's end return note-offs (and sustain off) for
+    what still sounds. The next song loads in the background while one plays."""
+
+    def __init__(self, paths: List[str], loop: bool = False, threaded: bool = True):
+        self.files = player_playlist(paths)
+        self.loop = loop
+        self.threaded = threaded
+        self.index = 0
+        self.song: Optional[PlayerSong] = None
+        self.state = "ready"        # ready | loading | playing | paused | stopped | gap | done
+        self.pos = 0                # next event
+        self.t0 = 0.0               # monotonic time of the song's second 0
+        self.held = 0.0             # song seconds while paused / stopped
+        self.gap_until = 0.0
+        self.want = 0               # the song a 'loading' state waits for
+        self.sounding: dict = {}    # (port, ch, note) -> notes on
+        self.used: set = set()      # (port, ch) with notes this song
+        self.last: Optional[float] = None
+        self._wrap = True               # may a skip go past the end of the list (see _begin)
+        self._step = 1                  # which way an unreadable file is skipped
+        self.messages: List[str] = []   # status lines for Duality (oldest first)
+        self.logs: List[str] = []       # log lines for Duality
+        self._cache: dict = {}          # index -> PlayerSong | Exception
+        self._busy: set = set()
+
+    # --- loading ---------------------------------------------------------
+    def _fetch(self, i: int) -> None:
+        """Load file i into the cache (in a thread unless threaded=False)."""
+        if i in self._cache or i in self._busy or not (0 <= i < len(self.files)):
+            return
+        path = self.files[i]
+
+        def work():
+            try:
+                song = PlayerSong(path)
+            except Exception as e:      # unreadable: noted when it is wanted
+                song = e
+            self._cache[i] = song
+            self._busy.discard(i)
+
+        self._busy.add(i)
+        if self.threaded:
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            work()
+
+    def _begin(self, i: int, now: float, wrap: bool = True, step: int = 1) -> List:
+        """Start song i (waiting for its load if needed); unreadable files are skipped in
+        the direction of step. wrap: skipping may go past the end of the list (N and Z do;
+        the end of a song does only with --play-loop)."""
+        self._wrap = wrap
+        self._step = step
+        for _ in range(len(self.files)):
+            self.index = i % len(self.files)
+            self.want = self.index
+            self._fetch(self.index)
+            got = self._cache.get(self.index)
+            if got is None:
+                self.state = "loading"
+                return []
+            if not isinstance(got, Exception):
+                break
+            name = os.path.basename(self.files[self.index])
+            self.messages.append(f"Player: skipped {name} ({got})")
+            self.logs.append(f"PLAY  Skipped unreadable {self.files[self.index]}: {got}")
+            del self._cache[self.index]
+            if self.index + step >= len(self.files) and not (wrap or self.loop):
+                self.state = "done"
+                return []
+            i = self.index + step
+        else:
+            self.state = "done"
+            return []
+        self.song = got
+        self.pos = 0
+        self.t0 = now + PLAYER_LEAD_IN
+        self.state = "playing"
+        for k in list(self._cache):
+            if k != self.index:
+                del self._cache[k]
+        nxt = self.index + 1
+        if nxt < len(self.files) or self.loop:
+            self._fetch(nxt % len(self.files))
+        ports = "" if self.song.ports in ([], [0]) else f", ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
+        self.messages.append(f"▶ {self.index + 1}/{len(self.files)} {self.song.name} ({_mmss(self.song.length)}{ports})")
+        self.logs.append(f"PLAY  Song {self.index + 1}/{len(self.files)}: {self.song.path} "
+                         f"({_mmss(self.song.length)}, {len(self.song.events)} events{ports})")
+        return []
+
+    # --- playback ----------------------------------------------------------
+    def _track(self, port: int, m) -> None:
+        if m.type == "note_on" and m.velocity:
+            key = (port, m.channel, m.note)
+            self.sounding[key] = self.sounding.get(key, 0) + 1
+            self.used.add((port, m.channel))
+        elif m.type in ("note_off", "note_on"):
+            key = (port, m.channel, m.note)
+            n = self.sounding.get(key, 0)
+            if n <= 1:
+                self.sounding.pop(key, None)
+            else:
+                self.sounding[key] = n - 1
+        elif m.type == "control_change" and m.control == 64:
+            self.used.add((port, m.channel))
+
+    def _flush(self) -> List:
+        """Note-offs for every sounding note, then sustain off where the song played."""
+        out = []
+        for (port, ch, note), n in sorted(self.sounding.items()):
+            for _ in range(n):
+                out.append((port, mido.Message("note_off", channel=ch, note=note, velocity=0)))
+        for port, ch in sorted(self.used):
+            out.append((port, mido.Message("control_change", channel=ch, control=64, value=0)))
+        self.sounding = {}
+        self.used = set()
+        return out
+
+    def song_time(self, now: float) -> float:
+        if self.state == "playing":
+            return max(0.0, now - self.t0)
+        if self.state in ("paused", "stopped"):
+            return self.held
+        if self.state == "gap" and self.song:
+            return self.song.length
+        return 0.0
+
+    def tick(self, now: float, stall: bool = False) -> List:
+        """Events due by now. stall: Duality is busy (a Voodoo bank load); the song waits."""
+        if self.last is not None and stall and self.state == "playing":
+            self.t0 += now - self.last
+        self.last = now
+        if stall:
+            return []
+        if self.state == "ready":
+            return self._begin(0, now)
+        if self.state == "loading":
+            return self._begin(self.want, now, self._wrap, self._step) if self.want in self._cache else []
+        if self.state == "gap" and now >= self.gap_until:
+            nxt = self.index + 1
+            if nxt >= len(self.files) and not self.loop:
+                self.state = "done"
+                self.messages.append("Player: end of the playlist")
+                self.logs.append("PLAY  End of the playlist")
+                return []
+            return self._begin(nxt % len(self.files), now, wrap=self.loop)
+        if self.state != "playing" or self.song is None:
+            return []
+        t = now - self.t0
+        ev = self.song.events
+        out = []
+        while self.pos < len(ev) and ev[self.pos][0] <= t:
+            _s, port, m = ev[self.pos]
+            self.pos += 1
+            self._track(port, m)
+            out.append((port, m))
+        if self.pos >= len(ev) and t >= self.song.length:
+            out += self._flush()
+            self.state = "gap"
+            self.gap_until = now + PLAYER_GAP
+        return out
+
+    # --- controls (hotkeys) ------------------------------------------------
+    def toggle(self, now: float) -> List:
+        """Space: pause / resume; from stopped or done, play."""
+        if self.state == "playing":
+            self.held = max(0.0, now - self.t0)
+            self.state = "paused"
+            self.messages.append(f"⏸ Paused at {_mmss(self.held)}")
+            return self._flush()
+        if self.state in ("paused", "stopped") and self.song is not None:
+            self.t0 = now - self.held + (PLAYER_LEAD_IN if self.held == 0.0 else 0.0)
+            self.state = "playing"
+            self.messages.append(f"▶ {self.song.name} from {_mmss(self.held)}")
+            return []
+        if self.state == "done":
+            return self._begin(0, now)
+        if self.state == "gap":
+            return self.next(now)
+        return []
+
+    def next(self, now: float) -> List:
+        out = self._flush()
+        return out + self._begin(self.index + 1, now)
+
+    def prev(self, now: float) -> List:
+        """Z: back to the start of this song, or (near its start) the one before."""
+        out = self._flush()
+        if self.state == "gap" or (self.state in ("playing", "paused")
+                                   and self.song_time(now) > PLAYER_RESTART_SEC):
+            return out + self._begin(self.index, now)
+        return out + self._begin(self.index - 1, now, step=-1)
+
+    def stop(self, now: float) -> List:
+        out = self._flush()
+        if self.song is not None:
+            self.state = "stopped"
+            self.held = 0.0
+            self.pos = 0
+            self.messages.append("■ Stopped (Space plays from the start)")
+        return out
+
+    def status(self, now: float) -> str:
+        """One line for the status panel."""
+        n = len(self.files)
+        if self.state == "done":
+            return f"■ end of the playlist ({n} song{'s' if n != 1 else ''}) — Space plays it again"
+        if self.state in ("ready", "loading"):
+            return f"… loading {os.path.basename(self.files[self.want])}"
+        if self.song is None:
+            return "—"
+        icon = {"playing": "▶", "paused": "⏸", "stopped": "■", "gap": "▶"}.get(self.state, " ")
+        t = self.song_time(now)
+        ports = "" if self.song.ports in ([], [0]) else f"  ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
+        nxt = ""
+        if self.state == "gap":
+            nxt = "  (next song…)" if self.index + 1 < n or self.loop else ""
+        return f"{icon} {self.index + 1}/{n} {self.song.name}  {_mmss(t)} / {_mmss(self.song.length)}{ports}{nxt}"
+
+
+def _mmss(sec: float) -> str:
+    sec = max(0, int(sec))
+    return f"{sec // 3600}:{sec // 60 % 60:02d}:{sec % 60:02d}" if sec >= 3600 else f"{sec // 60}:{sec % 60:02d}"
+
+
+class _NoInput:
+    """Stands in for the input port when Duality only plays files."""
+    name = "(no live input)"
+    closed = False
+
+    def iter_pending(self):
+        return iter(())
+
+    def poll(self):
+        return None
+
+    def close(self):
+        pass
+
+
 class Duality:
     def __init__(
         self,
@@ -942,10 +1273,15 @@ class Duality:
         anima_seed: int | None = None,
         anima_game: bool = False,
         record_dir: str | None = None,
+        play: List[str] | None = None,
+        play_loop: bool = False,
     ):
         # One output is a valid pass-through (like-for-like / 88emu tests).
         if len(out_names) < 1:
             raise ValueError("At least 1 output port is required.")
+        # File player (--play): a playlist that feeds process() like live input does
+        self.player: Optional[MidiPlayer] = MidiPlayer(play, loop=play_loop) if play else None
+        self._player_port_note: set = set()
 
         self.mode = mode
         self.n_ports = len(out_names)
@@ -1277,13 +1613,26 @@ class Duality:
             self._log_line(f"PORT  Could not list ports: {e}")
 
         self.in_name = in_name
-        console.print(f"[bold cyan]Opening input[/] : {in_name}")
-        try:
-            self.inport = mido.open_input(in_name)
-            self._log_line(f"PORT  Opened input: {in_name}")
-        except Exception as e:
-            self._log_line(f"PORT  FAILED input: {in_name} – {e}")
-            raise
+        if in_name is None:
+            # --play without --input: the player is the only source
+            self.inport = _NoInput()
+            self.in_name = _NoInput.name
+            console.print(f"[bold cyan]Input[/] : none (playing files only)")
+            self._log_line("PORT  No live input (playing files only)")
+        else:
+            console.print(f"[bold cyan]Opening input[/] : {in_name}")
+            try:
+                self.inport = mido.open_input(in_name)
+                self._log_line(f"PORT  Opened input: {in_name}")
+            except Exception as e:
+                self._log_line(f"PORT  FAILED input: {in_name} – {e}")
+                raise
+        if self.player is not None:
+            n = len(self.player.files)
+            console.print(f"[bold cyan]Player[/] : {n} song{'s' if n != 1 else ''}"
+                          f"{' (looping)' if self.player.loop else ''} — Space pause, N next, Z back, T stop")
+            for i, f in enumerate(self.player.files):
+                self._log_line(f"PLAY  Playlist {i + 1}/{n}: {f}")
 
         self.outs = []
         self.port_names = out_names
@@ -11701,7 +12050,13 @@ class Duality:
             )
             left_column.add_row(detail_row)
 
-            # 4. Labelled status message (can wrap)
+            # 4. The file player, when there is one
+            if self.player is not None:
+                left_column.add_row(Text.from_markup(
+                    f"[cyan]Player:[/]           {escape(self.player.status(time.monotonic()))}"
+                ))
+
+            # 5. Labelled status message (can wrap)
             if self.status_message and time.monotonic() < self.status_message_time:
                 status_row = Text.from_markup(
                     f"[cyan]Status Message:[/]   [bold yellow]{escape(self.status_message)}[/]"
@@ -11711,12 +12066,12 @@ class Duality:
                 self.status_message = ""
             left_column.add_row(status_row)
 
-            # History panel – height 10 matches the taller left column (+1 for detail row)
+            # History panel – height 10 matches the taller left column (+1 for detail row, +1 player)
             history_panel = Panel(
                 history_text if str(history_text).strip() else Text(" "),
                 border_style="bright_blue",
                 padding=(0, 0),
-                height=10,
+                height=10 + (1 if self.player is not None else 0),
                 title="[dim]Recent Status Messages[/]",
                 title_align="left",
             )
@@ -11729,7 +12084,11 @@ class Duality:
             content = Group(header, table, side_by_side)
         else:
             # Narrow terminal – original stacked layout
-            content = Group(header, table, channel_table, footer, status_line)
+            if self.player is not None:
+                player_line = Text.from_markup(f"[cyan]Player:[/] {escape(self.player.status(time.monotonic()))}")
+                content = Group(header, table, channel_table, footer, player_line, status_line)
+            else:
+                content = Group(header, table, channel_table, footer, status_line)
 
         return Panel(
             content,
@@ -11836,6 +12195,9 @@ class Duality:
                 mode = "game" if self.anima_game else "normal"
                 self._set_status(f"Anima ON ({mode})", duration=2.5)
                 self._log_line(f"ANIMA on {mode} (hotkey A)")
+        elif c in (" ", "n", "z", "t") and self.player is not None:
+            # File player: Space pause / play, N next, Z back (start of song, or the one before), T stop
+            self._player_key({" ": "toggle", "n": "next", "z": "prev", "t": "stop"}[c])
         elif c == "q":
             self._set_status("Quit requested – panicking and exiting…", duration=2.0)
             self.panic(reason="hotkey Q")
@@ -11899,6 +12261,72 @@ class Duality:
             pass
 
     # ------------------------------------------------------------------
+    # File player
+    def _player_send(self, port: int, msg) -> None:
+        """A player event into Duality: port A (0) takes the live-input path."""
+        if port == 0:
+            self.process(msg)
+            return
+        if port not in self._player_port_note:
+            self._player_port_note.add(port)
+            self._set_status(f"Player: port {chr(65 + port)} is not routed yet (port A plays)", duration=4.0)
+            self._log_line(f"PLAY  Port {chr(65 + port)} events skipped (multi-port playback is next)")
+
+    def _player_take(self, events) -> bool:
+        for port, msg in events:
+            self._player_send(port, msg)
+        p = self.player
+        while p.messages:
+            self._set_status(p.messages.pop(0), duration=4.0)
+        while p.logs:
+            self._log_line(p.logs.pop(0))
+        return bool(events)
+
+    def _player_tick(self) -> bool:
+        """Send the player's due events. While a Voodoo bank loads the song waits."""
+        if self.player is None:
+            return False
+        return self._player_take(self.player.tick(time.monotonic(), stall=self.voodoo_loading))
+
+    def _player_key(self, key: str) -> None:
+        p = self.player
+        now = time.monotonic()
+        events = {"toggle": p.toggle, "next": p.next, "prev": p.prev, "stop": p.stop}[key](now)
+        self._player_take(events)
+
+    def _service(self) -> bool:
+        """One pass of the event loop: live input, the player, queues and idle checks."""
+        processed = False
+        for msg in self.inport.iter_pending():
+            self.process(msg)
+            processed = True
+        if self._player_tick():
+            processed = True
+
+        # Drain delayed outbound MIDI (no-op if sync disabled)
+        self._flush_send_queue()
+        self._record_idle_check()
+
+        # Voodoo paced bank load / elastic catch-up
+        if self.voodoo_loading or self.voodoo_catchup:
+            self._voodoo_tick()
+
+        # Anima sustained-note mod (idle when disabled / no notes)
+        if self.anima:
+            self._anima_tick()
+
+        # Background reconnect for offline outputs
+        self._retry_offline_ports()
+
+        # Format idle clear (60s with no MIDI)
+        self._check_format_idle()
+        self._check_anima_session_idle()
+
+        # Hotkeys (format, mode, quit, …)
+        self._poll_hotkeys()
+        return processed
+
+    # ------------------------------------------------------------------
     def run(self):
         def _signal_handler(sig, frame):
             self.panic(reason="signal")
@@ -11914,33 +12342,8 @@ class Duality:
                 last_ui_update = 0.0
                 try:
                     while True:
-                        # --- Fast MIDI processing path ---
-                        processed = False
-                        for msg in self.inport.iter_pending():
-                            self.process(msg)
-                            processed = True
-
-                        # Drain delayed outbound MIDI (no-op if sync disabled)
-                        self._flush_send_queue()
-                        self._record_idle_check()
-
-                        # Voodoo paced bank load / elastic catch-up
-                        if self.voodoo_loading or self.voodoo_catchup:
-                            self._voodoo_tick()
-
-                        # Anima sustained-note mod (idle when disabled / no notes)
-                        if self.anima:
-                            self._anima_tick()
-
-                        # Background reconnect for offline outputs
-                        self._retry_offline_ports()
-
-                        # Format idle clear (60s with no MIDI)
-                        self._check_format_idle()
-                        self._check_anima_session_idle()
-
-                        # Hotkeys (format, mode, quit, …)
-                        self._poll_hotkeys()
+                        # --- Fast MIDI processing path (live input + the player) ---
+                        processed = self._service()
 
                         # --- UI update only ~8–10 times per second ---
                         now = time.monotonic()
@@ -11960,6 +12363,20 @@ class Duality:
                         console.print(f"[red]Panic also failed: {e2}[/]")
                 finally:
                     self.close()
+        elif self.player is not None:
+            # No status panel, with the player: poll input and the song together
+            try:
+                while True:
+                    if not self._service():
+                        time.sleep(0.001)
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/]")
+                try:
+                    self.panic(reason="exception")
+                except Exception as e2:
+                    console.print(f"[red]Panic also failed: {e2}[/]")
+            finally:
+                self.close()
         else:
             # No status panel – pure low-latency path
             try:
@@ -12105,7 +12522,24 @@ def main():
     )
     parser.add_argument("--version", action="version", version=f"Duality {VERSION}")
     parser.add_argument("--list", action="store_true", help="List available MIDI ports and exit")
-    parser.add_argument("--input", help="MIDI input port name (or partial match)")
+    parser.add_argument(
+        "--input",
+        help="MIDI input port name (or partial match). With --play it is optional: live input and the songs mix.",
+    )
+    parser.add_argument(
+        "--play",
+        nargs="+",
+        metavar="FILE",
+        help=(
+            "Play MIDI files through Duality (files, folders or wildcards, in order; a folder plays "
+            "its .mid/.midi/.kar files by name). Hotkeys: Space pause/play, N next, Z back, T stop."
+        ),
+    )
+    parser.add_argument(
+        "--play-loop",
+        action="store_true",
+        help="With --play: start the playlist again after its last song.",
+    )
     parser.add_argument(
         "--outs",
         nargs="+",
@@ -12340,7 +12774,10 @@ def main():
     inputs = mido.get_input_names()
     outputs = mido.get_output_names()
 
-    in_name = resolve_port(args.input, inputs, "input port")
+    if args.play and not args.input:
+        in_name = None          # the player is the only source
+    else:
+        in_name = resolve_port(args.input, inputs, "input port")
 
     out_formats: list[str] = []
 
@@ -12415,6 +12852,8 @@ def main():
             anima_seed=getattr(args, "anima_seed", None),
             anima_game=getattr(args, "anima_game", False),
             record_dir=getattr(args, "record", None),
+            play=args.play,
+            play_loop=args.play_loop,
         )
         router.run()
     except ValueError as e:
