@@ -55,6 +55,16 @@
   Every build also writes each piece alone (`halloween_<n>_<piece>[_4port].mid`, user's request 2026-10-17), cut
   from the suite's own events by `pd_kit.finish_parts` (never re-rendered: the shared RNG would change the notes);
   a new piece needs an entry in `build()`'s `ends` and in `PIECE_TITLES`.
+- Bald Mountain re-read (2026-10-17, in progress; the user: "all the accompaniment and no melody", the opening
+  stab melody missing): the first reading flattened dense pages into held chords and misread clefs (trombones are
+  in the alto clef). Fixed so far: bars 15-27 (the trombone / tuba theme E D E F G# A, trumpets, the held chords
+  -> triplets -> stabs, the lost bar 27 restored by `insert_bar(27)`; sections above it keep their first-reading
+  numbers, `shifted()` maps them, the generator's BM_MARKS go through it) and [2]'s copies (55-68; 63-66
+  approximate). Next: every page in order, melody and brass lines first. The scan (hw/src/bald1867.pdf) has
+  score page 21 twice: PDF page = score page - 6 up to PDF 15, - 5 from PDF 17 on. Tools in the scratchpad
+  `hw/bmw` (tools/omr copied; `clefs.json` per page; `nt2.py <pdf page>` caches heads, `ntv.py <pdf page>
+  <first bar> <staves>` lists them, `zst.py <pdf page> <staves> x0 x1 <clefs>` = one staff enlarged with every
+  line / space named; fix `hi/bars-NNN.json` by hand when barlines are missed). Accidentals by eye only.
 - Line balance (2026-10-17; the user: Mars's little side-melody brass a little too quiet, the Halloween pieces
   less so, the prologue harp a bit quiet): `score_kit.balance(rows, progs, pcs, label)` runs in `score_kit.render`
   and both Mars renders before the per-channel merge (rows carry a tag: part, start beat, bar, articulations).
