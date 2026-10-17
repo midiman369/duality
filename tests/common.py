@@ -34,6 +34,7 @@ ORIGINAL = {
     "phobos-8850.mid": "18_-_phobos_anomaly_8850.mid",
     "rose-gun-sight.mid": "rose_in_the_gun_sight.mid",
     "doom-game-223128.mid": "IN-Duality-4-gs-20261001-223128.mid",
+    "05orche.mid": "05ORCHE.MID",
 }
 
 if REPO not in sys.path:

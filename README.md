@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.065** (`python duality.py --version`).
+Current development line: **v0.19.066** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -74,8 +74,20 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 ### Player (0.19.065)
 - `--play` plays MIDI files through Duality itself: files, folders (their `.mid` / `.midi` / `.kar` files by name) or wildcards, as a playlist; `--play-loop` repeats it
 - Same path as live input, so routing, Crucible, Voodoo, Anima and `--record` all apply; `--input` is optional with `--play`, and when given, live input keeps playing alongside the songs
-- Reads what an outside player keeps to itself: the tempo map, every SysEx, and each track's MIDI Port marker (FF 21). Port A plays today; songs that use more ports (like Roland's 32-channel SC-8850 demos) are noted, and multi-port playback is next
+- Reads what an outside player keeps to itself: the tempo map, every SysEx, and each track's MIDI Port marker (FF 21)
 - Hotkeys: **Space** pause / play, **N** next, **Z** back (start of the song, or the one before), **T** stop; the panel shows song, time and ports
+
+### More than 16 channels: multi-port songs (0.19.066)
+- A song whose tracks use more than one MIDI port (32, 48 or 64 channels, like Roland's SC-8850 demo "Space Flight") plays each port on units of its own, so port B's instruments never land on port A's units
+- Every port that can play gets a unit first, then the rest are shared in blocks: two ports on six units play A on units 1–3 and B on 4–6
+- A port can ask for a kind of unit with a text event (Text, Marker or Cue) on one of its tracks, which other players ignore:
+  - `duality: 8850` — this track's port wants an SC-8850 (any `--outs` tag works: `gs`, `xg`, `mt32`, `cm64`, …)
+  - `duality: port C mt32 x2` — port C wants two MT-32-family units
+  - `duality: B=xg` — port B wants an XG unit
+
+  So one song can drive several kinds of synth at once. Without a request a port takes GM-family units (not LA-only ones). A port with no free unit of its kind is dropped (one unit plays port A only)
+- Port A's system SysEx (GM / GS / XG resets, reverb / chorus macros, master volume) also reaches the other ports' units, as on one multi-port device
+- Under the hood each port plays on a *lane*, a router of its own with the same settings (Crucible, Anima, Voodoo …); the routing hotkeys reach every lane, live input goes to port A's, and when the song ends the router takes all its outs back
 
 ### Record + log
 - `--record [DIR]` / hotkey **W**: IN + each OUT as type-1 SMF (conductor + Ch1–Ch16 + SysEx), in `recordings/` by default

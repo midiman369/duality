@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.065"
+VERSION = "0.19.066"
 
 
 """
@@ -113,13 +113,20 @@ Anima (opt-in)
   • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
   • Single output allowed
 
-Player (0.19.065)
+Player (0.19.065) and multi-port songs (0.19.066)
   • --play FILE|FOLDER|WILDCARD … plays MIDI files through Duality itself (a
     playlist, --play-loop repeats it); Space pause/play, N next, Z back, T stop.
     Same path as live input (which keeps working with --input): routing,
     Crucible, Voodoo, Anima and --record all apply. Reads the file's tempo map,
-    every SysEx and each track's MIDI Port marker (FF 21); port A plays today,
-    other ports are noted (multi-port playback is next)
+    every SysEx and each track's MIDI Port marker (FF 21)
+  • A song on more than one port (32 / 48 / 64 channels) plays each port on
+    units of its own: every port that can play gets a unit, then the rest are
+    shared in blocks (A on 1-3, B on 4-6). A "duality: 8850" text event on a
+    port's track asks for a kind of unit ("duality: port C mt32 x2", any --outs
+    tag); a port with no free unit of its kind is dropped. Port A's system SysEx
+    (resets, reverb / chorus, master volume) reaches every port's units. Each
+    port plays on a lane: a router of its own with the same settings; the
+    routing hotkeys reach the lanes, live input goes to port A's
 
 Record / log / panel
   • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx) → recordings/
@@ -931,6 +938,7 @@ PLAYER_EXTS = (".mid", ".midi", ".kar", ".smf")
 PLAYER_LEAD_IN = 0.5      # seconds of silence before a song's first event
 PLAYER_GAP = 2.0          # seconds between songs
 PLAYER_RESTART_SEC = 3.0  # Z within this much of a song's start goes to the previous song
+LANE_HOTKEYS = "fglrymvpabsx"  # keys a multi-port song's lanes also take (not W / C / Q / player keys)
 
 
 def player_playlist(paths: List[str]) -> List[str]:
@@ -954,10 +962,69 @@ def player_playlist(paths: List[str]) -> List[str]:
     return out
 
 
+def parse_port_request(text: str, track_port: int):
+    """A song's request for a port's device, in a Text / Marker / Cue meta event:
+        "duality: 8850"            this track's port wants an SC-8850 (any --outs tag works)
+        "duality: port B mt32 x2"  port B wants two MT-32-family units
+        "duality: C=xg"            port C wants an XG unit
+    Returns (port, wanted tag or None, units or None), or None if the text is not one."""
+    t = str(text or "").strip().lower()
+    if not t.startswith("duality"):
+        return None
+    rest = t[len("duality"):].lstrip()
+    if not rest.startswith(":"):
+        return None
+    toks = rest[1:].replace("=", " ").replace(",", " ").split()
+    port, want, units = track_port, None, None
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok == "port" and i + 1 < len(toks):
+            nxt = toks[i + 1]
+            if len(nxt) == 1 and "a" <= nxt <= "p":
+                port = ord(nxt) - ord("a")
+            elif nxt.isdigit() and 1 <= int(nxt) <= 16:
+                port = int(nxt) - 1
+            i += 2
+            continue
+        if len(tok) == 1 and "a" <= tok <= "p":
+            port = ord(tok) - ord("a")
+        elif tok.startswith("x") and tok[1:].isdigit() and int(tok[1:]) > 0:
+            units = int(tok[1:])
+        elif tok in FORMAT_ALIASES:
+            want = FORMAT_ALIASES[tok]
+        i += 1
+    return port, (None if want == "any" else want), units
+
+
+def out_matches(tags, want) -> bool:
+    """Can an out with these --outs tags take a port that asked for `want`?
+    No request: any out that is not LA-only (a GM / GS / XG stream's home)."""
+    tags = set(tags or ()) or {"any"}
+    if "any" in tags:
+        return True
+    if want is None:
+        return not tags <= set(LA_TAGS)
+    if want in tags:
+        return True
+    if want == "gs":
+        return any(t.startswith("gs") for t in tags)
+    if want == "gm":
+        return bool(tags & {"gm", "gm2", "xg"}) or any(t.startswith("gs") for t in tags)
+    if want == "gm2":
+        return bool(tags & {"gm2", "gs8850", "gs8820"})
+    if want == "mt32":
+        return bool(tags & set(LA_TAGS))
+    if want == "cm32":
+        return bool(tags & {"cm32", "cm64"})
+    return False
+
+
 class PlayerSong:
     """A MIDI file as timed events [(seconds, port, message)] through its tempo map.
     Format 0 / 1 tracks play together, Format 2 tracks one after another. A track's
-    port is its last MIDI Port meta (FF 21), port 0 until it has one."""
+    port is its last MIDI Port meta (FF 21), port 0 until it has one. requests:
+    port -> (wanted tag, units) from "duality: ..." text events (parse_port_request)."""
 
     def __init__(self, path: str):
         self.path = path
@@ -965,6 +1032,7 @@ class PlayerSong:
         mf = mido.MidiFile(path, clip=True)
         tpb = mf.ticks_per_beat
         rows, tempos, end_tick, offset = [], [], 0, 0
+        self.requests: dict = {}
         for ti, track in enumerate(mf.tracks):
             tick, port = offset, 0
             for seq, m in enumerate(track):
@@ -974,6 +1042,10 @@ class PlayerSong:
                         tempos.append((tick, m.tempo))
                     elif m.type == "midi_port":
                         port = int(m.port)
+                    elif m.type in ("text", "marker", "cue_marker"):
+                        req = parse_port_request(m.text, port)
+                        if req is not None:
+                            self.requests[req[0]] = (req[1], req[2])
                     continue
                 rows.append((tick, ti, seq, port, m))
             end_tick = max(end_tick, tick)
@@ -1022,6 +1094,8 @@ class MidiPlayer:
         self.sounding: dict = {}    # (port, ch, note) -> notes on
         self.used: set = set()      # (port, ch) with notes this song
         self.last: Optional[float] = None
+        self.session = None             # a number while a song is under way (playing / paused), else None
+        self._sessions = 0
         self._wrap = True               # may a skip go past the end of the list (see _begin)
         self._step = 1                  # which way an unreadable file is skipped
         self.messages: List[str] = []   # status lines for Duality (oldest first)
@@ -1056,6 +1130,7 @@ class MidiPlayer:
         the end of a song does only with --play-loop)."""
         self._wrap = wrap
         self._step = step
+        self.session = None             # whatever played before is over
         for _ in range(len(self.files)):
             self.index = i % len(self.files)
             self.want = self.index
@@ -1081,6 +1156,8 @@ class MidiPlayer:
         self.pos = 0
         self.t0 = now + PLAYER_LEAD_IN
         self.state = "playing"
+        self._sessions += 1
+        self.session = self._sessions
         for k in list(self._cache):
             if k != self.index:
                 del self._cache[k]
@@ -1162,6 +1239,7 @@ class MidiPlayer:
         if self.pos >= len(ev) and t >= self.song.length:
             out += self._flush()
             self.state = "gap"
+            self.session = None
             self.gap_until = now + PLAYER_GAP
         return out
 
@@ -1175,6 +1253,9 @@ class MidiPlayer:
             return self._flush()
         if self.state in ("paused", "stopped") and self.song is not None:
             self.t0 = now - self.held + (PLAYER_LEAD_IN if self.held == 0.0 else 0.0)
+            if self.state == "stopped":
+                self._sessions += 1
+                self.session = self._sessions
             self.state = "playing"
             self.messages.append(f"▶ {self.song.name} from {_mmss(self.held)}")
             return []
@@ -1200,6 +1281,7 @@ class MidiPlayer:
         out = self._flush()
         if self.song is not None:
             self.state = "stopped"
+            self.session = None
             self.held = 0.0
             self.pos = 0
             self.messages.append("■ Stopped (Space plays from the start)")
@@ -1226,6 +1308,52 @@ class MidiPlayer:
 def _mmss(sec: float) -> str:
     sec = max(0, int(sec))
     return f"{sec // 3600}:{sec // 60 % 60:02d}:{sec % 60:02d}" if sec >= 3600 else f"{sec // 60}:{sec % 60:02d}"
+
+
+def player_system_sysex(data) -> bool:
+    """SysEx for a whole device rather than one part: universal (GM / GM2 On, master
+    volume), GS system / patch common / EQ (40 00 xx, 40 01 xx, 40 02 xx) and the
+    system mode set, XG system and effects."""
+    d = [int(b) & 0x7F for b in (data or [])]
+    if len(d) >= 2 and d[0] in (0x7E, 0x7F):
+        return True
+    if len(d) >= 7 and d[0] == 0x41 and d[2] == 0x42 and d[3] == 0x12:
+        if d[4] == 0x40 and d[5] in (0x00, 0x01, 0x02):
+            return True
+        if d[4] == 0x00 and d[5] == 0x00 and d[6] == 0x7F:
+            return True
+    if len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C and d[3] in (0x00, 0x02):
+        return True
+    return False
+
+
+class _LaneOut:
+    """A lane's view of one of the router's outputs: its sends take the router's own
+    send path (health, reconnect, --record); closing it leaves the real port open."""
+
+    def __init__(self, router, idx: int):
+        self.router = router
+        self.idx = idx
+        self.name = router.port_names[idx]
+        self.closed = False
+
+    def send(self, msg) -> None:
+        self.router._safe_out_send(self.idx, msg)
+
+    def panic(self) -> None:
+        try:
+            self.router.outs[self.idx].panic()
+        except Exception:
+            pass
+
+    def reset(self) -> None:
+        try:
+            self.router.outs[self.idx].reset()
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        pass
 
 
 class _NoInput:
@@ -1275,6 +1403,7 @@ class Duality:
         record_dir: str | None = None,
         play: List[str] | None = None,
         play_loop: bool = False,
+        opener=None,
     ):
         # One output is a valid pass-through (like-for-like / 88emu tests).
         if len(out_names) < 1:
@@ -1282,6 +1411,12 @@ class Duality:
         # File player (--play): a playlist that feeds process() like live input does
         self.player: Optional[MidiPlayer] = MidiPlayer(play, loop=play_loop) if play else None
         self._player_port_note: set = set()
+        # Multi-port songs (0.19.066): a lane (a router of its own) per port, on its own outs
+        self._opener = opener or mido.open_output
+        self._lanes: dict = {}              # port -> Duality lane while a multi-port song plays
+        self._lane_outs: dict = {}          # port -> out indices
+        self._lane_session = None           # the player session the lanes belong to
+        self._player_main_port = 0          # the port a single-port song plays on
 
         self.mode = mode
         self.n_ports = len(out_names)
@@ -1643,7 +1778,7 @@ class Duality:
                 f"(limit {self.poly_limits[i]}, format {tag_disp})"
             )
             try:
-                self.outs.append(mido.open_output(name))
+                self.outs.append(self._opener(name))
                 self._log_line(f"PORT  Opened out {i + 1}: {name}")
             except Exception as e:
                 self._log_line(f"PORT  FAILED out {i + 1}: {name} – {e}")
@@ -2799,7 +2934,7 @@ class Duality:
             self._log_line(f"PORT  Close before reconnect out {port + 1}: {e}")
 
         try:
-            self.outs[port] = mido.open_output(name)
+            self.outs[port] = self._opener(name)
             self._out_offline[port] = False
             self._out_fail_logged[port] = False
             self._log_line(f"PORT  Reconnected out {port + 1}: {name}")
@@ -11697,6 +11832,34 @@ class Duality:
     # Status panel
     # ------------------------------------------------------------------
     def _make_status_panel(self) -> Panel:
+        """The live panel. While a multi-port song's lanes play, the meters show each
+        out's lane and the channel grid shows the main port's lane."""
+        if not self._lanes:
+            return self._status_panel_body()
+        names = ("voice_counts", "active", "_anima_ghosts", "last_note_time", "last_activity_time",
+                 "current_chord_size", "peak_chord_size", "peak_voices", "detected_format",
+                 "drop_count", "steal_count", "filtered_count")
+        keep = {k: getattr(self, k) for k in names}
+        lanes = self._lanes
+        main = lanes.get(self._player_main_port) or next(iter(lanes.values()))
+        try:
+            counts = [0] * self.n_ports
+            for p, lane in lanes.items():
+                for j, i in enumerate(self._lane_outs.get(p, [])):
+                    if j < len(lane.voice_counts):
+                        counts[i] = lane.voice_counts[j]
+            self.voice_counts = counts
+            for k in ("active", "_anima_ghosts", "last_note_time", "last_activity_time",
+                      "current_chord_size", "peak_chord_size", "detected_format"):
+                setattr(self, k, getattr(main, k))
+            for k in ("peak_voices", "drop_count", "steal_count", "filtered_count"):
+                setattr(self, k, keep[k] + sum(getattr(l, k) for l in lanes.values()))
+            return self._status_panel_body()
+        finally:
+            for k, v in keep.items():
+                setattr(self, k, v)
+
+    def _status_panel_body(self) -> Panel:
         counts = self.voice_counts
         total = sum(counts)
 
@@ -12053,7 +12216,7 @@ class Duality:
             # 4. The file player, when there is one
             if self.player is not None:
                 left_column.add_row(Text.from_markup(
-                    f"[cyan]Player:[/]           {escape(self.player.status(time.monotonic()))}"
+                    f"[cyan]Player:[/]           {escape(self._player_status_text())}"
                 ))
 
             # 5. Labelled status message (can wrap)
@@ -12085,7 +12248,7 @@ class Duality:
         else:
             # Narrow terminal – original stacked layout
             if self.player is not None:
-                player_line = Text.from_markup(f"[cyan]Player:[/] {escape(self.player.status(time.monotonic()))}")
+                player_line = Text.from_markup(f"[cyan]Player:[/] {escape(self._player_status_text())}")
                 content = Group(header, table, channel_table, footer, player_line, status_line)
             else:
                 content = Group(header, table, channel_table, footer, status_line)
@@ -12100,6 +12263,10 @@ class Duality:
     def _handle_hotkey(self, ch: str) -> None:
         """Dispatch a single hotkey character."""
         c = ch.lower()
+        if self._lanes and c in LANE_HOTKEYS:
+            # A multi-port song plays on lanes: the routing keys act on them too
+            for lane in list(self._lanes.values()):
+                lane._handle_hotkey(ch)
         if c == "f":
             self._clear_format("hotkey")
         elif c == "g":
@@ -12263,30 +12430,62 @@ class Duality:
     # ------------------------------------------------------------------
     # File player
     def _player_send(self, port: int, msg) -> None:
-        """A player event into Duality: port A (0) takes the live-input path."""
-        if port == 0:
+        """A player event into Duality. A single-port song takes the live-input path;
+        a multi-port song's events go to their port's lane (dropped ports are skipped)."""
+        if self._lanes:
+            lane = self._lanes.get(port)
+            if lane is not None:
+                lane.process(msg)
+            if port == self._player_main_port:
+                if msg.type == "sysex" and player_system_sysex(msg.data):
+                    # One device's ports share its system section (reset, reverb / chorus,
+                    # master volume): a lane without the file's own copy gets port A's.
+                    for p, other in self._lanes.items():
+                        if p != port:
+                            other.process(msg)
+                self._record_in(msg)            # the IN take keeps the main port
+            return
+        if port == self._player_main_port:
             self.process(msg)
             return
         if port not in self._player_port_note:
             self._player_port_note.add(port)
-            self._set_status(f"Player: port {chr(65 + port)} is not routed yet (port A plays)", duration=4.0)
-            self._log_line(f"PLAY  Port {chr(65 + port)} events skipped (multi-port playback is next)")
+            self._log_line(f"PLAY  Port {chr(65 + port)} events skipped (no unit for it)")
 
     def _player_take(self, events) -> bool:
         for port, msg in events:
             self._player_send(port, msg)
         p = self.player
+        if p.session != self._lane_session:
+            # A song began or ended: its lanes go, the new song's are built
+            if self._lanes:
+                self._lanes_stop("song over")
+            self._lane_session = p.session
+            if p.session is not None and p.song is not None:
+                self._lanes_start(p.song)
         while p.messages:
             self._set_status(p.messages.pop(0), duration=4.0)
         while p.logs:
             self._log_line(p.logs.pop(0))
         return bool(events)
 
+    def _player_status_text(self) -> str:
+        """The player's line, with the song's ports and their outs when it has lanes."""
+        text = self.player.status(time.monotonic())
+        if self._lanes:
+            parts = []
+            for p, outs in sorted(self._lane_outs.items()):
+                parts.append(f"{chr(65 + p)}:" + "+".join(str(i + 1) for i in outs))
+            text += "  [" + " ".join(parts) + "]"
+        return text
+
     def _player_tick(self) -> bool:
-        """Send the player's due events. While a Voodoo bank loads the song waits."""
+        """Send the player's due events. While a Voodoo bank loads (here or on a lane)
+        the song waits."""
         if self.player is None:
             return False
-        return self._player_take(self.player.tick(time.monotonic(), stall=self.voodoo_loading))
+        stall = self.voodoo_loading or any(l.voodoo_loading for l in self._lanes.values())
+        return self._player_take(self.player.tick(time.monotonic(), stall=stall))
 
     def _player_key(self, key: str) -> None:
         p = self.player
@@ -12294,33 +12493,177 @@ class Duality:
         events = {"toggle": p.toggle, "next": p.next, "prev": p.prev, "stop": p.stop}[key](now)
         self._player_take(events)
 
+    # ------------------------------------------------------------------
+    # Multi-port songs (0.19.066): each port of the song plays on lanes of its own
+    def _lanes_plan(self, song) -> tuple[dict, list]:
+        """Share the outs among the song's ports: every port that can play gets a unit
+        first (A, B, C …), then ports that asked for a number of units get them, then the
+        rest go round in port order. A port's request ("duality: 8850") picks the kind
+        of unit; without one it takes GM-family outs (not LA-only). Returns
+        ({port: [out indices]}, [dropped ports])."""
+        ports = list(song.ports)
+        req = song.requests
+        free = [i for i in range(self.n_ports) if not self._out_offline[i]]
+        taken: set = set()
+        plan = {p: [] for p in ports}
+
+        def take(p) -> bool:
+            want = req.get(p, (None, None))[0]
+            for i in free:
+                if i not in taken and out_matches(self.out_formats[i], want):
+                    taken.add(i)
+                    plan[p].append(i)
+                    return True
+            return False
+
+        for p in ports:
+            take(p)
+        for p in ports:
+            n = req.get(p, (None, None))[1]
+            while n and len(plan[p]) < n and take(p):
+                pass
+        sharing = [p for p in ports if plan[p] and not req.get(p, (None, None))[1]]
+        while sharing:
+            sharing = [p for p in sharing if take(p)]
+        dropped = [p for p in ports if not plan[p]]
+        # Same counts, in blocks: each port takes its units in --outs order (ports that
+        # asked for a kind of unit first), so A plays on 1-3 and B on 4-6, not 1/3/5 and 2/4/6.
+        block = {p: [] for p in ports}
+        used: set = set()
+        for p in sorted(ports, key=lambda q: (req.get(q, (None, None))[0] is None, q)):
+            want = req.get(p, (None, None))[0]
+            for i in free:
+                if len(block[p]) >= len(plan[p]):
+                    break
+                if i not in used and out_matches(self.out_formats[i], want):
+                    used.add(i)
+                    block[p].append(i)
+        if all(len(block[p]) == len(plan[p]) for p in ports):
+            plan = block
+        return {p: o for p, o in plan.items() if o}, dropped
+
+    def _lanes_start(self, song) -> None:
+        self._player_port_note = set()
+        if len(song.ports) <= 1:
+            self._player_main_port = song.ports[0] if song.ports else 0
+            return
+        plan, dropped = self._lanes_plan(song)
+        self._player_main_port = min(plan) if plan else 0
+        names = lambda outs: ", ".join(self.port_names[i] for i in outs)   # noqa: E731
+        for p in dropped:
+            want = song.requests.get(p, (None, None))[0]
+            kind = FORMAT_DISPLAY.get(want, want) if want else "GM-family"
+            self._log_line(f"PLAY  Port {chr(65 + p)} dropped: no free {kind} unit")
+            self._set_status(f"Port {chr(65 + p)} dropped: no free {kind} unit", duration=5.0)
+        if len(plan) <= 1:
+            # One port can play: the router plays it on every out, as for any song
+            return
+        self.panic(reason="multi-port song")   # the router's outs change hands: nothing left sounding
+        for p in sorted(plan):
+            self._lanes[p] = self._lane_make(p, plan[p])
+            self._lane_outs[p] = plan[p]
+        line = " · ".join(f"{chr(65 + p)} → {names(o)}" for p, o in sorted(plan.items()))
+        self._log_line(f"PLAY  Ports: {line}")
+        self._set_status(f"Ports: {line}", duration=6.0)
+
+    def _lane_make(self, port: int, outs: list[int]):
+        """A router for one port of a song, on these outs, with the main router's
+        settings. Its outs are views of the main router's (one send path)."""
+        global console
+        letter = chr(65 + port)
+        main = self
+        index = {self.port_names[i]: i for i in outs}
+
+        def opener(name):
+            return _LaneOut(main, index[name])
+
+        seed = None
+        if self._anima_efx_seed is not None and self._anima_seed_locked:
+            seed = (int(self._anima_efx_seed) + 0x0101 * port) & 0xFFFF
+        saved = console
+        console = Console(file=open(os.devnull, "w"))
+        try:
+            lane = Duality(
+                None, [self.port_names[i] for i in outs], mode=self.mode,
+                poly_limits=[self.poly_limits[i] for i in outs],
+                chord_window_ms=self.chord_window * 1000.0, show_status=False,
+                out_formats=[self.out_formats[i] for i in outs],
+                crucible=self.crucible, crucible_notes=self.crucible_notes,
+                crucible_gm_wide=self.crucible_gm_wide, scpop=self.scpop_forced,
+                sync_delays_ms=[self.sync_delays[i] * 1000.0 for i in outs],
+                strict_format_detection=self.strict_format_detection,
+                voodoo_bank=self.voodoo_bank, voodoo_layout=self.voodoo_layout,
+                cm64_seats=self.cm64_seats, anima=self.anima, anima_seed=seed,
+                anima_game=self.anima_game, opener=opener,
+            )
+        finally:
+            console = saved
+        lane._log_line = lambda text, L=letter: main._log_line(f"[{L}] {text}")
+        lane._set_status = lambda m, duration=5.0, L=letter: main._set_status(f"[{L}] {m}", duration)
+        return lane
+
+    def _lanes_stop(self, reason: str) -> None:
+        """The song's lanes end: they silence their units, and the router takes its
+        outs back knowing nothing of what the lanes left on them."""
+        for p, lane in sorted(self._lanes.items()):
+            try:
+                lane.panic(reason=reason)
+            except Exception as e:
+                self._log_line(f"PLAY  Lane {chr(65 + p)} panic failed: {e}")
+        self._lanes = {}
+        self._lane_outs = {}
+        self._player_main_port = 0
+        self.last_sent.clear()
+        self._tone_port = None
+        self._cc1_port = None
+        if self.anima:
+            self._anima_reset_session("multi-port song over")
+        self._log_line(f"PLAY  Lanes closed ({reason}); the router has every out again")
+
+    def _service_lane(self) -> None:
+        """A lane's share of the loop: queues, Voodoo, Anima and its idle checks."""
+        self._flush_send_queue()
+        if self.voodoo_loading or self.voodoo_catchup:
+            self._voodoo_tick()
+        if self.anima:
+            self._anima_tick()
+        self._check_format_idle()
+        self._check_anima_session_idle()
+
     def _service(self) -> bool:
-        """One pass of the event loop: live input, the player, queues and idle checks."""
+        """One pass of the event loop: live input, the player, queues and idle checks.
+        While a multi-port song's lanes play, live input goes to the main port's lane and
+        the router itself rests (its outs belong to the lanes)."""
         processed = False
         for msg in self.inport.iter_pending():
-            self.process(msg)
+            lane = self._lanes.get(self._player_main_port) if self._lanes else None
+            (lane or self).process(msg)
             processed = True
         if self._player_tick():
             processed = True
+        for lane in list(self._lanes.values()):
+            lane._service_lane()
 
         # Drain delayed outbound MIDI (no-op if sync disabled)
         self._flush_send_queue()
         self._record_idle_check()
 
-        # Voodoo paced bank load / elastic catch-up
-        if self.voodoo_loading or self.voodoo_catchup:
-            self._voodoo_tick()
+        if not self._lanes:
+            # Voodoo paced bank load / elastic catch-up
+            if self.voodoo_loading or self.voodoo_catchup:
+                self._voodoo_tick()
 
-        # Anima sustained-note mod (idle when disabled / no notes)
-        if self.anima:
-            self._anima_tick()
+            # Anima sustained-note mod (idle when disabled / no notes)
+            if self.anima:
+                self._anima_tick()
 
         # Background reconnect for offline outputs
         self._retry_offline_ports()
 
-        # Format idle clear (60s with no MIDI)
-        self._check_format_idle()
-        self._check_anima_session_idle()
+        if not self._lanes:
+            # Format idle clear (60s with no MIDI)
+            self._check_format_idle()
+            self._check_anima_session_idle()
 
         # Hotkeys (format, mode, quit, …)
         self._poll_hotkeys()

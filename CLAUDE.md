@@ -137,6 +137,13 @@ with `--play`; port > 0 events are skipped with a note (`_player_send`) until mu
 (2) multi-port playback: each track's standard MIDI Port marker (FF 21, as in Roland's 32-channel
 `05ORCHE.MID` demo) routes its events to their own units, a once-only request in the file asks for
 "an open 8850" per port, a port with no unit that has the voices is dropped; test 2-4 ports;
+DONE in 0.19.066: a multi-port song plays on *lanes* (`_lanes_start` / `_lanes_plan` / `_lane_make` /
+`_lanes_stop`): one Duality instance per port on its own outs (`_LaneOut` views of the main router's
+ports, so one send path / --record), built when the player's session starts and dropped when it ends;
+the main router rests meanwhile and forgets its CC filter / tone caches / Anima session after. Requests:
+"duality: 8850" text events (`parse_port_request`, `out_matches`); port A's system SysEx goes to every lane
+(`player_system_sysex`). Tests: `tests/player_test.py` (synthetic 2- and 4-port songs) and
+`tests/replay_multiport.py` (05ORCHE.MID, local only: Roland copyright);
 (3) multi-input (live sources on several ports) after that; (4) the Halloween medley v3 written
 for up to 4 ports, plus a 16-channel version for one-output players. One song can then drive
 several kinds of synth at once (a port per device type).

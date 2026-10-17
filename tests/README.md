@@ -54,6 +54,7 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `rose-gun-sight.mid` | `rose_in_the_gun_sight.mid` (performs its own wah: live Wah Man writes from 6:43) | sent on its own | 205850 | `c5d45c95b713db4b` |
 | `doom-game-223128.mid` | `IN-Duality-4-gs-20261001-223128.mid` (DOOM in DosBox, game mode: title, menu, E1M1, intermission, next cue) | `duality-20261001-223128.zip` | 24570 | `0fc14de4b7b5e584` |
 | `dirty-women.mid` | `Black_Sabbath_-_Dirty_Women.mid` (riffing vs lead lines: wah switch on/off candidate) | sent on its own | 36565 | `0f8364c3277fd742` |
+| `05orche.mid` | `05ORCHE.MID` (Roland's SC-8850 demo "Space Flight", 32 channels on ports A / B; multi-port test) | sent on its own (with its README.TXT) | 36611 | `ef4472b2c6ef1652` |
 | `Bach - Toccata e Fuga in Re min BWV565 2K.mid` (keep this name) | the same, R. Diodati's SCPOP2000 organ performance of BWV 565 (1997); `make_pd_halloween.py` reads it for its finale | sent on its own | 52299 | `bad8421e6de7b203` |
 
 The IN takes are Duality `--record` captures of the input stream (the

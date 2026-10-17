@@ -185,8 +185,9 @@ ons = [(t, i, m.channel, m.note) for t, i, m in REC if m.type == "note_on" and m
 check(any(c == 0 and n == 60 and abs(t - 0.5) < 0.02 for t, i, c, n in ons), f"song note 60 at 0.5 s: {ons}")
 check(any(c == 0 and n == 64 and abs(t - 2.5) < 0.02 for t, i, c, n in ons), f"song note 64 at song 2.0 s = 2.5: {ons}")
 check(any(c == 5 and n == 50 for t, i, c, n in ons), f"live input note while the song plays: {ons}")
-check(not any(n == 72 for t, i, c, n in ons), "port B note was routed (it should wait for multi-port)")
-check(1 in d._player_port_note, "port B noted")
+# the song has ports A and B: with two outs each port gets one (a lane each)
+check({i for t, i, c, n in ons if n == 72} == {1} and {i for t, i, c, n in ons if n in (60, 64)} == {0},
+      f"2-port song on 2 outs: A on out 1, B on out 2: {ons}")
 sx = [m for t, i, m in REC if m.type == "sysex"]
 check(len(sx) >= 1, "the song's SysEx reached the outs")
 held = {}
@@ -222,6 +223,104 @@ for t, i, m in REC:
             held[k] -= 1
 hang = [k for k, v in held.items() if v > 0]
 check(not hang and d2.player.state == "stopped", f"stop mid-note: hanging {hang}, state {d2.player.state}")
+
+# ---- multi-port songs: a lane per port on its own outs (0.19.066)
+
+
+def multiport(path, ports, requests=()):
+    """A song whose port p plays note 60 + p on ch1 from 0.0 to 1.0 s; port A sends a GS reset first.
+    requests: (port, text) "duality: ..." text events on that port's track."""
+    mf = mido.MidiFile(type=1, ticks_per_beat=480)
+    t0 = mido.MidiTrack()
+    t0.append(mido.MetaMessage("set_tempo", tempo=500000, time=0))
+    mf.tracks.append(t0)
+    for p_ in ports:
+        tr = mido.MidiTrack()
+        tr.append(mido.MetaMessage("midi_port", port=p_, time=0))
+        for rp, text in requests:
+            if rp == p_:
+                tr.append(mido.MetaMessage("text", text=text, time=0))
+        if p_ == 0:
+            tr.append(mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41], time=0))
+        tr.append(mido.Message("program_change", channel=0, program=p_, time=0))
+        tr.append(mido.Message("note_on", channel=0, note=60 + p_, velocity=100, time=0))
+        tr.append(mido.Message("note_off", channel=0, note=60 + p_, velocity=0, time=960))
+        mf.tracks.append(tr)
+    mf.save(path)
+    return path
+
+
+def play_through(names, fmts, songs, until):
+    REC.clear()
+    D.mido.open_output = lambda n, *a, **k: FakeOut(n, names.index(n))
+    dd = D.Duality(None, names, show_status=False, out_formats=fmts, poly_limits=[32] * len(names), play=songs)
+    dd.player.threaded = False
+    seen_lanes = []
+    CLOCK[0] = 3000.0
+    while CLOCK[0] < 3000.0 + until:
+        dd._service()
+        if dd._lanes and not seen_lanes:
+            seen_lanes.append({p_: list(o) for p_, o in dd._lane_outs.items()})
+        CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+    REC[:] = [(round(t - 2000.0, 3), i, m) for t, i, m in REC]      # song time from 0
+    return dd, seen_lanes
+
+
+gs = frozenset({"gm2", "gs8850"})
+xg = frozenset({"xg"})
+two = multiport(os.path.join(tmp, "m_two.mid"), [0, 1])
+one = song(os.path.join(tmp, "m_after.mid"), tempo_change=False, port_b=False)
+names4 = ["U1", "U2", "U3", "U4"]
+dd, lanes_seen = play_through(names4, [gs] * 4, [two, one], 8.0)
+check(lanes_seen and lanes_seen[0] == {0: [0, 1], 1: [2, 3]}, f"2 ports on 4 outs: {lanes_seen}")
+ons = [(t, i, m.note) for t, i, m in REC if m.type == "note_on" and m.velocity]
+a_outs = {i for t, i, n in ons if n == 60 and t < 2.0}
+b_outs = {i for t, i, n in ons if n == 61}
+check(a_outs and a_outs <= {0, 1}, f"port A notes on A's outs only: {a_outs}")
+check(b_outs and b_outs <= {2, 3}, f"port B notes on B's outs only: {b_outs}")
+pcs = {(i, m.program) for t, i, m in REC if m.type == "program_change" and t < 2.0}
+check(not any(prog == 1 and i in (0, 1) for i, prog in pcs) and not any(prog == 0 and i in (2, 3) for i, prog in pcs),
+      f"each port's programs stay on its outs: {sorted(pcs)}")
+resets = {i for t, i, m in REC if m.type == "sysex" and list(m.data[:7]) == [0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F]}
+check(resets >= {0, 1, 2, 3}, f"port A's GS reset reaches every lane's outs: {resets}")
+later = {i for t, i, m in REC if m.type == "note_on" and m.velocity and t > 4.0}
+check(not dd._lanes and later, f"after the song the router plays on its outs again: lanes {dd._lanes}, outs {later}")
+check(dd.player.index == 1, f"second song reached: {dd.player.index}")
+
+# a request picks the kind of unit
+req = multiport(os.path.join(tmp, "m_req.mid"), [0, 1], requests=[(1, "duality: xg")])
+dd, lanes_seen = play_through(names4, [gs, gs, gs, xg], [req], 3.0)
+check(lanes_seen and lanes_seen[0] == {0: [0, 1, 2], 1: [3]}, f"port B asks for XG: {lanes_seen}")
+# a request nothing can meet: that port is dropped, the song plays port A on every out
+drop = multiport(os.path.join(tmp, "m_drop.mid"), [0, 1], requests=[(1, "duality: port B cm64")])
+dd, lanes_seen = play_through(names4, [gs] * 4, [drop], 3.0)
+ons = [(t, i, m.note) for t, i, m in REC if m.type == "note_on" and m.velocity]
+check(not lanes_seen and not any(n == 61 for t, i, n in ons) and any(n == 60 for t, i, n in ons),
+      f"unmet request: port B dropped, port A plays ({lanes_seen}, {sorted({n for t, i, n in ons})})")
+# four ports on six outs: A and B get two units, C and D one
+four = multiport(os.path.join(tmp, "m_four.mid"), [0, 1, 2, 3])
+names6 = [f"U{k}" for k in range(1, 7)]
+dd, lanes_seen = play_through(names6, [gs] * 6, [four], 3.0)
+check(lanes_seen and lanes_seen[0] == {0: [0, 1], 1: [2, 3], 2: [4], 3: [5]}, f"4 ports on 6 outs: {lanes_seen}")
+ons = [(t, i, m.note) for t, i, m in REC if m.type == "note_on" and m.velocity]
+for p_, outs in {0: {0, 1}, 1: {2, 3}, 2: {4}, 3: {5}}.items():
+    got_outs = {i for t, i, n in ons if n == 60 + p_}
+    check(got_outs and got_outs <= outs, f"port {chr(65 + p_)} notes on {got_outs}, want ⊆ {outs}")
+held = {}
+for t, i, m in REC:
+    if m.type == "note_on" and m.velocity:
+        held[(i, m.channel, m.note)] = held.get((i, m.channel, m.note), 0) + 1
+    elif m.type in ("note_on", "note_off"):
+        k = (i, m.channel, m.note)
+        if held.get(k):
+            held[k] -= 1
+check(not [k for k, v in held.items() if v > 0], "multi-port: nothing left hanging")
+# the request parser
+for text, want in (("duality: 8850", (5, "gs8850", None)), ("Duality: port B mt32 x2", (1, "mt32", 2)),
+                   ("duality: C=xg", (2, "xg", None)), ("duality: port 4 cm64", (3, "cm64", None)),
+                   ("hello", None)):
+    got = D.parse_port_request(text, 5)
+    check(got == want, f"parse_port_request({text!r}) = {got}, want {want}")
 
 print("FAILS:" if fails else "PASS")
 for f in fails:
