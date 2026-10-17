@@ -88,6 +88,23 @@
   measured). Tune there from the user's ears; `K.DEBUG = []` before a build, then `K.DEBUG` / `K.LOG`, show each
   phrase's verdict and lift. The Bach (role-based, not score_kit) and the prologue (its own code; harp CC7 100,
   arpeggios at the stanza level -2) are not balanced by it.
+- Arranging and mixing learnings (2026-10-17, from the user's Mars / Bald Mountain listening; apply to every song):
+  1. The tune first: a melody or theme that is missing, wrong by a note, or started a note late is what the ear
+     catches ("all the accompaniment and no melody", "missing the first brass note"). Check every main line note by
+     note (from the score where there is one; clefs and transpositions read carefully), then the bass, then the rest.
+  2. Wrong notes in accompaniment figures read as "off key" against the tune: check repeated figures too.
+  3. Family loudness order, loudest first: brass sections, percussion hits, single brass and strings, the bass,
+     piano, woodwinds / saxes, harps / mallets; non-melody parts under all of these (score_kit.WEIGHT_DB, weigh()).
+     GM sounds are closer in level than an orchestra; woodwinds especially stick out on GS ("too loud with anything
+     beside them").
+  4. Side melodies must not drown: lift covered lines (score_kit.balance), never boost what was marked to sit under.
+  5. Big brass moments get weight on GM: a Brass Section layer under the theme / stabs, accents where marked.
+  6. A line that passes between sections mid-phrase may keep the first section doubling it so it carries.
+  7. Concert bass drum: softer, shaped repeats (no machine-gun), a soft timpani double on the other side
+     (score_kit.bass_drum).
+  8. Harps / celesta need the texture thinned around them to shine; give them level where they are featured.
+  9. Our own arranging touches are welcome where they serve the music ("make these our own slightly"); say what
+     is ours in the docstring.
 - Milestones (standing rule): when a milestone step is done (a song delivered, a version shipped), prepare for
   compaction: put what the next session needs in this file (or the relevant README) and commit it, then say so.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
