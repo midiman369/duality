@@ -69,6 +69,12 @@
   ch9, the cornets share the trumpets' ch6; BM4_CH PC(8)) where the brass carries the tune or the stabs; and where a
   line passes from one section to another mid-phrase, the first section may keep doubling it so the line carries.
   Second listening note: the flutes' / oboes' / cornets' eighths in 13-20 are A G# G# A (we had B-flat / G: "off key").
+  Third: the theme starts on F in bar 15 (with the trumpets' F octaves), E only from bar 16 ("missing the first brass note").
+- Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
+  strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
+  `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
+  caller names). Used by `make_pd_mars.py` (ROLE / ROLE4; the 4-port Brass Section layers now at 0.5 / 0.45 velocity);
+  not yet by the Halloween pieces (offer it once the user has checked Bald Mountain's notes).
 - Line balance (2026-10-17; the user: Mars's little side-melody brass a little too quiet, the Halloween pieces
   less so, the prologue harp a bit quiet): `score_kit.balance(rows, progs, pcs, label)` runs in `score_kit.render`
   and both Mars renders before the per-channel merge (rows carry a tag: part, start beat, bar, articulations).
