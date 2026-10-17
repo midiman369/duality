@@ -43,6 +43,11 @@
   repo. IMSLP downloads are gated by JavaScript: give the user the work-page links and let them upload the PDF
   (don't circumvent the gate). Mars: data `tests/mars_score.py`, generator `tests/make_pd_mars.py` (16 GM
   channels, one family each, ch10 Orchestra kit: concert keys 36/38/57/59, its timpani keys 41-53 unused).
+- Next (2026-10-17): Halloween suite v2 = COMPLETE pieces from scores, back to back (user's choice): Grieg In the Hall
+  of the Mountain King (Peer Gynt Suite 1 no.4, IMSLP #363545), Saint-Saens Danse macabre (#21204), Mussorgsky's
+  ORIGINAL 1867 St John's Night on Bald Mountain (#17143, not Rimsky), Bach BWV 565 (#01335, BG), Dies irae chant
+  (Liber Usualis, Missa pro defunctis). Waiting for the user's PDF uploads; then transcribe like Mars (one data
+  module per piece, `tests/make_pd_halloween.py` rebuilt from them; the old medley stays in git history).
 - Milestones (standing rule): when a milestone step is done (a song delivered, a version shipped), prepare for
   compaction: put what the next session needs in this file (or the relevant README) and commit it, then say so.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
