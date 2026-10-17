@@ -64,7 +64,10 @@
   Dm - C7 and the falling-third sequence, the A - G# shakes; p. 27's lost bar restored by `insert_bar(89)`, so
   p. 28 starts at 91 as `hw/bmw/firstbar.json` says), then pp. 28-34 (bars 91-122: the horns' D drone, [104]'s C
   major, [5]'s winds in octaves not fifths, the 6/4 bars' leaps, the clarinets' climb a bar later and transposed).
-  Next: p. 35 (PDF 30, bar 123) on, every page in order, melody and brass lines first. Watch the first reading for
+  Then pp. 35-55 (bars 122-199: p. 35's lost bar 123 restored by `insert_bar(123)`, the B-flat blows without A-flat,
+  [7]'s G-flat chatter, p. 42's brass call transposed, pp. 44-45's brass a bar later). Next: p. 56 (PDF 51, bar 197)
+  on. `hw/bmw/firstbar.json` counts a double barline at a meter change as two (PDF 50), so from PDF 51 on it reads
+  one bar high; the first reading drifts from the scan around pp. 69-103 (check each page's bar count there). Watch the first reading for
   transposing parts copied as written (the clarinets on p. 34 were) and for clef changes: horns I-II are in the
   bass clef (written + 2) up to p. 31 and the treble clef (written - 10) from p. 32 on; check each system's clefs. `ntv.py` follows the staff's skew (trust it over `zst.py`'s labels when they disagree by a
   line); it reads clefs from clefs.json, so tenor-clef bassoons (B-clef there) read 4 steps low. The scan (hw/src/bald1867.pdf) has
