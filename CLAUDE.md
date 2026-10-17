@@ -65,6 +65,10 @@
   `hw/bmw` (tools/omr copied; `clefs.json` per page; `nt2.py <pdf page>` caches heads, `ntv.py <pdf page>
   <first bar> <staves>` lists them, `zst.py <pdf page> <staves> x0 x1 <clefs>` = one staff enlarged with every
   line / space named; fix `hi/bars-NNN.json` by hand when barlines are missed). Accidentals by eye only.
+  The user's arranging calls (2026-10-17, "make these our own slightly"): a Brass Section layer (part "brass": BM_CH
+  ch9, the cornets share the trumpets' ch6; BM4_CH PC(8)) where the brass carries the tune or the stabs; and where a
+  line passes from one section to another mid-phrase, the first section may keep doubling it so the line carries.
+  Second listening note: the flutes' / oboes' / cornets' eighths in 13-20 are A G# G# A (we had B-flat / G: "off key").
 - Line balance (2026-10-17; the user: Mars's little side-melody brass a little too quiet, the Halloween pieces
   less so, the prologue harp a bit quiet): `score_kit.balance(rows, progs, pcs, label)` runs in `score_kit.render`
   and both Mars renders before the per-channel merge (rows carry a tag: part, start beat, bar, articulations).
