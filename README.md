@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.066** (`python duality.py --version`).
+Current development line: **v0.19.067** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -247,7 +247,7 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | `--crucible` | Format-aware routing |
 | `--crucible-notes` | `affinity` (default) or `all` |
 | `--crucible-gm-wide` | GM/GM2 also matches `gs` and `xg` |
-| `--input-format` | Assume `gm` / `gm2` / `gs` / `xg` / `mt32` until SysEx says otherwise |
+| `--input-format` | Assume `gm` / `gm2` / `gs` / `xg` / `mt32` until SysEx says otherwise. Any `--outs` tag works too (`8850`, `88pro`, `55`, `scva`, `cm64`, …): a GS model means `gs`, a CM-32L / CM-64 means `mt32` |
 | `--strict-format-detection` | Only System On / Reset SysEx may switch format |
 | `--scpop` | Force SCPOP note broadcast to format-matched ports |
 | `--anima` | Phrasing + GS EFX + foley + 8850 / CM-64 tone colors |

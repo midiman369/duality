@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.066"
+VERSION = "0.19.067"
 
 
 """
@@ -12826,6 +12826,20 @@ def resolve_port(name: str | None, available: list[str], label: str) -> str:
         sys.exit(1)
     return pick_port(available, f"Select {label}:")
 
+def input_format_dialect(tag) -> str | None:
+    """An --outs tag (after FORMAT_ALIASES) as an input stream dialect: gm, gm2, gs,
+    xg or mt32. GS models (55 / 88 / 88Pro / 8820 / 8850) are gs, CM-32L / CM-64 mt32."""
+    if not tag or tag == "any":
+        return None
+    if tag in ("gm", "gm2", "gs", "xg", "mt32"):
+        return tag
+    if tag.startswith("gs"):
+        return "gs"
+    if tag in LA_TAGS:
+        return "mt32"
+    return None
+
+
 def parse_out_spec(spec: str) -> tuple[str, frozenset]:
     """
     Parse --outs entry: "Port Name", "Port Name:gs", or "Port Name:gs+gm2".
@@ -13026,11 +13040,25 @@ def main():
         action="store_true",
         help="With --crucible: also send GM/GM2 streams to gs and xg ports",
     )
+    def _parse_input_format(v: str) -> str:
+        # Same names as the --outs tags; a device tag means its stream dialect
+        # (8850 / 88pro / 55 ... → gs, cm32 / cm64 → mt32)
+        tag = FORMAT_ALIASES.get(str(v).strip().lower())
+        dialect = input_format_dialect(tag)
+        if dialect is None:
+            valid = ", ".join(k for k in FORMAT_ALIASES if k != "any")
+            raise argparse.ArgumentTypeError(f"unknown format {v!r} (valid: {valid})")
+        return dialect
+
     parser.add_argument(
         "--input-format",
-        choices=["gm", "gm2", "gs", "xg", "mt32"],
+        type=_parse_input_format,
         default=None,
-        help="Assume this stream format until SysEx proves otherwise",
+        metavar="FORMAT",
+        help=(
+            "Assume this stream format until SysEx proves otherwise: gm, gm2, gs, xg, mt32, or any "
+            "--outs tag (8850, 8820, 88pro, 88, 55, scva, cm32, cm64, ...; a GS model means gs, a CM means mt32)"
+        ),
     )
     parser.add_argument(
         "--scpop",
