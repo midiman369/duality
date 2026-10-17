@@ -155,6 +155,16 @@ which parts are written in the composer's manner.
   with approximate inner voices; each module's docstring and section comments say where.
   Offline: six and two SC-8850s (`gm2+8850`) with Anima, three CM-64s, three MT-32s under Voodoo: 0 hanging
   notes, 0 steals, 0 drops (CM-64 peak 23 PCM partials); one CM-64: 5 steals, peak 31.
+  The same run also writes `halloween_at_the_opera_4port.mid` (v3, 64 channels on ports A-D, for Duality's
+  player, 0.19.066): every part on a channel of its own. Port A: the strings in two desks each (a chord in a part
+  goes top-down to desk 1, 2), pizzicato and bowed tremolo on channels of their own (no program changes mid-part),
+  percussion, timpani, harp; port B: each woodwind player, horns, trumpets, trombones, tuba, a second percussion
+  kit, the prologue's extra organ ranks (4', 2', the pedal's 16'). A and B hold the whole suite. Port C adds solo
+  violin / viola / cello / bass layers over the sections and Brass Section under the horns and trombones, the
+  prologue's choir layers and second bell, the Bach's 2' mixture and closing choir; port D a four-part choir that
+  sings the prologue's chords (our setting). Each port asks for an SC-8850 (`duality: 8850`); seated left to
+  right with the strings drier in front. Offline through the player: two units (A, B), four (one per port) and
+  six SC-8850s (A and B two each): 0 hanging notes, 0 steals, 0 drops.
 - `make_pd_jazz.py` → `jazz_age.mid` (4:00): The Entertainer (intro and A strain, piano then band), a habanera and
   blues after Handy, hot jazz after the Tiger Rag (trombone smears in the breaks), and a Rhapsody after Gershwin
   (the low trill, run and glissando), then the Entertainer in Bb. Bends only slide into or fall off a note, so a
@@ -169,7 +179,12 @@ which parts are written in the composer's manner.
   every part on 16 GM channels, one family each (strings col legno -> arco, organ after the harps), dynamics and
   hairpins as velocities, fermatas and the final rall. as tempo. Offline: six and two SC-8850s (`gm2+8850`) with
   Anima, three CM-64s, one CM-64 and three MT-32s under Voodoo: 0 hanging notes, 0 steals, 0 drops (one CM-64
-  peaks at 25 PCM partials).
+  peaks at 25 PCM partials). The same run also writes `mars_4port.mid` (64 channels, every player a channel):
+  port A the strings in two desks with col legno and bowed tremolo on their own channels, percussion, both
+  timpanists, harps; B each woodwind player, the side drum, the organ pedal; C each brass player, the organ
+  manuals; D only layers (solo strings over the sections, Brass Section under horns and trombones). Ports A-C
+  hold the score, so three units play all of it. Offline through the player: three, four and six SC-8850s: 0
+  hanging notes, 0 steals, 0 drops.
 
 Offline, all five: three CM-64s, one CM-64 (live seats) and three MT-32s under Voodoo, and two / four SC-8850s
 (`gm2+8850`) with Anima: 0 hanging notes, 0 steals, 0 drops (one CM-64 peaks at 29 PCM partials, Halloween).

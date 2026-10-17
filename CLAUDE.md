@@ -147,6 +147,13 @@ the main router rests meanwhile and forgets its CC filter / tone caches / Anima 
 (3) multi-input (live sources on several ports) after that; (4) the Halloween medley v3 written
 for up to 4 ports, plus a 16-channel version for one-output players. One song can then drive
 several kinds of synth at once (a port per device type).
+DONE (4): `make_pd_halloween.py` and `make_pd_mars.py` each write the 16-channel file (unchanged, byte-identical)
+and a `*_4port.mid`. Tooling: pd_kit channels 16-63 are ports B-D (`_out`, `emit`, `is_drums`; `finish()` writes a
+port's tracks with FF 21 and a "duality: 8850" text, checks over every port); score_kit `Seat` (desks for chord
+notes top-down, pizz / tremolo channels, layers); layouts `MK4_CH` / `DM4_CH` / `BM4_CH` / `PROLOGUE4` / `BACH4`
+(module globals swapped by `layout4()`; the prologue and Bach read optional channels ORG4 / PED16 / CHOIR_SATB /
+ORG_G4 / CB_CH / STRING_LAYERS ...) and Mars `SEATS4` / `render4`. Halloween: ports A+B hold the whole suite, C/D
+add layers (2 units play it all); Mars: A-C hold the score, D the layers (3 units).
 
 ## Out of scope unless the user asks
 
