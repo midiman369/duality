@@ -46,7 +46,7 @@
 - Halloween suite v2 (delivered 2026-10-17, 38:31): `tests/make_pd_halloween.py` plays complete pieces from
   scores, back to back, each a data module rendered by `tests/score_kit.py`: `hw_dies_irae.py` (LU 1810-1813; the
   prologue's setting lives in the generator), `hw_mountain_king.py`, `hw_danse_macabre.py`, `hw_bald_mountain.py`
-  (1867, 557 bars; SPEED scales its tempo map; ppp bass-drum roll under its general pauses), then `bach_bwv565.py`:
+  (1867, 550 bars after the re-read; SPEED scales its tempo map; ppp bass-drum roll under its general pauses), then `bach_bwv565.py`:
   Diodati's SCPOP2000 MIDI (user's upload, local only in `tests/midi/` as "Bach - Toccata e Fuga in Re min BWV565
   2K.mid", a third-party performance: never in the repo; without it the suite skips Bach) for notes and timing,
   our organ registration (not his SCPOP SysEx), the fugue handed from the organ to the orchestra by voice roles
@@ -65,9 +65,14 @@
   p. 28 starts at 91 as `hw/bmw/firstbar.json` says), then pp. 28-34 (bars 91-122: the horns' D drone, [104]'s C
   major, [5]'s winds in octaves not fifths, the 6/4 bars' leaps, the clarinets' climb a bar later and transposed).
   Then pp. 35-55 (bars 122-199: p. 35's lost bar 123 restored by `insert_bar(123)`, the B-flat blows without A-flat,
-  [7]'s G-flat chatter, p. 42's brass call transposed, pp. 44-45's brass a bar later). Next: p. 56 (PDF 51, bar 197)
-  on. `hw/bmw/firstbar.json` counts a double barline at a meter change as two (PDF 50), so from PDF 51 on it reads
-  one bar high; the first reading drifts from the scan around pp. 69-103 (check each page's bar count there). Watch the first reading for
+  [7]'s G-flat chatter, p. 42's brass call transposed, pp. 44-45's brass a bar later), then pp. 56-141 checked bar by
+  bar against the scan (2026-10-17): the blows on beats 3-4 (197-200), p. 68 two bars shorter and the whole-tone
+  descent (238-245), p. 75 three bars ([11] at 288), pp. 78-82 rebuilt (299-314), pp. 85-92 rebuilt from the first
+  reading's bars (329-352, five fewer), pp. 101-102 and 108 one bar each fewer; `remove_bar()` drops a bar (both kinds
+  are in INSERTED; `shifted()` maps first-reading numbers). Every page from p. 56 to the end now starts on the scan's
+  bar; the notes inside pp. 59-66, 71-82 and 93-141 are still the first reading's (approximate) and want the same
+  note-by-note pass (melody and brass first) as pp. 10-55. The piece is 550 bars, 12:52. `hw/bmw/firstbar.json`
+  over-counts at every meter change; count bars by eye (two pages side by side at 60-90 dpi). Watch the first reading for
   transposing parts copied as written (the clarinets on p. 34 were) and for clef changes: horns I-II are in the
   bass clef (written + 2) up to p. 31 and the treble clef (written - 10) from p. 32 on; check each system's clefs. `ntv.py` follows the staff's skew (trust it over `zst.py`'s labels when they disagree by a
   line); it reads clefs from clefs.json, so tenor-clef bassoons (B-clef there) read 4 steps low. The scan (hw/src/bald1867.pdf) has
