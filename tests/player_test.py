@@ -291,6 +291,11 @@ check(dd.player.index == 1, f"second song reached: {dd.player.index}")
 req = multiport(os.path.join(tmp, "m_req.mid"), [0, 1], requests=[(1, "duality: xg")])
 dd, lanes_seen = play_through(names4, [gs, gs, gs, xg], [req], 3.0)
 check(lanes_seen and lanes_seen[0] == {0: [0, 1, 2], 1: [3]}, f"port B asks for XG: {lanes_seen}")
+# kinds in order of preference: B wants an XG unit, else an 8850; C an XG unit, else an 8850
+pref = multiport(os.path.join(tmp, "m_pref.mid"), [0, 1, 2],
+                 requests=[(1, "duality: xg, 8850"), (2, "duality: xg, 8850")])
+dd, lanes_seen = play_through(names4, [gs, gs, gs, xg], [pref], 3.0)
+check(lanes_seen and lanes_seen[0] == {0: [0, 1], 1: [3], 2: [2]}, f"preferences: B gets the XG, C falls back: {lanes_seen}")
 # a request nothing can meet: that port is dropped, the song plays port A on every out
 drop = multiport(os.path.join(tmp, "m_drop.mid"), [0, 1], requests=[(1, "duality: port B cm64")])
 dd, lanes_seen = play_through(names4, [gs] * 4, [drop], 3.0)
@@ -316,9 +321,9 @@ for t, i, m in REC:
             held[k] -= 1
 check(not [k for k, v in held.items() if v > 0], "multi-port: nothing left hanging")
 # the request parser
-for text, want in (("duality: 8850", (5, "gs8850", None)), ("Duality: port B mt32 x2", (1, "mt32", 2)),
-                   ("duality: C=xg", (2, "xg", None)), ("duality: port 4 cm64", (3, "cm64", None)),
-                   ("hello", None)):
+for text, want in (("duality: 8850", (5, ("gs8850",), None)), ("Duality: port B mt32 x2", (1, ("mt32",), 2)),
+                   ("duality: C=xg", (2, ("xg",), None)), ("duality: port 4 cm64", (3, ("cm64",), None)),
+                   ("duality: 8850, cm64", (5, ("gs8850", "cm64"), None)), ("hello", None)):
     got = D.parse_port_request(text, 5)
     check(got == want, f"parse_port_request({text!r}) = {got}, want {want}")
 

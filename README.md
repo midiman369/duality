@@ -2,7 +2,7 @@
 
 **Intelligent Multi-Device MIDI Polyphony Router**
 
-Current development line: **v0.19.067** (`python duality.py --version`).
+Current development line: **v0.19.068** (`python duality.py --version`).
 
 Duality routes MIDI notes across one or more sound modules so you can treat several hardware and soft synths as a single, higher-polyphony instrument. Non-note messages stay synchronized. Optional layers sit on top of that core:
 
@@ -84,6 +84,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
   - `duality: 8850` — this track's port wants an SC-8850 (any `--outs` tag works: `gs`, `xg`, `mt32`, `cm64`, …)
   - `duality: port C mt32 x2` — port C wants two MT-32-family units
   - `duality: B=xg` — port B wants an XG unit
+  - `duality: 8850, cm64` — an SC-8850 if one is free, else a CM-64 (kinds in order of preference, 0.19.068)
 
   So one song can drive several kinds of synth at once. Without a request a port takes GM-family units (not LA-only ones). A port with no free unit of its kind is dropped (one unit plays port A only)
 - Port A's system SysEx (GM / GS / XG resets, reverb / chorus macros, master volume) also reaches the other ports' units, as on one multi-port device

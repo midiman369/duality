@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.19.067"
+VERSION = "0.19.068"
 
 
 """
@@ -123,7 +123,8 @@ Player (0.19.065) and multi-port songs (0.19.066)
     units of its own: every port that can play gets a unit, then the rest are
     shared in blocks (A on 1-3, B on 4-6). A "duality: 8850" text event on a
     port's track asks for a kind of unit ("duality: port C mt32 x2", any --outs
-    tag); a port with no free unit of its kind is dropped. Port A's system SysEx
+    tag; "duality: 8850, cm64" = an 8850, else a CM-64); a port with no free unit of
+    its kinds is dropped. Port A's system SysEx
     (resets, reverb / chorus, master volume) reaches every port's units. Each
     port plays on a lane: a router of its own with the same settings; the
     routing hotkeys reach the lanes, live input goes to port A's
@@ -967,7 +968,8 @@ def parse_port_request(text: str, track_port: int):
         "duality: 8850"            this track's port wants an SC-8850 (any --outs tag works)
         "duality: port B mt32 x2"  port B wants two MT-32-family units
         "duality: C=xg"            port C wants an XG unit
-    Returns (port, wanted tag or None, units or None), or None if the text is not one."""
+        "duality: 8850, cm64"      an SC-8850 if one is free, else a CM-64 (kinds in order of preference)
+    Returns (port, wanted tags in order or None, units or None), or None if the text is not one."""
     t = str(text or "").strip().lower()
     if not t.startswith("duality"):
         return None
@@ -975,7 +977,7 @@ def parse_port_request(text: str, track_port: int):
     if not rest.startswith(":"):
         return None
     toks = rest[1:].replace("=", " ").replace(",", " ").split()
-    port, want, units = track_port, None, None
+    port, wants, units = track_port, [], None
     i = 0
     while i < len(toks):
         tok = toks[i]
@@ -992,9 +994,11 @@ def parse_port_request(text: str, track_port: int):
         elif tok.startswith("x") and tok[1:].isdigit() and int(tok[1:]) > 0:
             units = int(tok[1:])
         elif tok in FORMAT_ALIASES:
-            want = FORMAT_ALIASES[tok]
+            tag = FORMAT_ALIASES[tok]
+            if tag != "any" and tag not in wants:
+                wants.append(tag)
         i += 1
-    return port, (None if want == "any" else want), units
+    return port, (tuple(wants) or None), units
 
 
 def out_matches(tags, want) -> bool:
@@ -12507,13 +12511,17 @@ class Duality:
         taken: set = set()
         plan = {p: [] for p in ports}
 
+        def kinds(p):
+            """The port's wanted kinds in order of preference; (None,) = any GM-family out."""
+            return req.get(p, (None, None))[0] or (None,)
+
         def take(p) -> bool:
-            want = req.get(p, (None, None))[0]
-            for i in free:
-                if i not in taken and out_matches(self.out_formats[i], want):
-                    taken.add(i)
-                    plan[p].append(i)
-                    return True
+            for want in kinds(p):
+                for i in free:
+                    if i not in taken and out_matches(self.out_formats[i], want):
+                        taken.add(i)
+                        plan[p].append(i)
+                        return True
             return False
 
         for p in ports:
@@ -12526,18 +12534,18 @@ class Duality:
         while sharing:
             sharing = [p for p in sharing if take(p)]
         dropped = [p for p in ports if not plan[p]]
-        # Same counts, in blocks: each port takes its units in --outs order (ports that
-        # asked for a kind of unit first), so A plays on 1-3 and B on 4-6, not 1/3/5 and 2/4/6.
+        # The same units, in blocks: in port order each port takes as many units of each
+        # kind as it got, the first ones in --outs order, so A plays on 1-3 and B on 4-6,
+        # not 1/3/5 and 2/4/6.
         block = {p: [] for p in ports}
         used: set = set()
-        for p in sorted(ports, key=lambda q: (req.get(q, (None, None))[0] is None, q)):
-            want = req.get(p, (None, None))[0]
-            for i in free:
-                if len(block[p]) >= len(plan[p]):
-                    break
-                if i not in used and out_matches(self.out_formats[i], want):
-                    used.add(i)
-                    block[p].append(i)
+        for p in ports:
+            for kind in [self.out_formats[i] for i in plan[p]]:
+                for i in free:
+                    if i not in used and self.out_formats[i] == kind:
+                        used.add(i)
+                        block[p].append(i)
+                        break
         if all(len(block[p]) == len(plan[p]) for p in ports):
             plan = block
         return {p: o for p, o in plan.items() if o}, dropped
@@ -12551,8 +12559,8 @@ class Duality:
         self._player_main_port = min(plan) if plan else 0
         names = lambda outs: ", ".join(self.port_names[i] for i in outs)   # noqa: E731
         for p in dropped:
-            want = song.requests.get(p, (None, None))[0]
-            kind = FORMAT_DISPLAY.get(want, want) if want else "GM-family"
+            wants = song.requests.get(p, (None, None))[0]
+            kind = " or ".join(FORMAT_DISPLAY.get(w, w) for w in wants) if wants else "GM-family"
             self._log_line(f"PLAY  Port {chr(65 + p)} dropped: no free {kind} unit")
             self._set_status(f"Port {chr(65 + p)} dropped: no free {kind} unit", duration=5.0)
         if len(plan) <= 1:
