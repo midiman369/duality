@@ -185,6 +185,14 @@ which parts are written in the composer's manner.
   manuals; D only layers (solo strings over the sections, Brass Section under horns and trombones). Ports A-C
   hold the score, so three units play all of it. Offline through the player: three, four and six SC-8850s: 0
   hanging notes, 0 steals, 0 drops.
+- Line balance (Mars and the Halloween pieces, both versions; `score_kit.balance`): a phrase that moves like a
+  melody (not an ostinato, a tremolo, held notes, arpeggio / oom-pah figuration or the bass) and that the texture
+  around it covers more than its own doublings hold it up gets up to 3 dB more velocity, the same for the whole
+  phrase. So the side lines come through: in Mars the tenor tuba solos, the trumpet fanfares, the horns' octave
+  call and the trombone figures; in the Danse macabre climax the trombones' chromatic line; woodwind lines over
+  Bald Mountain's string tremolo. A line marked more than a dynamic under what covers it stays where the composer
+  put it. `score_kit.LOG` lists the phrases lifted (`score_kit.DEBUG = []` explains every phrase). The
+  prologue's harp plays louder too (by ear).
 
 Offline, all five: three CM-64s, one CM-64 (live seats) and three MT-32s under Voodoo, and two / four SC-8850s
 (`gm2+8850`) with Anima: 0 hanging notes, 0 steals, 0 drops (one CM-64 peaks at 29 PCM partials, Halloween).

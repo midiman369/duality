@@ -52,6 +52,14 @@
   our organ registration (not his SCPOP SysEx), the fugue handed from the organ to the orchestra by voice roles
   (landmarks in his ticks at the top of the module), the organ back for the Molto adagio. Scans and OMR caches
   stay in the scratchpad (`hw/src`, `hw/bm` etc.; `two.sh`, `crop.sh` page viewers). The old medley is in git history.
+- Line balance (2026-10-17; the user: Mars's little side-melody brass a little too quiet, the Halloween pieces
+  less so, the prologue harp a bit quiet): `score_kit.balance(rows, progs, pcs, label)` runs in `score_kit.render`
+  and both Mars renders before the per-channel merge (rows carry a tag: part, start beat, bar, articulations).
+  It finds covered melodic phrases (rules in its header comment) and lifts each by up to `LINE_MAX_DB` 3 dB of
+  velocity (`LINE_TARGET` -4 dB margin, `LINE_K` 0.8; `PROG_DB` is a rough per-program loudness, by guess, not
+  measured). Tune there from the user's ears; `K.DEBUG = []` before a build, then `K.DEBUG` / `K.LOG`, show each
+  phrase's verdict and lift. The Bach (role-based, not score_kit) and the prologue (its own code; harp CC7 100,
+  arpeggios at the stanza level -2) are not balanced by it.
 - Milestones (standing rule): when a milestone step is done (a song delivered, a version shipped), prepare for
   compaction: put what the next session needs in this file (or the relevant README) and commit it, then say so.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
@@ -147,7 +155,7 @@ the main router rests meanwhile and forgets its CC filter / tone caches / Anima 
 (3) multi-input (live sources on several ports) after that; (4) the Halloween medley v3 written
 for up to 4 ports, plus a 16-channel version for one-output players. One song can then drive
 several kinds of synth at once (a port per device type).
-DONE (4): `make_pd_halloween.py` and `make_pd_mars.py` each write the 16-channel file (unchanged, byte-identical)
+DONE (4): `make_pd_halloween.py` and `make_pd_mars.py` each write the 16-channel file (the notes as before)
 and a `*_4port.mid`. Tooling: pd_kit channels 16-63 are ports B-D (`_out`, `emit`, `is_drums`; `finish()` writes a
 port's tracks with FF 21 and a "duality: 8850" text, checks over every port); score_kit `Seat` (desks for chord
 notes top-down, pizz / tremolo channels, layers); layouts `MK4_CH` / `DM4_CH` / `BM4_CH` / `PROLOGUE4` / `BACH4`
