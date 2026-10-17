@@ -60,7 +60,11 @@
   in the alto clef). Fixed so far: bars 15-27 (the trombone / tuba theme E D E F G# A, trumpets, the held chords
   -> triplets -> stabs, the lost bar 27 restored by `insert_bar(27)`; sections above it keep their first-reading
   numbers, `shifted()` maps them, the generator's BM_MARKS go through it) and [2]'s copies (55-68; 63-66
-  approximate). Next: every page in order, melody and brass lines first. The scan (hw/src/bald1867.pdf) has
+  approximate), then pp. 22-27 (bars 67-90: D7 not D major, the D7b9 / E-flat calls, [3]'s staccato chords E7 - F -
+  Dm - C7 and the falling-third sequence, the A - G# shakes; p. 27's lost bar restored by `insert_bar(89)`, so
+  p. 28 starts at 91 as `hw/bmw/firstbar.json` says). Next: p. 28 (PDF 23) on, every page in order, melody and
+  brass lines first. `ntv.py` follows the staff's skew (trust it over `zst.py`'s labels when they disagree by a
+  line); it reads clefs from clefs.json, so tenor-clef bassoons (B-clef there) read 4 steps low. The scan (hw/src/bald1867.pdf) has
   score page 21 twice: PDF page = score page - 6 up to PDF 15, - 5 from PDF 17 on. Tools in the scratchpad
   `hw/bmw` (tools/omr copied; `clefs.json` per page; `nt2.py <pdf page>` caches heads, `ntv.py <pdf page>
   <first bar> <staves>` lists them, `zst.py <pdf page> <staves> x0 x1 <clefs>` = one staff enlarged with every
