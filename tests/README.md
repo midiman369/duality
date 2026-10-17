@@ -185,6 +185,11 @@ which parts are written in the composer's manner.
   manuals; D only layers (solo strings over the sections, Brass Section under horns and trombones). Ports A-C
   hold the score, so three units play all of it. Offline through the player: three, four and six SC-8850s: 0
   hanging notes, 0 steals, 0 drops.
+- Each run of `make_pd_halloween.py` also writes every piece on its own, for both versions:
+  `halloween_1_dies_irae`, `_2_mountain_king`, `_3_danse_macabre`, `_4_bald_mountain`, `_5_bach_toccata_fugue`
+  (`.mid` and `_4port.mid`, next to the suite). They are cut from that same build (`pd_kit.finish_parts`), so the
+  notes, velocities, timing and channel state are exactly the suite's; each starts with the controllers, tempo
+  and key the suite has there. Checked note for note against the suite.
 - Line balance (Mars and the Halloween pieces, both versions; `score_kit.balance`): a phrase that moves like a
   melody (not an ostinato, a tremolo, held notes, arpeggio / oom-pah figuration or the bass) and that the texture
   around it covers more than its own doublings hold it up gets up to 3 dB more velocity, the same for the whole

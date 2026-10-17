@@ -52,6 +52,9 @@
   our organ registration (not his SCPOP SysEx), the fugue handed from the organ to the orchestra by voice roles
   (landmarks in his ticks at the top of the module), the organ back for the Molto adagio. Scans and OMR caches
   stay in the scratchpad (`hw/src`, `hw/bm` etc.; `two.sh`, `crop.sh` page viewers). The old medley is in git history.
+  Every build also writes each piece alone (`halloween_<n>_<piece>[_4port].mid`, user's request 2026-10-17), cut
+  from the suite's own events by `pd_kit.finish_parts` (never re-rendered: the shared RNG would change the notes);
+  a new piece needs an entry in `build()`'s `ends` and in `PIECE_TITLES`.
 - Line balance (2026-10-17; the user: Mars's little side-melody brass a little too quiet, the Halloween pieces
   less so, the prologue harp a bit quiet): `score_kit.balance(rows, progs, pcs, label)` runs in `score_kit.render`
   and both Mars renders before the per-channel merge (rows carry a tag: part, start beat, bar, articulations).
