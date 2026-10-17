@@ -38,6 +38,13 @@
   public-domain demos `tests/make_pd_*.py` (helpers `tests/pd_kit.py`; tunes from memory, docstrings say which
   are quoted; our own arrangements, never a modern arrangement's harmony / riffs). Mars is the exception:
   a full transcription of Holst's score (`tests/mars_score.py`, from the IMSLP scan the user supplied).
+- Score transcriptions (Mars, 0.19.064 era): read from the user's IMSLP PDF with `tools/omr/` (README there:
+  setup, per-page workflow, transposition list); scans and work caches stay in a scratch folder, never in the
+  repo. IMSLP downloads are gated by JavaScript: give the user the work-page links and let them upload the PDF
+  (don't circumvent the gate). Mars: data `tests/mars_score.py`, generator `tests/make_pd_mars.py` (16 GM
+  channels, one family each, ch10 Orchestra kit: concert keys 36/38/57/59, its timpani keys 41-53 unused).
+- Milestones (standing rule): when a milestone step is done (a song delivered, a version shipped), prepare for
+  compaction: put what the next session needs in this file (or the relevant README) and commit it, then say so.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
   tone data (voices, waveforms, parameters) is an exact copy of an 8850 tone or of one already offered
   (by waveform alone was too strict: the 88Pro Piano 1 reuses samples yet is a different piano). The lists in
