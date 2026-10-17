@@ -43,17 +43,15 @@
   repo. IMSLP downloads are gated by JavaScript: give the user the work-page links and let them upload the PDF
   (don't circumvent the gate). Mars: data `tests/mars_score.py`, generator `tests/make_pd_mars.py` (16 GM
   channels, one family each, ch10 Orchestra kit: concert keys 36/38/57/59, its timpani keys 41-53 unused).
-- Next (2026-10-17): Halloween suite v2 = COMPLETE pieces from scores, back to back (user's choice): Grieg In the Hall
-  of the Mountain King (Peer Gynt Suite 1 no.4, IMSLP #363545), Saint-Saens Danse macabre (#21204), Mussorgsky's
-  ORIGINAL 1867 St John's Night on Bald Mountain (#17143, not Rimsky), Bach BWV 565 (#01335, BG), Dies irae chant
-  (Liber Usualis, Missa pro defunctis). Transcribed like Mars (one data module per piece, rendered by
-  `tests/score_kit.py`; the old medley stays in git history): `tests/hw_dies_irae.py` (full sequence, LU 1810-1813;
-  prologue setting in `make_pd_halloween.py`: cantor / schola / choir alternatim, organ, brass, harp, bells),
-  `hw_mountain_king.py`, `hw_danse_macabre.py`, `hw_bald_mountain.py` (all 557 bars; SPEED scales its tempo map) are
-  done and wired in. Left: Bach BWV 565 from Diodati's SCPOP2000 MIDI (user's upload, kept local in `tests/midi/`
-  as "Bach - Toccata e Fuga in Re min BWV565 2K.mid", a third-party performance: never in the repo): his notes and
-  timing with OUR GS organ registration (not his SCPOP SysEx), opening as pipe organ then gradually reworked into
-  a full orchestra (user: "take our time with that one"); then replay on the rigs, README / CLAUDE.md, send MIDI.
+- Halloween suite v2 (delivered 2026-10-17, 38:31): `tests/make_pd_halloween.py` plays complete pieces from
+  scores, back to back, each a data module rendered by `tests/score_kit.py`: `hw_dies_irae.py` (LU 1810-1813; the
+  prologue's setting lives in the generator), `hw_mountain_king.py`, `hw_danse_macabre.py`, `hw_bald_mountain.py`
+  (1867, 557 bars; SPEED scales its tempo map; ppp bass-drum roll under its general pauses), then `bach_bwv565.py`:
+  Diodati's SCPOP2000 MIDI (user's upload, local only in `tests/midi/` as "Bach - Toccata e Fuga in Re min BWV565
+  2K.mid", a third-party performance: never in the repo; without it the suite skips Bach) for notes and timing,
+  our organ registration (not his SCPOP SysEx), the fugue handed from the organ to the orchestra by voice roles
+  (landmarks in his ticks at the top of the module), the organ back for the Molto adagio. Scans and OMR caches
+  stay in the scratchpad (`hw/src`, `hw/bm` etc.; `two.sh`, `crop.sh` page viewers). The old medley is in git history.
 - Milestones (standing rule): when a milestone step is done (a song delivered, a version shipped), prepare for
   compaction: put what the next session needs in this file (or the relevant README) and commit it, then say so.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their

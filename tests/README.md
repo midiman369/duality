@@ -54,6 +54,7 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `rose-gun-sight.mid` | `rose_in_the_gun_sight.mid` (performs its own wah: live Wah Man writes from 6:43) | sent on its own | 205850 | `c5d45c95b713db4b` |
 | `doom-game-223128.mid` | `IN-Duality-4-gs-20261001-223128.mid` (DOOM in DosBox, game mode: title, menu, E1M1, intermission, next cue) | `duality-20261001-223128.zip` | 24570 | `0fc14de4b7b5e584` |
 | `dirty-women.mid` | `Black_Sabbath_-_Dirty_Women.mid` (riffing vs lead lines: wah switch on/off candidate) | sent on its own | 36565 | `0f8364c3277fd742` |
+| `Bach - Toccata e Fuga in Re min BWV565 2K.mid` (keep this name) | the same, R. Diodati's SCPOP2000 organ performance of BWV 565 (1997); `make_pd_halloween.py` reads it for its finale | sent on its own | 52299 | `bad8421e6de7b203` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
@@ -137,10 +138,21 @@ section's key plus named chromatic notes, no program change under a held note, n
 melodies were written from memory (no score at hand): each generator's docstring says which tunes are quoted and
 which parts are written in the composer's manner.
 
-- `make_pd_halloween.py` → `halloween_at_the_opera.mid` (6:05): the Dies irae as a thread through the Mountain King
-  (Grieg, accelerating to a tutti), midnight and a Danse macabre waltz (after Saint-Saëns), Night on Bald Mountain
-  (after Mussorgsky), dawn bells, and the Toccata and Fugue in D minor (BWV 565) on the church organ; CM-32L sound
-  effects.
+- `make_pd_halloween.py` → `halloween_at_the_opera.mid` (38:31), v2: complete pieces from their scores, back to
+  back (like Mars, one transcription module each, rendered by `tests/score_kit.py`; the 6:05 medley of v1 is in git
+  history). Prologue: the whole Dies irae sequence from the Liber Usualis (`hw_dies_irae.py`, pp. 1810-1813), sung
+  alternatim by cantor, men's schola, upper voices and choir over organ, strings, brass, harp and bells (our
+  setting); Grieg's In the Hall of the Mountain King (`hw_mountain_king.py`, IMSLP #363545); Saint-Saëns' Danse
+  macabre (`hw_danse_macabre.py`, #21204); Mussorgsky's original 1867 St John's Night on the Bare Mountain
+  (`hw_bald_mountain.py`, #17143, all 557 bars, its general pauses under a ppp bass-drum roll); and Bach's
+  Toccata and Fugue in D minor (`bach_bwv565.py`): R. Diodati's SCPOP2000 organ performance (notes and timing; the
+  user's file, kept local, see the table above; without it the suite ends with Bald Mountain) on the pipe organ
+  with our own registration, then orchestrated by us: the orchestra takes the fugue's voices as they enter
+  (strings, the pedal in cellos and basses, the Swell's echoes in the woodwinds, trombones, horns, trumpets,
+  timpani), the organ fades out, and it comes back under the orchestra for the Molto adagio. Dense pages are read
+  with approximate inner voices; each module's docstring and section comments say where.
+  Offline: six and two SC-8850s (`gm2+8850`) with Anima, three CM-64s, three MT-32s under Voodoo: 0 hanging
+  notes, 0 steals, 0 drops (CM-64 peak 23 PCM partials); one CM-64: 2 steals, peak 31.
 - `make_pd_jazz.py` → `jazz_age.mid` (4:00): The Entertainer (intro and A strain, piano then band), a habanera and
   blues after Handy, hot jazz after the Tiger Rag (trombone smears in the breaks), and a Rhapsody after Gershwin
   (the low trill, run and glissando), then the Entertainer in Bb. Bends only slide into or fall off a note, so a
