@@ -142,7 +142,8 @@ which parts are written in the composer's manner.
   back (like Mars, one transcription module each, rendered by `tests/score_kit.py`; the 6:05 medley of v1 is in git
   history). Prologue: the whole Dies irae sequence from the Liber Usualis (`hw_dies_irae.py`, pp. 1810-1813), sung
   alternatim by cantor, men's schola, upper voices and choir over organ, strings, brass, harp and bells (our
-  setting); Grieg's In the Hall of the Mountain King (`hw_mountain_king.py`, IMSLP #363545); Saint-Saëns' Danse
+  setting; the organ there is GM Church Organ with the flutes as its 4' rank and the bassoon as its pedal
+  reed); Grieg's In the Hall of the Mountain King (`hw_mountain_king.py`, IMSLP #363545); Saint-Saëns' Danse
   macabre (`hw_danse_macabre.py`, #21204); Mussorgsky's original 1867 St John's Night on the Bare Mountain
   (`hw_bald_mountain.py`, #17143, all 557 bars, its general pauses under a ppp bass-drum roll); and Bach's
   Toccata and Fugue in D minor (`bach_bwv565.py`): R. Diodati's SCPOP2000 organ performance (notes and timing; the
@@ -152,7 +153,7 @@ which parts are written in the composer's manner.
   timpani), the organ fades out, and it comes back under the orchestra for the Molto adagio. Dense pages are read
   with approximate inner voices; each module's docstring and section comments say where.
   Offline: six and two SC-8850s (`gm2+8850`) with Anima, three CM-64s, three MT-32s under Voodoo: 0 hanging
-  notes, 0 steals, 0 drops (CM-64 peak 23 PCM partials); one CM-64: 2 steals, peak 31.
+  notes, 0 steals, 0 drops (CM-64 peak 23 PCM partials); one CM-64: 5 steals, peak 31.
 - `make_pd_jazz.py` → `jazz_age.mid` (4:00): The Entertainer (intro and A strain, piano then band), a habanera and
   blues after Handy, hot jazz after the Tiger Rag (trombone smears in the breaks), and a Rhapsody after Gershwin
   (the low trill, run and glissando), then the Entertainer in Bb. Bends only slide into or fall off a note, so a
