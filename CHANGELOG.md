@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased (dev 1.0.001)
+## Unreleased (dev 1.0.002)
 
+- Anima EFX palettes for orchestral parts, chosen by ear from listening: strings and choir now get Reverb, Gate Reverb
+  (×½) or 3D Delay (×¼), with no chorus types; reeds and pipes get Reverb or Gate Reverb, and only now and then
+  (×⅓ each) Space D, Stereo Delay or Mod Delay, with no parallel chorus / flanger / delay types.
 - Anima tone traits: Brass sfz and Brass sfz 2 (Brass Section variations) have a built-in sforzando swell, so a
   part playing quick short notes on them goes back to the plain brass at its next rest.
 

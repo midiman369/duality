@@ -335,13 +335,11 @@ ANIMA_EFX_GS = {
         (0x11, 0x02, "Cho/Flanger", 2),  # #58
     ],
     "ethnic_wind": [
-        (0x01, 0x43, "Space D", 2),  # #19
-        (0x01, 0x50, "Stereo Delay", 1),  # #21
-        (0x01, 0x51, "Mod Delay", 1),  # #22
+        (0x01, 0x43, "Space D", 2 / 3),  # #19
+        (0x01, 0x50, "Stereo Delay", 2 / 3),  # #21
+        (0x01, 0x51, "Mod Delay", 2 / 3),  # #22
         (0x01, 0x55, "Reverb", 2),  # #26
-        (0x11, 0x00, "Cho/Delay", 2),  # #56
-        (0x11, 0x01, "FL/Delay", 2),  # #57
-        (0x11, 0x02, "Cho/Flanger", 2),  # #58
+        (0x01, 0x56, "Gate Reverb", 2),  # #27
     ],
     "synth_brass": [
         (0x01, 0x02, "Enhancer", 1),  # #3
@@ -377,12 +375,9 @@ ANIMA_EFX_GS = {
         (0x11, 0x02, "Cho/Flanger", 1),  # #58
     ],
     "strings": [
-        (0x01, 0x40, "Hexa Chorus", 2),  # #16
-        (0x01, 0x42, "Stereo Chorus", 1),  # #18
-        (0x01, 0x43, "Space D", 1),  # #19
-        (0x01, 0x44, "3D Chorus", 1),  # #20
-        (0x01, 0x55, "Reverb", 4),  # #26
-        (0x01, 0x57, "3D Delay", 2),  # #28
+        (0x01, 0x55, "Reverb", 2),  # #26
+        (0x01, 0x56, "Gate Reverb", 1),  # #27
+        (0x01, 0x57, "3D Delay", 2 / 4),  # #28
     ],
     "pad": [
         (0x01, 0x42, "Stereo Chorus", 2),  # #18

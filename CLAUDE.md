@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (next build 1.0.001). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.002; the next build is 1.0.003). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -15,6 +15,12 @@
   published pages into it just to check them; work on what the task needs.
 
 ## Next up (2026-10-18; keep this list current)
+
+Done since the release (dev, 2026-10-18): 1.0.001 the Brass sfz `slow` trait; 1.0.002 the user's EFX picks for
+strings (Reverb, Gate Reverb x1/2, 3D Delay x1/4) and reeds & pipes (Reverb, Gate Reverb, Space D / Stereo Delay /
+Mod Delay x1/3). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+"Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
+republish that page, send the zip.
 
 1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
    other medleys now"; Bald Mountain came first, then these): Jazz Age, Shanties & Folk, Bolero Ladder get the
