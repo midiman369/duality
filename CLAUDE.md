@@ -1,5 +1,31 @@
 # Notes for Claude Code sessions
 
+## Start here (every new session)
+
+- **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
+  `main`; development continues on `dev` (next build 1.0.001). Songs are not in this repo (see "Songs" below).
+- **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
+  switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
+- **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
+  medleys", "the pickers"), match it to Next up; if it is still unclear, ask before doing anything.
+- **Earlier conversations**: every past session's messages are in the duality-workdata clone,
+  `memory/<session>/user-requests.md` and `conversation.md` (get the clone with `python3 tools/backup_workdata.py
+  --clone`). Search them (e.g. `grep -n -i medley`) when the user refers to earlier work.
+- **Keep the scratchpad lean**: the whole scratchpad is backed up to Gitea. Don't rebuild songs or copy test files or
+  published pages into it just to check them; work on what the task needs.
+
+## Next up (2026-10-18; keep this list current)
+
+1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
+   other medleys now"; Bald Mountain came first, then these): Jazz Age, Shanties & Folk, Bolero Ladder get the
+   Halloween / Mars treatment. Details, sources and what needs the user's PDFs: duality-workdata `songs/NOTES.md`,
+   "Next up". The last plan was Jazz Age next; ask which first.
+2. **Prologue v3** (Halloween, 2026-10-18) waits for the user's listening notes.
+3. **Duality, primary goal step 3**: multi-input (live sources on several ports), see "Primary goal" below.
+4. Tabled ideas (below): only when the user picks one.
+
+## Reference
+
 - Develop on branch `dev`. After each change, send the user a zip of only the runtime files that changed
   in that version (e.g. `duality.py`, `tables_*.py`); leave out unchanged files, tests, tools and docs.
 - Releases (1.0.0, 2026-10-18; the user's decision): `main` holds only what a user needs (`tools/make_release.py`
