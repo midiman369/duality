@@ -232,6 +232,10 @@ The file's own insert always wins its home unit.
   way. Duality as a live router stays the primary goal: anything built here must leave the live path as it is.
   Seen on Bald Mountain 4-port with Anima: port C retyped Reverb -> Enhancer at the brass layer's first note
   (20.98 s), after the strings had taken the brass's unit while it was unheard (3.73 s).
+- **Drum EQ as an Anima family** (the user, 2026-10-18, tabled): a lowest-priority "boom" family (below fx) for the
+  drum part + a timpani channel (GM 48): Stereo-EQ Low +10 dB, Hi 0, EFX send to reverb 127 (from the user's Movie
+  Spectacular; `sc8850.drum_eq` has the addresses), only on a unit no other family wants, yielding like any owner;
+  settings in tables_gs with an on/off switch. Today the drum channel has no family (rule 3), so it never plans.
 - **Alchemy revival (GS<->XG)**: it broke because Duality could not set EFX properly back then; the insert
   work since 0.19 (per-unit placement, parameter addresses, Control Sources, Balance, reading the file's
   own EFX) removes that cause. Idea: on SC-8850 only, use the User Instrument banks (CC00 64/65) and user
