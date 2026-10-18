@@ -8,6 +8,8 @@
   `release/<version>` from origin/main in a worktree, then a pull request into main; the user merges it, then tag
   `v<version>` on main and attach the released songs (our originals only: onestop2, point_and_click_overture,
   adventure_game_night, the_hint_line, metal_gods; never public-domain or third-party ones unless the user says so).
+  Cloud sessions cannot push tags or create releases (HTTP 403): send the user the release notes (the CHANGELOG
+  entry + a song table) and the songs; they create the release on GitHub with a new tag on main.
   Versions: dev builds after a release are <release>.001, .002 ... (1.0.001); the next release is 1.1.0. README.md
   and CHANGELOG.md are written for main's readers (no version tags in the README, no private pages or songs).
 - Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware).
