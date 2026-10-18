@@ -95,8 +95,8 @@
   `BM_VAR` / `BM_PIZZ` / `BM4_VAR` in make_pd_halloween.py (names from tools/picker/tone_info.json, key
   "var-4-pc0"). Duality passes CC0 / CC32 through (checked with the player replay on 1 and 4 ports).
   The user's picks: Wide FreHrns kept, violins Quad Strings ("to big-up violins"), likes Cello sect. and
-  ContraBsSect. Ours on 4 ports only (their yes): `bm_layers()` on port D, a Gamelan Gong under the tam-tam
-  (GONG_NOTE D2), St.ChoirAahs under the ff held brass chords, Warm Atmos pad under the quiet stretches.
+  ContraBsSect. Ours on 4 ports only (their yes): `bm_layers()` on port D, St.ChoirAahs under the ff held brass
+  chords, Warm Atmos pad under the quiet stretches (the Gamelan Gong layer is gone: real gongs, below).
   The user's favourite 8850 tones (2026-10-18, use them across the suite): Twin bones, Bones & Tuba, Bs. Trombone,
   Bones Sect., the falls (Brass Fall, Trumpet Fall, F.Horn Rip), the pizz variations (St.Pizzicato, Solo Pizz.)
   and the spiccatos (StringsSpic., Solo Spic.). Bald Mountain 4-port uses them: `Seat(spic=[ch])` +
@@ -106,6 +106,24 @@
   Solo Pizz. / Solo Spic. layers (port D, PD8 / PD9 / PD11 / PD12, x0.45) double the top note of the violins',
   violas' and cellos' pizz and spiccato notes (`Seat(pizz_layers=, spic_layers=)`; spiccato notes no longer get
   the arco Atk. layer).
+- SC-8850 toolkit `tests/sc8850.py` (2026-10-18, the user: "save all these learnings ... in our tooling"; use it in
+  every new song / remix / edit for the 8850): kit maps (Orchestra extras: held Snare Roll 25, Concert Snare 24,
+  timpani 41-53 / 99-113, applause 88; the gongs are in the ETHNIC kit, PC 50: Big Gong 45, Small Gong 46, Bend 47,
+  Thai 48), `gong()` / `gong_strokes()` / `move_off_gongs()`, the legato-enabled tones (Instrument List ":") with
+  `mono()` / `legato_rows()`, the user's favourite tones, GS SysEx `gs()` / `hall()` / `drum_eq()`.
+  score_kit.render takes `gongs={part: home kit or None}`, `held_rolls={part: key}`, `legato=(channels)`.
+  Learned from the user's Movie Spectacular (Blue Max 1998, an upload, never in the repo): (1) gongs: the drum
+  channel switches to ETHNIC for a stroke and back (they ring on); a roll alternates Big / Small every third of a
+  beat loud to soft; an accent strikes both; (2) the hall: Reverb macro Hall 1 + Reverb Time 96, reverb sends high;
+  (3) the drum part + timpani through the insert Stereo-EQ, Low +10 dB, Hi 0, EFX send to reverb 127. With
+  several ports, give a spare port its own kit instead of switching (the user: "use multiple kits on other ports";
+  Bald Mountain 4-port: port B's kit is ETHNIC, so A + B still play everything). The Halloween suite now sets
+  the hall on every port at the start (`hall_setup`) and the drum EQ at each piece (`drum_eq_setup`, the piece's
+  timpani channel); `pd_kit.finish_parts` chases the last SysEx per address into each piece's file. Legato: the
+  piccolo and flute desks of Bald Mountain 4-port play Piccolo : / Flute 2 : in Mono mode with connected notes
+  (only channels that play one note at a time). Inferred from the MIDI Implementation, not yet from the owner's
+  manual p. 46 (Legato-enabled Sounds): confirm by ear. Duality passes CC126 / 127 and copies only 40 00-02 SysEx
+  from port A to every lane (insert and part assigns stay per port).
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
