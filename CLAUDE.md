@@ -129,6 +129,16 @@
   the brass note and never before its attack (`gesture_seconds`); each note takes the fall tone whose sample is
   nearest above it, and none more than GESTURE_BELOW (7) semitones under a sample (lower, the gesture drags).
   Rips play their whole gesture from a quarter beat before the entry; where in the sample the rip arrives is unknown.
+  2026-10-18 listening (`bm_extras`, ours): brass mirrors on the opposite side at mf and louder (4 ports, port D:
+  Fr.Horn 2 right for the horns, Brass ff left for trumpets / cornets, Bright Tb left for the trombones); bridges
+  (both versions: PD4 / 16-ch ch9): where the heavy brass (tp crn trb tuba brass) played 3+ beats and stops at f or
+  louder while the rest plays on loud, a soft St.Orch Brs double of the carrying line (horns, else winds / strings
+  top), fading over up to 8 beats ("at 28 ... keep a little brass in that cutover": bar 22; the user asked for the
+  same "conscious choice" wherever sections cut over); the opening (bars 1-12) gets a sustained St. Strings chord
+  read from each bar (bass, its stronger third, its fifth or sixth, only pitch classes played) and on 4 ports
+  StringsSpic. doubling the fast notes. score_kit: winds -5 dB, brass +1 dB, `thin_unisons` (a wind note doubling
+  another wind channel's same note at the same moment plays at 0.7), `brass_lift` (+8 velocity at f and louder:
+  the SC brass brightens).
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
