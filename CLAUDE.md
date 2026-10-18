@@ -10,6 +10,10 @@
   adventure_game_night, the_hint_line, metal_gods; never public-domain or third-party ones unless the user says so).
   Cloud sessions cannot push tags or create releases (HTTP 403): send the user the release notes (the CHANGELOG
   entry + a song table) and the songs; they create the release on GitHub with a new tag on main.
+  State (2026-10-18): 1.0.0 is published (release v1.0.0 on main aae9a4b, the five songs attached; no zip asset:
+  GitHub's source archives hold the program). dev's history was rewritten that day (git filter-repo) to drop the
+  song files, so every older dev commit id changed; the old history lives only in duality-workdata
+  `songs/history/*.bundle` (see `songs/README.md`). Never push an old clone's dev: it would bring the songs back.
   Versions: dev builds after a release are <release>.001, .002 ... (1.0.001); the next release is 1.1.0. README.md
   and CHANGELOG.md are written for main's readers (no version tags in the README, no private pages or songs).
 - Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware).
