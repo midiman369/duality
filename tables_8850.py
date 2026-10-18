@@ -1230,6 +1230,8 @@ ANIMA_TONE_TRAITS = {
     (3, 4, 57):     frozenset({"interval"}),        # Bones & Tuba: trombone & tuba, has lower register sub from tuba sound
     (8, 4, 57):     frozenset({"low"}),             # Bs. Trombone: flatter sound more bottom-end
     (16, 2, 60):    frozenset({"interval"}),        # Horn Orch: sounds like fifths with octaves
+    (10, 4, 61):    frozenset({"slow"}),            # Brass sfz: built-in sfz swell attack
+    (12, 4, 61):    frozenset({"slow"}),            # Brass sfz 2: built-in sfz swell attack
     (24, 4, 61):    frozenset({"interval"}),        # Octave Brass: has a +12
     (16, 2, 62):    frozenset({"interval"}),        # OctaveBrass: has a +12
     (16, 4, 62):    frozenset({"interval"}),        # Oct SynBrass: has +12

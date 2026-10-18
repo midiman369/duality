@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (dev 1.0.001)
+
+- Anima tone traits: Brass sfz and Brass sfz 2 (Brass Section variations) have a built-in sforzando swell, so a
+  part playing quick short notes on them goes back to the plain brass at its next rest.
+
 ## 1.0.0 (2026-10-18)
 
 The first release. Everything since 0.18.40, the last version on `main`; the development builds in between were
