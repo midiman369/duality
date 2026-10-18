@@ -139,6 +139,16 @@
   StringsSpic. doubling the fast notes. score_kit: winds -5 dB, brass +1 dB, `thin_unisons` (a wind note doubling
   another wind channel's same note at the same moment plays at 0.7), `brass_lift` (+8 velocity at f and louder:
   the SC brass brightens).
+  Then the whole suite and Mars (the user: "give the rest of the Halloween suite and Mars the full treatment"):
+  generic `score_kit.notes_of` / `place` / `mirror_rows` / `bridges`; make_pd_halloween `brass_extras` (mirrors PD1-3,
+  bridge PD4 or a resting 16-ch brass channel), `articulate4` + `ART4_PROG` + `ORCH4_VAR` + `LEGATO4` (spiccato
+  PC11 / PC12, solo layers PD8 / 9 / 11 / 12, Bs. Trombone PC9, Bones & Tuba PC13, Piccolo : / Flute 2 :) for
+  Mountain King (MK_VAR / MK_PIZZ / MK4_VAR, no bridges: its brass never drops out), Danse macabre (DM_*; Death's
+  fiddle on Violin Atk:) and Bald Mountain; the prologue (DI_VAR) and the Bach (BACH.VAR, BACH4["VAR"]) get the
+  tones only. Mars (make_pd_mars.py): GS mode + hall, VAR16 / PIZZ16 (col legno St.Pizzicato) / VAR4 (tenor tuba
+  on Euphonium), Big / Small Gong (16-ch kit switch; 4-port port C's kit ETHNIC), held snare rolls, spiccato +
+  Solo Spic. seats (PD9 / 11 / 12 / 13), legato PB1-3, thin_unisons / brass_lift, mirrors PD14-16, bridges PD8 /
+  16-ch ch8. sc8850.gong_strokes: soft rolls strike every beat (below mf) or two (below mp).
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
