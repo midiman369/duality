@@ -203,7 +203,7 @@ class Run:
             same = (oid == h) if oid else (dest.stat().st_size == st.st_size and sha256_file(dest) == h)
             if same:
                 self.cache[rel] = key + [h]
-                self.manifest.setdefault(rel, h)
+                self.manifest[rel] = h
                 return
         if has_secret(src, self.token, st.st_size):
             self.skipped.append(f"{rel} (holds a credential)")

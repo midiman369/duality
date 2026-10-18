@@ -30,7 +30,8 @@
   images, the transcript (32 MiB gzipped pieces of whole lines: only new pieces upload), memory extracts
   (`tools/transcript_memory.py`: conversation, user requests, compaction summaries), plans, tasks; shared: tests/midi,
   recordings, logs. Layout in the backup's README. The clone also holds `songs/` (the song generators, edited and
-  committed there by hand with their own messages; a backup run stages only its own folders, `OWNED`). Needs GITEA_TOKEN and GITEA_BACKUP_URL (environment variables;
+  committed there by hand with their own messages; a backup run stages only its own folders, `OWNED`; before a
+  hand commit there, wait for any running backup: `flock ~/.cache/duality-backup/lock true`). Needs GITEA_TOKEN and GITEA_BACKUP_URL (environment variables;
   cloud sessions only); it installs git-lfs, clones without LFS content beside the checkout, passes the token by a
   one-off credential helper and skips files that hold a credential; log ~/.cache/duality-backup/backup.log. Without
   the variables it does nothing: then send the user tarballs (each under 500 MiB) to push themselves.
