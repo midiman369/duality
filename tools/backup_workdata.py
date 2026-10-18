@@ -5,6 +5,8 @@
     python3 tools/backup_workdata.py --dry-run  list what would be copied, change nothing
     python3 tools/backup_workdata.py --hook     the Stop / SessionEnd hook: at most every BACKUP_INTERVAL seconds
                                                 (default 1800), in a detached background process; --force skips the wait
+    python3 tools/backup_workdata.py --clone    only make sure the clone exists (beside this checkout) and is current,
+                                                for working on its songs/ (the song generators live only there)
 
 What it copies (add and update only: nothing is ever deleted from the backup):
     scratchpad/<session>/        the session's scratchpad (no __pycache__, no backup tarballs)
@@ -18,7 +20,8 @@ What it copies (add and update only: nothing is ever deleted from the backup):
                                  plans/, tasks/, dev-commits.txt, SESSION.md
     tests-midi/, recordings/, logs/, checkout-ignored/.claude/   from the Duality checkout
     manifests/<session>.sha256   the checksum of every file this session's runs wrote
-Images, PDFs, zips and the transcript pieces go to Git LFS.
+Images, PDFs, zips and the transcript pieces go to Git LFS. A run stages only those folders (OWNED), so work in
+progress elsewhere in the clone (songs/, edited and committed by hand) is never swept into a backup commit.
 
 Configuration (environment variables): GITEA_TOKEN (an access token with repository read/write) and
 GITEA_BACKUP_URL (the repo's https URL); the URL may instead sit in ~/.config/duality-backup.env as
@@ -53,6 +56,8 @@ SCAN_LIMIT = 64 << 20               # files up to this size are scanned for cred
 LFS_PATTERNS = ["*.png", "*.PNG", "*.pdf", "*.PDF", "*.zip", "*.ZIP", "*.jpg", "*.jpeg", "*.JPG", "*.gif", "*.wav",
                 "*.mp3", "*.flac", "*.ogg", "*.mp4", "*.tar", "*.7z", "*.gz.part-*", "*.jsonl.gz"]
 SKIP_DIRS = {"__pycache__", ".git"}
+OWNED = ["scratchpad", "uploads", "session-images", "transcripts", "memory", "manifests", "tests-midi", "recordings",
+         "logs", "checkout-ignored", ".gitattributes"]
 SKIP_FILE = re.compile(r"(\.pyc$|^duality-workdata-.*\.tar(\.gz)?$)")
 CRED = re.compile(rb"ghp_[A-Za-z0-9]{30,}|gho_[A-Za-z0-9]{30,}|ghs_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|"
                   rb"sk-ant-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----")
@@ -319,7 +324,7 @@ def backup(sid, transcript, dry=False, echo=True):
         return 0
     ensure_lfs()
     clone = ensure_clone(url)
-    git(clone, "pull", "--rebase", "-q", "origin", "main", check=False)
+    git(clone, "pull", "--rebase", "--autostash", "-q", "origin", "main", check=False)
     paths = session_paths(sid, transcript)
     r = Run(clone, sid, token, dry)
     r.tree(paths["scratchpad"], f"scratchpad/{sid}")
@@ -361,7 +366,7 @@ def backup(sid, transcript, dry=False, echo=True):
         for rel in r.copied[:40]:
             print("  " + rel)
         return 0
-    git(clone, "add", "-A")
+    git(clone, "add", "-A", "--", *[o for o in OWNED if (clone / o).exists()])
     if git(clone, "diff", "--cached", "--quiet", check=False).returncode == 0:
         log("no changes", echo)
         return 0
@@ -376,7 +381,7 @@ def backup(sid, transcript, dry=False, echo=True):
             (STATE / "last-push").write_text(head + "\n")
             return 0
         log(f"push failed ({(p.stderr or '').strip()[-200:]}); rebasing and retrying", echo)
-        if git(clone, "pull", "--rebase", "-q", "origin", "main", check=False).returncode:
+        if git(clone, "pull", "--rebase", "--autostash", "-q", "origin", "main", check=False).returncode:
             git(clone, "rebase", "--abort", check=False)
             break
         time.sleep(5 * (attempt + 1))
@@ -389,12 +394,23 @@ def main():
     ap.add_argument("--hook", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--clone", action="store_true")
     ap.add_argument("--run", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--any-host", action="store_true")
     ap.add_argument("--session")
     ap.add_argument("--transcript")
     a = ap.parse_args()
     if os.environ.get("CLAUDE_CODE_REMOTE") != "true" and not a.any_host:
+        return 0
+    if a.clone:
+        url, token = config()
+        if not url or not token:
+            print("not configured: GITEA_BACKUP_URL / GITEA_TOKEN are not set")
+            return 1
+        ensure_lfs()
+        clone = ensure_clone(url)
+        r = git(clone, "pull", "--rebase", "--autostash", "-q", "origin", "main", check=False)
+        print(f"{clone}" + ("" if r.returncode == 0 else " (pull failed: working on the local copy)"))
         return 0
     payload = {}
     if a.hook and not sys.stdin.isatty():

@@ -55,184 +55,17 @@ The checksum (first 16 hex of SHA-256) confirms it is the same file.
 | `doom-game-223128.mid` | `IN-Duality-4-gs-20261001-223128.mid` (DOOM in DosBox, game mode: title, menu, E1M1, intermission, next cue) | `duality-20261001-223128.zip` | 24570 | `0fc14de4b7b5e584` |
 | `dirty-women.mid` | `Black_Sabbath_-_Dirty_Women.mid` (riffing vs lead lines: wah switch on/off candidate) | sent on its own | 36565 | `0f8364c3277fd742` |
 | `05orche.mid` | `05ORCHE.MID` (Roland's SC-8850 demo "Space Flight", 32 channels on ports A / B; multi-port test) | sent on its own (with its README.TXT) | 36611 | `ef4472b2c6ef1652` |
-| `Bach - Toccata e Fuga in Re min BWV565 2K.mid` (keep this name) | the same, R. Diodati's SCPOP2000 organ performance of BWV 565 (1997); `make_pd_halloween.py` reads it for its finale | sent on its own | 52299 | `bad8421e6de7b203` |
+| `Bach - Toccata e Fuga in Re min BWV565 2K.mid` (keep this name) | the same, R. Diodati's SCPOP2000 organ performance of BWV 565 (1997); the Halloween suite (duality-workdata `songs/`) reads it for its finale | sent on its own | 52299 | `bad8421e6de7b203` |
 
 The IN takes are Duality `--record` captures of the input stream (the
 song as the player sent it), so they are the song too and stay local.
 
-## Generated test song (no copyright, rebuild anywhere)
+## Songs we wrote
 
-`python tests/make_funk_test.py` writes `tests/midi/anima_funk_test.mid`: an original E dorian funk
-groove (100 BPM, ~85 s) for hearing Anima's EFX control. Drawbar organ with long held chords (rotary
-flips) and short skanks (no flip), 16th-note muted guitar and off-beat clean guitar (wah candidates),
-Rhodes comping and an alto sax melody in the bridge, a breakdown with the muted guitar alone.
-Seeds that deal both a rotary organ and a wah guitar with the 0.19.028 palettes: `359A` (both
-guitars on wah types, OD/Rotary), `5419` (Auto Wah, Rotary Multi on Control 2), `286A`, `0772`.
-
-`python tests/make_metal_test.py` writes `tests/midi/anima_metal_test.mid`: an original heavy
-metal piece (~106 s) for distorted-guitar EFX. Doom intro at 72 BPM (tritone riff), Priest-style
-gallop and twin harmony leads at 168 BPM, a 16-bar solo (runs, two-handed tapping, whammy vibrato,
-two dive bombs; bend range one octave), riff reprise and a doom outro with a final dive. Rhythm
-guitars hard left/right, lead centre so it can get a GTR Multi. Seeds that put the lead on
-GTR Multi 3 (wah on Control 1) with the 0.19.028 palettes: `08BA`, `0BC2`, `153B`, `2E9E`,
-`31A6`, `0249`, `1233`, `1BAC` (about 8% of seeds).
-
-`python tests/make_island_test.py` writes `tests/midi/anima_island_test.mid`: an original calypso piece
-(108 BPM, ~88 s) for hearing mallet sticking. Steel drums lead with chord hits in the intro, marimba
-ostinato and off-beat chords, a vibraphone melody in a minor cove section with xylophone answers, a
-xylophone break (runs, then held notes), glockenspiel sparkles, tubular bells at each section and a
-dulcimer harmony in the last chorus, over calypso bass, nylon skank and Latin percussion. Every mallet
-program is present; steel drums join the chromatic family (0.19.038), so they share a unit with the
-marimba, vibes, xylophone, glockenspiel and bells. Seeds that put that unit on a delay timed to the
-mallets' spacing, with the 0.19.037 palettes: `3F87` (Stereo Delay, dulcimer Cho→Delay), `08CA`
-(Tm Ctrl Delay), `4395` (3D Delay, dulcimer Stereo Delay), `06C3` (Cho→Delay on both).
-
-`python tests/make_onestop2.py` writes `tests/midi/onestop2.mid` (Format 1: a conductor track, then one named track per channel), "ONESTOP2 - A Brief History of Sound"
-(9:20, all 15 musical channels): medieval (a fingerpicked lute with runs and strums, low voices, a bagpipe reprise), baroque to classical,
-an organ-led cathedral crescendo, a honky-tonk rag into a Dixieland band, big band, boogie-woogie into Chuck Berry-style rock'n'roll on an
-overdrive guitar, a proto-synth machine (calliope synth ostinato, synth brass, Fantasia, Bass & Lead, analog blips and bloops on a TR-909)
-interleaved into analog synths (four on the floor on the 808), prog / hard rock (two rotary organ
-crescendos, 7/8, organ vs Moog), then a Dio-style epic, a power groove, a screaming solo (long bent
-notes over ringing chords), a NWOBHM gallop and a Priest-style anthem ending with the organ and choir.
-Plays complete on one SC-8850 (GM capitals, GS drum sets, no file EFX); built for Duality on six GS
-units. Every part is written in scale degrees of its section's key, and the build fails on a note
-outside the section's allowed pitch classes, on a silence over 1.5 s outside the one intended rest, or
-on a program change under a held note. Offline with seeds 0436, 1A2B, 7A18 (and 0436 in game mode): no
-type change under a sounding player, nothing hanging, about 99.8% of what Duality sends inside the
-file's local key (the rest are chords held longer than the 2 s check window). Seeds `FC6C`, `36D9`, `7386` (0.19.045) put the prog
-organ on Rotary Multi and the solo guitar (ch1) on GTR Multi 3 from the Dio section to the gallop;
-`946F` does the same with Rotary (21 of 240 scanned gave both). Seeds like `0197` and `6030` (0.19.052, 6 of 120 scanned) put the prog organ on Tremolo Chorus
-and the solo guitar on GTR Multi 3 instead: `0197`, `6030`, `5094`, `B42E`, `4890`, `EBA8`.
-
-`python tests/make_voodoo_demo.py` writes `tests/midi/point_and_click_overture.mid` (Format 1), "Point & Click Overture"
-(4:56), a Voodoo demo: a GM file (GM System On, GM capitals) in five original scenes in the style of LucasArts and
-Sierra adventure games (Monkey Island calypso, Sam & Max noir swing, King's Quest 3/4 storybook, Space Quest sci-fi
-march, Leisure Suit Larry lounge) and a finale on all 15 melody channels. Scene changes are CM-32L sound effects on
-ch10 (keys 82-108 as the CM-64 manual lists them, and Laughing / Screaming / Punch / Heartbeat / Footsteps 1-2 on
-keys 24-29, where Duality moves them for CM outs) over a melodic bridge (music box + pad) that plain MT-32s play
-alone; the build fails if a sound effect is ever the only thing sounding. Sam & Max's second half keeps the piano below the tune (chord tones only, the tenor above it; a first cut packed
-9ths / 13ths around the tenor and sounded atonal), and maj7 chords leave their root to the bass. Offline (0.19.058
-keeps Voodoo through the file's GM System On): three CM-64s (pool) 0 steals, 0 drops, at most 22 PCM partials and 10
-of 18 parts in use; one CM-64, live seats, 0 / 0, 24 partials; fixed seats 0 / 0 (ch16 has no seat there).
-
-`python tests/make_voodoo_demo2.py` writes `tests/midi/adventure_game_night.mid` (Format 1), "Adventure Game Night"
-(3:21), the second Voodoo demo: two original tunes over one progression (I vi IV V I vi ii V) that work as
-counterpoint. The Rascal's tune carries the LucasArts half (Monkey Island reggae, Sam & Max bebop chase at 208 with a
-big-band shout chorus), the Hero's tune the Sierra half (King's Quest dark forest in E minor, Space Quest synth
-odyssey, Leisure Suit Larry disco), and the finale plays both (no minor 2nd, major 7th or tritone between them at any
-of their 76 meetings), then all 15 melody channels. Sound-effect bridges as in the first demo. Offline: three CM-64s,
-one MT-32 + two CM-64s, three MT-32s and one CM-64 on fixed seats 0 steals, 0 drops; one CM-64 on live seats 1 steal
-(the PCM half full at 31 partials in the finale).
-
-`python tests/make_voodoo_demo3.py` writes `tests/midi/the_hint_line.mid` (Format 1), "The Hint Line" (3:57), the
-third Voodoo demo: a call to a game hint line (the phone rings, the operator answers, bossa hold music) where one
-original tune, the Wanderer, travels through five worlds in a key, metre and groove of their own: a Monkey Island
-hornpipe in 6/8 (D), a Sam & Max rockabilly road trip (A), a King's Quest royal procession (Bb), a Space Quest action
-chase (C minor, with a minor variant of bar 5), a Leisure Suit Larry cha-cha (G), then a finale on all 15 melody
-channels that broadens to 80 BPM before the phone rings again. Between worlds the hold music returns for two bars
-under the sound effects. Offline: three CM-64s, one MT-32 + two CM-64s, three MT-32s and one CM-64 (live or fixed
-seats) 0 steals, 0 drops; a CM-64 on live seats peaks at 29 PCM partials.
-
-Public-domain demos (`tests/make_pd_*.py`, shared helpers in `tests/pd_kit.py`): GM files (GM System On, GM capitals,
-Format 1) with our own arrangements of public-domain music, built with the checks of the Voodoo demos (notes in the
-section's key plus named chromatic notes, no program change under a held note, no silence over 1.5 s). The
-melodies were written from memory (no score at hand): each generator's docstring says which tunes are quoted and
-which parts are written in the composer's manner.
-
-- `make_pd_halloween.py` → `halloween_at_the_opera.mid` (38:31), v2: complete pieces from their scores, back to
-  back (like Mars, one transcription module each, rendered by `tests/score_kit.py`; the 6:05 medley of v1 is in git
-  history). Prologue: the whole Dies irae sequence from the Liber Usualis (`hw_dies_irae.py`, pp. 1810-1813), sung
-  alternatim by cantor, men's schola, upper voices and choir over organ, strings, brass, harp and bells (our
-  setting; the organ there is GM Church Organ with the flutes as its 4' rank and the bassoon as its pedal
-  reed); Grieg's In the Hall of the Mountain King (`hw_mountain_king.py`, IMSLP #363545); Saint-Saëns' Danse
-  macabre (`hw_danse_macabre.py`, #21204); Mussorgsky's original 1867 St John's Night on the Bare Mountain
-  (`hw_bald_mountain.py`, #17143, all 557 bars, its general pauses under a ppp bass-drum roll); and Bach's
-  Toccata and Fugue in D minor (`bach_bwv565.py`): R. Diodati's SCPOP2000 organ performance (notes and timing; the
-  user's file, kept local, see the table above; without it the suite ends with Bald Mountain) on the pipe organ
-  with our own registration, then orchestrated by us: the orchestra takes the fugue's voices as they enter
-  (strings, the pedal in cellos and basses, the Swell's echoes in the woodwinds, trombones, horns, trumpets,
-  timpani), the organ fades out, and it comes back under the orchestra for the Molto adagio. Dense pages are read
-  with approximate inner voices; each module's docstring and section comments say where.
-  Offline: six and two SC-8850s (`gm2+8850`) with Anima, three CM-64s, three MT-32s under Voodoo: 0 hanging
-  notes, 0 steals, 0 drops (CM-64 peak 23 PCM partials); one CM-64: 5 steals, peak 31.
-  The same run also writes `halloween_at_the_opera_4port.mid` (v3, 64 channels on ports A-D, for Duality's
-  player, 0.19.066): every part on a channel of its own. Port A: the strings in two desks each (a chord in a part
-  goes top-down to desk 1, 2), pizzicato and bowed tremolo on channels of their own (no program changes mid-part),
-  percussion, timpani, harp; port B: each woodwind player, horns, trumpets, trombones, tuba, a second percussion
-  kit, the prologue's extra organ ranks (4', 2', the pedal's 16'). A and B hold the whole suite. Port C adds solo
-  violin / viola / cello / bass layers over the sections and Brass Section under the horns and trombones, the
-  prologue's choir layers and second bell, the Bach's 2' mixture and closing choir; port D a four-part choir that
-  sings the prologue's chords (our setting). Each port asks for an SC-8850 (`duality: 8850`); seated left to
-  right with the strings drier in front. Offline through the player: two units (A, B), four (one per port) and
-  six SC-8850s (A and B two each): 0 hanging notes, 0 steals, 0 drops.
-- `make_pd_jazz.py` → `jazz_age.mid` (4:00): The Entertainer (intro and A strain, piano then band), a habanera and
-  blues after Handy, hot jazz after the Tiger Rag (trombone smears in the breaks), and a Rhapsody after Gershwin
-  (the low trill, run and glissando), then the Entertainer in Bb. Bends only slide into or fall off a note, so a
-  wider LA bender range makes a longer smear, not a wrong note.
-- `make_pd_bolero.py` → `bolero_ladder.mid` (5:07): Ravel's form, snare rhythm and ostinato with two themes of our
-  own; ch1 changes program at each of the 8 statements, so under Voodoo it moves between PCM and LA (offline,
-  three CM-64s and one: LA for flute / clarinet / bassoon / oboe / horn, PCM for tenor sax / trombone / strings).
-- `make_pd_folk.py` → `shanties_and_folk.mid` (6:31): Drunken Sailor, Greensleeves, Scarborough Fair, Amazing Grace
-  (bagpipe over its drone), When the Saints (first line, then second line) and Korobeiniki (folk melody only).
-- `make_pd_mars.py` → `mars.mid` (6:05): Holst's Mars, the Bringer of War, note for note from the full score
-  (Curwen edition, IMSLP #1014549; the transcription is `tests/mars_score.py`, bars 1-185, sounding pitches):
-  every part on 16 GM channels, one family each (strings col legno -> arco, organ after the harps), dynamics and
-  hairpins as velocities, fermatas and the final rall. as tempo. Offline: six and two SC-8850s (`gm2+8850`) with
-  Anima, three CM-64s, one CM-64 and three MT-32s under Voodoo: 0 hanging notes, 0 steals, 0 drops (one CM-64
-  peaks at 25 PCM partials). The same run also writes `mars_4port.mid` (64 channels, every player a channel):
-  port A the strings in two desks with col legno and bowed tremolo on their own channels, percussion, both
-  timpanists, harps; B each woodwind player, the side drum, the organ pedal; C each brass player, the organ
-  manuals; D only layers (solo strings over the sections, Brass Section under horns and trombones). Ports A-C
-  hold the score, so three units play all of it. Offline through the player: three, four and six SC-8850s: 0
-  hanging notes, 0 steals, 0 drops.
-- Each run of `make_pd_halloween.py` also writes every piece on its own, for both versions:
-  `halloween_1_dies_irae`, `_2_mountain_king`, `_3_danse_macabre`, `_4_bald_mountain`, `_5_bach_toccata_fugue`
-  (`.mid` and `_4port.mid`, next to the suite). They are cut from that same build (`pd_kit.finish_parts`), so the
-  notes, velocities, timing and channel state are exactly the suite's; each starts with the controllers, tempo
-  and key the suite has there. Checked note for note against the suite.
-- Line balance (Mars and the Halloween pieces, both versions; `score_kit.balance`): a phrase that moves like a
-  melody (not an ostinato, a tremolo, held notes, arpeggio / oom-pah figuration or the bass) and that the texture
-  around it covers more than its own doublings hold it up gets up to 3 dB more velocity, the same for the whole
-  phrase. So the side lines come through: in Mars the tenor tuba solos, the trumpet fanfares, the horns' octave
-  call and the trombone figures; in the Danse macabre climax the trombones' chromatic line; woodwind lines over
-  Bald Mountain's string tremolo. A line marked more than a dynamic under what covers it stays where the composer
-  put it. `score_kit.LOG` lists the phrases lifted (`score_kit.DEBUG = []` explains every phrase). The
-  prologue's harp plays louder too (by ear).
-
-Offline, all five: three CM-64s, one CM-64 (live seats) and three MT-32s under Voodoo, and two / four SC-8850s
-(`gm2+8850`) with Anima: 0 hanging notes, 0 steals, 0 drops (one CM-64 peaks at 29 PCM partials, Halloween).
-
-`python tests/make_metalgods.py` writes `tests/midi/metal_gods.mid` (Format 1), "A Tribute to the Metal Gods"
-(11:53): the user's own NWOBHM song, composed here from its lyric sheet (an earlier Suno MIDI export was too
-muddy to use). The lead guitar (ch1) sings the vocal melody and takes every solo over a hard-panned rhythm
-duo (ch3 / ch8, ch8 also plays the twin-guitar harmonies), bass and the SC-88Pro map's Standard 1 kit.
-The verses that name the bands take each reference's key, tempo, tuning, groove and signature intro or
-sound, with original riffs and melodies (no quotes): Black Sabbath (G against its tritone, rain, thunder,
-a church bell), Hallowed Be Thy Name's bell intro, a Maiden twin gallop, Iron Man (B minor, a slow dive),
-War Pigs (a five-voice air-raid siren from `make_siren_test.py` round 2, the big E chord ringing with a wide vibrato, two-chord pickups), Iron Maiden (gallop, gang chant), Rime's becalmed sea, Heaven
-and Hell, Sacred Heart, a drop-D Sabbath crawl taking flight, a Judas Priest suite (Night Crawler, a
-Painkiller drum intro, a Metal Meltdown dive bomb, The Sentinel's twin leads, The Ripper's scream,
-Turbo Lover's guitar synths, Jawbreaker), Rainbow / Dio (Tarot Woman's synth, Stargazer's drums and
-Eastern march, Children of the Sea's acoustic, Holy Diver's synth swell and riff with the rock organ),
-Pantera (Domination's riff and half-time breakdown, Art of Shredding), Slayer (South of Heaven, Raining
-Blood's rain, thrash, whammy chaos), Motorhead (Ace of Spades' bass intro and stops, Train Kept
-A-Rollin' with a passing train), King Diamond (At the Graves, Sleepless Nights, Abigail, Cremation)
-and a Black Horsemen closer (nylon arpeggios, the horsemen riding in, a slow epic build). Choir, timpani
-and SC variation tones for the effects (ch9 church bell; ch13-14 rain, thunder, wind, siren, train,
-horse gallop; a plain GM synth plays tubular bells, Seashore, Helicopter, Bird). GM capitals, GS reset,
-no file EFX, channel 16 left for foley. The build fails on a note outside its section's key (plus the
-section's extras: tritones, chromatic power chords), a program change under a held note, or a silence
-over 1.5 s. Each section's last lead phrase walks down onto the tonic; above 160 BPM the rhythm guitars pick 8ths with 16th pairs on the accents. The rock organ's program change comes just before its first note, so it takes a unit when
-it is heard. Offline on six GS units: no type change under a sounding player, nothing hanging, hitches
-only on Anima's foley. Seeds like `0197` (0.19.051, 13 of 120 scanned)
-give the lead GTR Multi 3 on its own unit all song, the organ a rotary type from Holy Diver through
-the big finish, and no dirt insert on the siren: `0197`, `DDBA`, `CB60` (Rotary Multi); `00A2`, `6030`,
-`2CEF`, `D9D3`, `FAA2`, `B699`, `B849`, `E1D7`, `7535`, `CDCC` (Rotary).
-
-`python tests/make_siren_test.py` writes `tests/midi/siren_test2.mid` (`ROUND=1`: `siren_test.mid`): air-raid
-siren candidates for the medley, the motor gesture (fast spin-up, wobble, slow wind-down, a second
-spin-up) on held notes with a 24-semitone bend, then two of them over an Iommi-style intro. Round 2's
-"J" (two saws a minor third apart, both doubled an octave down, a whistle on top) is the one in the medley.
+`tests/onestop2.mid` is ONESTOP2 - A Brief History of Sound, one of our own songs (released with Duality 1.0),
+kept here as test data: the doc images replay it. The song generators (ONESTOP2, the Voodoo demos, Metal Gods,
+the Anima listening tests, the public-domain arrangements and score transcriptions) live in the user's private
+duality-workdata repo, `songs/` (moved there 2026-10-18; never on GitHub). Their builds land in `tests/midi/`.
 
 ## Tests
 
@@ -264,7 +97,7 @@ joins its host's insert on purpose.
 
 `render_status.py`, `render_crucible.py` and `render_tables.py` regenerate
 `docs/images/` in a Windows Terminal frame (`wt_svg.py`). The panels and the
-Crucible stills replay ONESTOP2 (built by `make_onestop2.py` if missing, so no
+Crucible stills replay ONESTOP2 (`tests/onestop2.mid`, our own song, so no
 copyrighted song is needed): the hero at the screaming solo and the panel in the
 analog synths (seed FC6C, four GS units, an XG and an MT-32 out); the Crucible
 stills at the busiest moment of the big-band shout chorus, plus
