@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "0.18.40"
+VERSION = "1.0.0"
 
 
 """
@@ -28,20 +28,111 @@ Crucible (format-aware routing)
   • SCPOP / SC-ext (model-45 or banner, not LCD text) + optional --scpop
 
 Voodoo (MT-32 GM)
-  • MT-TO-GM or KQ6 bank on :mt32/:mt/:cm — --voodoo / M while already MT-32
+  • MT-TO-GM or KQ6 bank on :mt32/:cm32/:cm64 — --voodoo / M while already MT-32
+  • CM-64: ch11-16 of an LA stream go to its PCM half (31 partials, own steal)
+  • Voodoo on CM-32L / CM-64: the CM sound effects stay on drum keys 82-108 (76-81 move to 24-29)
+  • Voodoo on CM-64s: GM programs with a PCM tone (tables_cm64) play on PCM parts
+    (pool on 2+ units; one unit: live seats, or --cm64-seats fixed), or layered
   • Paced SysEx + queued input with elastic catch-up; exit on real MT-32 SysEx
+    or a GS / XG reset (a GM / GM2 System On keeps the loaded bank)
   • 1/2/3-unit maps; 4+ even units can use pairs (P); LA32 pan table
 
 Anima (opt-in)
-  • Velocity humanize, expr/mod ramps, guitar strum
-  • GS EFX: one insert per :gs port; OD1/OD2 guitar pack; file EFX stays put
-  • Foley: shared ch16 8850 SFX (CC0=CC00, CC32=0, PC 121/122)
-  • Seeded 8850 tone variations on capital 0/0 only — file bank always wins
-  • --anima-game / A cycle; single output allowed
+  • Velocity humanize, expr/mod ramps, guitar strum; CC1 returns to rest
+    on every unit, and each PC starts the new tone with CC1=0
+  • GS EFX: one insert per GS unit by family priority (tables_gs
+    ANIMA_EFX_PRIORITY), placed once after the PC dump. A playing part
+    takes a lower-priority unit in that owner's gap; lower parts wait until
+    the owner is stale. Never retypes under a sounding EFX player; one type
+    write per unit per 1.2 s; notes skip a unit for 150 ms after its type /
+    Part On changes. Notes are never delayed. Guitars pair on OD1/OD2 by pan.
+  • GS EFX palettes: all 64 SC-8850 / SC-88Pro insertion types (OM list
+    p.216), picked per family with weights set on the EFX Palettes page
+    (steps: ×2, ×3 … favoured, ×1/2, ×1/3 … less often; Jazz Gt. never
+    gets a wah, Harpsichord takes the piano's list).
+    After the pick: pan-capable types follow the file's CC10; delay times
+    follow the beat (MIDI clock, else note onsets) with feedback ≤ 50 %;
+    pitch shifters get a doubler / octave / fifth; Gate Reverb gets a seeded type
+    (Normal, Reverse, Sweep 1 or 2);
+    dirt inserts' Level follows a CC7/CC11 fade-out. CC16 drives only wah
+    and rotary types (on EFX Control 1 or 2, whichever holds the knob),
+    each unit on its own: the wah follows the player (picks quack, held
+    notes cry open, then rock / hold / close / follow the vibrato, seeded
+    per note; bends open it, fast runs stay narrow, silence = heel)
+    over a low Manual base (20; a hard high note held 0.5 s lifts it to 38, at most once per 8 s);
+    lead lines get GTR Multi 3 Peak 80, rhythm parts (chords, low notes)
+    Peak 48 and 60% of the pedal; rotary flips speed on a held chord. A
+    file's own set-and-left wah is played the same way until the file
+    writes EFX again.
+  • Game mode: a new cue plans only its own channels (its PC burst and
+    parts that play after it) and is placed right after the reroll.
+  • Fixed insert settings (tables_gs ANIMA_EFX_TYPE_SET, by ear): Overdrive
+    Level 80, GTR Multi 2 drive = Distortion, GTR Multi 3 Level 127 with its
+    players' CC7 ×1.2; OD1/OD2 both Distortion, OD1 Level 80. Organs on
+    rotary types get a CC7 lift. A tone's EFX level (Tone Palettes) moves
+    the insert's wet/dry Balance; the driest part on a unit wins.
+  • Hero split: a featured line on a shared unit may take a spare unit with
+    another type of its family (only when every family is placed and no
+    part makes harmony); it moves in a breath and yields to any family.
+  • Foley: shared ch16 8850 SFX (PC 121/122 variations)
+  • Ghosts: chord-tone harmony (≤ C7), bass/organ sub-octave on-channel,
+    dist-guitar unison on a spare GS unit (inherits EFX)
+  • Harmony balance: melody plays at 90% with its ghost above at 50%;
+    accompaniment (a part sounds above it, or a held chord under a moving
+    line) plays at 85% with its ghost below at 45%; a thin source gets both
+    sides. An upper ghost yields when a line starts over it; unisons are not
+    doubled. Tonal: thirds/sixths first, never a 2nd/tritone/7th against the
+    hero, no semitone rub with what sounds, no harmony on passing tones; the
+    chord includes notes struck in the last 0.8 s (picked arpeggios).
+  • Acoustic guitar plays at 112% while a sustained part at least as loud
+    sounds within an octave (its notes decay, theirs hold).
+  • Seat units: harmony plays on a GS unit no family has claimed, each
+    channel panned to the mirror of its hero (±5% seeded); two or more
+    spares are shared out by family. No spare: the hero's unit. With a seat,
+    "both sides" allows up to 3 other voices and seat ghosts get +5% (not
+    for a part that is already the loudest playing). A quiet seat gets a
+    gentle insert (tables_gs "seat": Space D at Balance D>50E, choruses, reverb); it ranks
+    below every family, which takes the unit once its harmony is quiet.
+  • Mallet sticking (glock, vibes, marimba, xylophone, bells, dulcimer, steel
+    drums): chords struck by hands (2/4 mallets); where the part leaves room
+    the seed adds a double, a triplet or a fading hand-to-hand roll. A new
+    note or program change cancels what is pending. Notes are never delayed.
+    On a delay insert the echoes follow the part's note spacing (12% fb).
+  • Featured lines: a fast single-note stepwise run, or a slow sustained
+    single-note tune, is found live (one at a time) and spotlit: lifted toward
+    the loudest part over it (≤×1.4); competing notes in its register play at
+    85% (75% within a tone of it); harmony keeps out of its way. Loudness is
+    velocity × CC7 × CC11, so a quiet-channel horn does not count as louder.
+  • Seeded tone colors on capital 0/0 only — file bank wins: every 8850-map
+    variation, older-map (55/88/88Pro) and CM-64 tones that are not copies,
+    weighted / switched off on the Tone Palettes page (tables_8850
+    ANIMA_TONE_PREFS). Tone traits from its notes keep LFO / rotary / delay /
+    pitch-shift inserts and harmony off tones that already have them, and send
+    one-shot, slow-attack or low-register tones back to the capital at a rest
+    when the part does not suit them.
+  • --anima-game / A cycle: 4 s of real silence resets; PC burst rerolls
+  • Single output allowed
+
+Player (0.19.065) and multi-port songs (0.19.066)
+  • --play FILE|FOLDER|WILDCARD … plays MIDI files through Duality itself (a
+    playlist, --play-loop repeats it); Space pause/play, N next, Z back, T stop.
+    Same path as live input (which keeps working with --input): routing,
+    Crucible, Voodoo, Anima and --record all apply. Reads the file's tempo map,
+    every SysEx and each track's MIDI Port marker (FF 21)
+  • A song on more than one port (32 / 48 / 64 channels) plays each port on
+    units of its own: every port that can play gets a unit, then the rest are
+    shared in blocks (A on 1-3, B on 4-6). A "duality: 8850" text event on a
+    port's track asks for a kind of unit ("duality: port C mt32 x2", any --outs
+    tag; "duality: 8850, cm64" = an 8850, else a CM-64); a port with no free unit of
+    its kinds is dropped. Port A's system SysEx
+    (resets, reverb / chorus, master volume) reaches every port's units. Each
+    port plays on a lane: a router of its own with the same settings; the
+    routing hotkeys reach the lanes, live input goes to port A's
 
 Record / log / panel
-  • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx)
-  • --log / --log-verbose; C clears; port health on session end
+  • --record / W: type-1 SMF per IN and OUT (Ch1–Ch16 + SysEx) → recordings/
+  • --log / --log-verbose → logs/duality-<stamp>.log, one per run and per
+    --record take (same stamp as its IN/OUT); C starts a new log; port health
   • Live meters, channel grid, Recent history, format badge, decoded SysEx
 
 Other
@@ -55,13 +146,17 @@ Hotkeys (input/stream format — not output tags)
 -------
 F clear input format   L lock/unlock input format
 G GM↔GM2   R GS   Y XG   M MT-32 (again = Voodoo GM)
-V Voodoo bank   P Voodoo layout   A Anima off/normal/game
-B balance↔rr   X reset+Anima   W record   C clear log   Q quit
+V Voodoo bank   P Voodoo layout   A Anima off/normal/game   S seed lock
+B balance↔rr   X reset+Anima   W record   C new log   Q quit
+With --play: Space pause/play   N next song   Z back   T stop
 
 Usage examples
 --------------
 # List ports
 python duality.py --list
+
+# Play a folder of songs (no live input), Anima on two SC-8850s
+python duality.py --play "C:\\MIDI\\Halloween" --outs "SCVA:gm2+8850" "SCVA2:gm2+8850" --anima
 
 # Two devices (classic)
 python duality.py --input "loopMIDI Port" --outs "MS40 A" "MS40 B"
@@ -113,6 +208,14 @@ from rich.progress import BarColumn, Progress, TextColumn
 from rich.table import Table
 from rich.text import Text
 from rich.markup import escape
+
+try:
+    from tables_cm64 import cm64_gm_pick, CM64_PCM_TONES, CM_VOODOO_SFX, CM64_PCM_GM
+except ImportError:   # older install: the CM-64 PCM half stays off under Voodoo
+    cm64_gm_pick = None
+    CM64_PCM_TONES = ()
+    CM_VOODOO_SFX = {}
+    CM64_PCM_GM = ()
 
 try:
     from tables_voodoo import (
@@ -179,6 +282,7 @@ VOODOO_SYSEX_GAP = 0.035          # seconds between DT1 SysEx during bank load
 # Bench: ~75ms of wall time per unit per paced step when all units share one
 # USB MIDI device — estimate uses max(gap, units × this) so the UI is honest.
 VOODOO_SEC_PER_UNIT_STEP = 0.075
+MIDI_WIRE_BYTES_PER_SEC = 3125.0  # 31250 baud, 10 bits a byte: a unit cannot take SysEx faster
 VOODOO_CATCHUP_MIN_GAP = 0.001    # floor gap between catch-up sends (was 8ms → too slow)
 VOODOO_CATCHUP_SPEED = 8.0        # compress original spacing by this factor
 VOODOO_CATCHUP_BURST = 48         # max messages drained per run-loop tick
@@ -208,6 +312,19 @@ FORMAT_ALIASES = {
     "gm": "gm",
     "gm2": "gm2",
     "gs": "gs",
+    "55": "gs55",
+    "sc55": "gs55",
+    "88": "gs88",
+    "88vl": "gs88",
+    "88pro": "gs88pro",
+    "88-pro": "gs88pro",
+    "880": "gs88pro",
+    "88emu": "gs88pro",
+    "8850": "gs8850",
+    "8820": "gs8820",
+    "sc8850": "gs8850",
+    "sc-8850": "gs8850",
+    "scva": "gs8850",
     "xg": "xg",
     "mt": "mt32",
     "mt32": "mt32",
@@ -215,26 +332,60 @@ FORMAT_ALIASES = {
     "cm": "cm32",
     "cm32": "cm32",
     "cm-32": "cm32",
+    "cm64": "cm64",
+    "cm-64": "cm64",
     "any": "any",
 }
 FORMAT_DISPLAY = {
     "gm": "GM",
     "gm2": "GM2",
     "gs": "GS",
+    "gs55": "55",
+    "gs88": "88",
+    "gs88pro": "88Pro",
+    "gs8850": "8850",
+    "gs8820": "8820",
     "xg": "XG",
     "mt32": "MT-32",
     "cm32": "CM-32L",
+    "cm64": "CM-64",
     "any": "ANY",
 }
+# LA-family outs (Roland MT-32 SysEx model 16h). A CM-64 is a CM-32L (LA parts on
+# MIDI ch 2-10) plus a CM-32P (PCM parts on ch 11-16, its own 31 voices).
+LA_TAGS = frozenset({"mt32", "cm32", "cm64"})
+CM64_PCM_CHANNELS = frozenset(range(10, 16))   # 0-based MIDI ch 11-16: the PCM half
+CM64_PCM_POLY = 31                             # PCM voices (the LA half uses the port's --poly)
+CM64_PCM_RX = (0x52, 0x00, 0x0A)               # CM-32P system area: MIDI channel of PCM parts 1-6
+# Partials per internal PCM tone, PC 1-64 (CM-64 manual p.12-13 "Ptl#"); the 31 PCM
+# voices are partials, so a 2-partial tone (A.PIANO 1-4, organs ...) fits 15 notes.
+# PC 65-128 are card sounds (not listed): counted as 1.
+CM64_PCM_PARTIALS = (
+    2, 2, 2, 2, 1, 1, 1, 2, 2, 2,   # 1-10   A.PIANO 1-9, E.PIANO 1/3/5
+    1, 2, 2, 1, 1,                  # 11-15  A.GUITAR 1/3/4, E.GUITAR 1/2
+    1, 2, 1, 1, 1, 2, 1, 1,         # 16-23  SLAP 3-12
+    1, 2, 1, 2, 1, 2,               # 24-29  FINGERED 1/2, PICKED 1/2, FRETLESS, AC.BASS
+    1, 1, 2, 2, 1, 1, 2, 2,         # 30-37  CHOIR 1-4, STRINGS 1-4
+    2, 2, 2, 2, 2, 2, 2, 2, 2,      # 38-46  E.ORGAN 2-13
+    1, 1, 1, 1, 1, 1, 2, 2,         # 47-54  SOFT TP 1/3, TP/TRB 1-6
+    1, 1, 1, 2,                     # 55-58  SAX 1/2/3/5
+    1, 1, 2, 2, 2, 1,               # 59-64  BRASS 1-5, ORCH HIT
+)
+# Power-on PCM parts 1-6 (manual p.18): FRETLESS 1, CHOIR 1, A.PIANO 1, E.ORGAN 1,
+# E.GUITAR 1, SOFT TP 1 — used until a part gets a program change.
+CM64_PCM_DEFAULT_PARTIALS = (1, 1, 2, 2, 1, 1)
+CM64_PCM_RESERVE = (0x52, 0x00, 0x04)          # partial reserve of PCM parts 1-6 (package of 6)
+CM64_VOODOO_RESERVE = (6, 5, 5, 5, 5, 5)       # Voodoo: even split of the 31 PCM partials
+CM64_POOL_IDLE_SEC = 10.0                      # a pool part whose owner rested this long may be taken
 
 # GM-family tags used when stream format is unknown (exclude pure MT-32)
-GM_FAMILY_TAGS = frozenset({"gm", "gm2", "gs", "xg"})
+GM_FAMILY_TAGS = frozenset({"gm", "gm2", "gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820", "xg"})
 
 def format_tags_label(tags) -> str:
     """Human label for a port capability set, e.g. GS+GM2."""
     if not tags or "any" in tags:
         return "ANY"
-    order = ["gs", "xg", "gm", "gm2", "mt32"]
+    order = ["gs", "gs8850", "gs8820", "gs88pro", "gs88", "gs55", "xg", "gm", "gm2", "mt32"]
     parts = [FORMAT_DISPLAY[t] for t in order if t in tags]
     for t in sorted(tags):
         if t not in order:
@@ -252,9 +403,9 @@ DETECT_TO_TAG = {
 FORMAT_COMPAT = {
     "gm": {"gm", "gm2"},   # GM always reaches GM2 ports
     "gm2": {"gm2"},
-    "gs": {"gs"},
+    "gs": {"gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820"},
     "xg": {"xg"},
-    "mt32": {"mt32"},
+    "mt32": set(LA_TAGS),   # an MT-32 stream plays on any LA-family out (CM-32L, CM-64 too)
 }
 
 from tables_gs import (
@@ -264,19 +415,58 @@ from tables_gs import (
     GS_EFX_TYPES,
     ANIMA_EFX_GS,
     ANIMA_EFX_PRIORITY,
+    ANIMA_SEAT_BALANCE,
+    ANIMA_EFX_BALANCE_DEFAULT,
     ANIMA_SPLIT_MSB,
     ANIMA_SPLIT_LSB,
     ANIMA_SPLIT_LABEL,
+    ANIMA_SPLIT_OD1_SEL,
+    ANIMA_SPLIT_OD1_LEVEL,
+    ANIMA_SPLIT_OD2_SEL,
     ANIMA_SPLIT_PAN_LO,
     ANIMA_SPLIT_PAN_HI,
     ANIMA_EFX_DRIVE_03,
     ANIMA_EFX_WAH,
+    ANIMA_EFX_WAH_MAN,
+    ANIMA_EFX_WAH_PEAK,
+    ANIMA_WAH_PEAK_RHYTHM,
+    ANIMA_EFX_WAH_MAN_DEFAULT,
+    ANIMA_EFX_WAH_SWITCH,
+    ANIMA_WAH_MAN_BASE,
+    ANIMA_WAH_MAN_SCREAM,
+    ANIMA_EFX_CTRL2,
     ANIMA_EFX_ROTARY,
     ANIMA_HETFIELD_PC,
     ANIMA_FILE_DIRT_TYPES,
     ANIMA_FILE_DIRT_FAMS,
     ANIMA_EFX_PAN_SLOT,
+    ANIMA_EFX_PAN_PARAMS,
+    ANIMA_EFX_PAN_PAIR_SPREAD,
+    GS_DLY_MS,
+    ANIMA_EFX_DELAY,
+    ANIMA_EFX_FB_CAP_PCT,
+    ANIMA_EFX_FB_PCT,
+    ANIMA_EFX_FB_PCT_HELD,
+    ANIMA_EFX_FB_HELD_FAMS,
+    ANIMA_EFX_PITCH,
+    ANIMA_EFX_PITCH_MODES,
+    ANIMA_EFX_PITCH_FAM_MODES,
+    ANIMA_EFX_PITCH_DEFAULT_MODES,
+    ANIMA_EFX_GATE_TYPE,
+    ANIMA_EFX_BALANCE_ADDR,
+    ANIMA_EFX_BALANCE_TYPES,
+    ANIMA_EFX_LEVEL_DRY,
+    ANIMA_EFX_LEVEL_WET,
+    ANIMA_EFX_LFO_TYPES,
+    ANIMA_EFX_NO_WAH_PROGS,
+    ANIMA_EFX_ROTARY_TYPES,
+    ANIMA_EFX_PITCH_TYPES,
+    ANIMA_EFX_DIRT_LEVEL,
+    ANIMA_EFX_TYPE_SET,
+    ANIMA_EFX_EXCLUSIVE,
+    GS_EFX_PARAMS,
 )
+from tables_voices import gs8850_tone_voices
 from tables_xg import (
     XG_REVERB_TYPES,
     XG_CHORUS_TYPES,
@@ -294,6 +484,7 @@ from tables_xg import (
 )
 from tables_anima import (
     MT32_REVERB_MODES,
+    MT32_TO_GM,
     _MT32_DEFAULT_CAT,
     _gm_category,
     _mt32_category,
@@ -304,6 +495,8 @@ from tables_anima import (
     ANIMA_MOD_CATS,
     ANIMA_TONE_VARS,
 )
+from tables_8850 import anima_cm_to_gm, anima_tone_slots, anima_combo_ok, ANIMA_TONE_RARE, anima_tone_pref, anima_tone_weight, anima_tone_traits
+from tables_8850 import anima_tone_stepdown, anima_tone_sweep_scale
 
 
 def _roland_checksum(body: list[int]) -> int:
@@ -353,6 +546,21 @@ def _voodoo_channel_plan(
     for i, ch in enumerate(melody):
         buckets[i % n_units].append(ch)
     return [b[:8] for b in buckets]
+
+
+_CM64V_TYPES = frozenset({
+    "note_on", "note_off", "control_change", "program_change", "pitchwheel", "aftertouch",
+    "polytouch",
+})
+
+
+def _bank_la_channels(bank: list) -> list[int | None]:
+    """0-based MIDI channel of LA parts 1-8 as a Voodoo bank's System block sets them (None = off)."""
+    for m in bank:
+        b = list(m)
+        if len(b) >= 7 + 21 and b[:7] == [0x41, 0x10, 0x16, 0x12, 0x10, 0x00, 0x00]:
+            return [v if v < 16 else None for v in b[7 + 13:7 + 21]]
+    return list(range(1, 9))   # factory MT-32 map: parts on ch 2-9
 
 
 def _voodoo_unit_map_sysex(melody_chs: list[int]) -> list[bytes]:
@@ -406,17 +614,41 @@ ANIMA_HUMANIZE_HOT_DOWN = 7     # max decrease when hot
 ANIMA_HUMANIZE_HOT_UP = 3       # max increase when hot
 ANIMA_REPEAT_IOI = 0.11         # seconds – near-grid repeat window
 ANIMA_REPEAT_VEL_SLACK = 2      # velocities within this count as "same"
-ANIMA_EXPR_FLOOR = 36           # min CC11 when Anima drives expression
+ANIMA_EXPR_FLOOR = 100          # min CC11 — velocity already carries dynamics
+ANIMA_EXPR_SHAPE_CATS = frozenset({"strings", "ensemble", "brass", "pad"})
+ANIMA_EXPR_SHAPE_HOLD = 0.40    # seconds held before fp / swell / sfz-cres
+ANIMA_EXPR_SHAPE_FP_DIP = 0.16  # fp / sfz drop window
+ANIMA_EXPR_SHAPE_NAMES = ("swell", "fp", "sfz")
 ANIMA_MOD_HELD_SEC = 0.45       # default hold before light auto-mod
 ANIMA_MOD_LEVEL = 18            # default gentle CC1
 # Brass/wind: engage sooner + slightly stronger vibrato/breath motion
 ANIMA_MOD_HELD_SEC_WIND = 0.32  # user-tuned
 ANIMA_MOD_HELD_SEC_MT32 = 0.18  # MT-32 has no CC11; CC1 speaks sooner
 ANIMA_MOD_LEVEL_WIND = 28
+# Inserts that already LFO the pitch/time. Stacking CC1 on these is the
+# ONESTOP "wild wobble" (Mod Delay + wind CC1=28, Phaser + lead CC1).
+ANIMA_LFO_EFX = frozenset({
+    (0x01, 0x20),  # Phaser
+    (0x01, 0x23),  # Stereo Flanger
+    (0x01, 0x51),  # Mod Delay
+    (0x01, 0x22),  # Rotary
+    (0x03, 0x00),  # Rotary Multi
+    (0x11, 0x00),  # Cho/Delay
+    (0x11, 0x01),  # FL/Delay
+    (0x11, 0x08),  # PH/Auto Wah
+    (0x01, 0x03),  # Humanizer
+})
 ANIMA_FILE_CC11_HOLD = 2.0      # if file sent CC11 recently, do not override
 ANIMA_STATUS_GAP = 2.5          # min seconds between Anima status-line flashes
 ANIMA_EXPR_DEFAULT = 127        # GM default (full) – return here on idle
 ANIMA_IDLE_SEC = 0.28           # quiet time before ramping back to defaults
+ANIMA_STAB_SEC = 0.14           # last note shorter than this: do not duck CC11
+ANIMA_ORGAN_VOL_LO = 75         # at this CC7 (and below): ×1.4
+ANIMA_ORGAN_VOL_GAIN_LO = 1.4
+ANIMA_ORGAN_VOL_HI = 127        # ×1.0 — no lift at full
+ANIMA_ORGAN_VOL_GAIN_HI = 1.0
+# GTR Multi 3 sits under the other dirt types in a mix even at Level 127: lift its players' CC7.
+ANIMA_WAH_GTR_VOL_GAIN = 1.2
 ANIMA_RAMP_MOD_UP = 55          # CC1 units / second (joystick-like)
 ANIMA_RAMP_MOD_DOWN = 70
 ANIMA_RAMP_EXPR_UP = 80         # CC11 units / second
@@ -426,6 +658,7 @@ ANIMA_CC_GAP = 0.003            # min seconds between Anima CCs on a port
 # Thin high-rate channel streams so DIN-speed modules (MS40 via M8U)
 # are not asked to eat > MIDI 31.25 kbps (e.g. 190 pitchbends / 100ms).
 STREAM_THIN_SEC = 0.008         # min gap per channel for pitch/AT/CC1
+GS_88PRO_SYSEX_GAP = 0.004      # 88emu-88Pro drops burst DT1; space GS SysEx
 # Strum (plucked / guitar)
 ANIMA_STRUM_COLLECT = 0.010     # gather window before a stroke
 ANIMA_STRUM_STEP = 0.0035       # seconds between strings
@@ -436,12 +669,162 @@ ANIMA_BURST_HOLE = 0.280        # gap that ends a train
 ANIMA_BURST_PICKUP = (0.004, 0.012)
 ANIMA_BURST_RELEASE = (0.0, 0.0)     # off-hold raced new ons; keep mutes tight
 ANIMA_STRUM_CATS = frozenset({"guitar"})
-ANIMA_FOLEY_VEL = (58, 88)
-ANIMA_FOLEY_MS = 0.048
-ANIMA_FOLEY_GAP = 1.35          # phrase-level, not every riff note
-ANIMA_FOLEY_JUMP = 4
+# Block-chord unroll (no extra pitches). Wider than a guitar stroke.
+ANIMA_UNROLL_PCS = frozenset(
+    list(range(8, 16)) + [45, 46, 104, 105, 106, 107, 108, 112, 114]
+)  # chromatic perc + pizz/harp + sitar/banjo/shamisen/koto/kalimba + tinkle bell/steel drums
+ANIMA_UNROLL_COLLECT = 0.016
+ANIMA_UNROLL_STEP = 0.014
+ANIMA_UNROLL_JITTER = 0.004
+# Mallet sticking: a chord is struck by hands (2/4 mallets), and when the part
+# leaves room before its next note the seed adds a double, a triplet or a roll.
+# Celesta and music box are keyboards / combs: they keep the plain unroll.
+ANIMA_MALLET_PCS = {
+    9: "bell", 14: "bell", 112: "bell",    # glockenspiel, tubular bells, tinkle bell
+    11: "vibes",                           # vibraphone: doubles and triplets, rarely rolls
+    12: "roll", 13: "roll", 15: "roll", 114: "roll",   # marimba, xylophone, dulcimer, steel drums
+}
+ANIMA_MALLET_ODDS = {                      # share of roomy notes that get each ornament
+    "bell": (("double", 0.22), ("triplet", 0.08)),
+    "vibes": (("double", 0.20), ("triplet", 0.14)),
+    "roll": (("roll", 0.30), ("double", 0.18), ("triplet", 0.14)),
+}
+ANIMA_MALLET_HAND_GAP = 0.018  # second hand of a chord lands this much after the first
+ANIMA_MALLET_MIN_SPACE = 0.20  # the part's usual gap between notes, at least
+ANIMA_MALLET_ROLL_SPACE = 0.45 # a roll needs this much room
+ANIMA_MALLET_WAIT_MAX = 0.25   # a stroke waits at most this long for its note's queued on
+ANIMA_MALLET_ROLL_STEP = 0.075 # hands alternate this fast in a roll
+ANIMA_MALLET_END = 0.70        # extra strokes finish within this share of the gap
+ANIMA_MALLET_VEL = 0.68        # first extra stroke vs the note's velocity
+ANIMA_MALLET_FADE = 0.88       # each further stroke
+ANIMA_MALLET_LEN = 0.080       # extra stroke length when the file's note has ended
+# A mallet part on a delay insert: echoes follow the part's own note spacing
+# with a light feedback. Each type's longest tap lands on the part's next note
+# when that type reaches that far (Tm Ctrl Delay 1 s, the others 500 ms);
+# a longer spacing folds to half of it (still on the part's grid). The random
+# ornaments stay. A pitch shifter adding a fifth makes triplets and rolls less
+# likely (they would turn into a wash); mallets get doubler / octave-up today.
+ANIMA_MALLET_DLY_FB_PCT = 12
+ANIMA_MALLET_SHIFT_DAMP = 0.5
+ANIMA_ACOUSTIC_PCS = frozenset({24, 25})  # nylon / steel — slightly more harp-like
+ANIMA_PLUCK_LIFT = 1.12      # acoustic guitar under sustained parts (its notes decay, theirs hold)
+ANIMA_SUSTAIN_CATS = frozenset({"wind", "brass", "strings", "ensemble", "pad", "organ", "lead"})
+# Harmony: chord-tones from held notes; octave if we cannot see a chord.
+ANIMA_HARM_CATS = frozenset({"brass", "wind", "strings", "ensemble", "pad"})
+ANIMA_HARM_VEL = 0.50       # ghost vs the file's velocity: melody line
+ANIMA_HARM_HERO = 0.90      # the harmonised note itself: melody line, thin source
+ANIMA_HARM_ACC_VEL = 0.45   # accompaniment (another part sounds above it)
+ANIMA_HARM_ACC_HERO = 0.85
+ANIMA_HARM_LOW_VEL = 0.45   # lower voice when a thin source gets both sides
+ANIMA_HARM_RECENT = 0.60    # a part that struck within this still counts as sounding
+ANIMA_HARM_FLOOR = 48       # no lower harmony ghost below C3 (mud)
+ANIMA_HARM_CTX = 0.8        # notes struck this recently still colour the chord (picked arpeggios)
+ANIMA_HARM_RUB_CTX = 0.25   # ... but only notes this recent can still rub against a harmony
+ANIMA_HARM_THIN_SEAT = 3    # with a seat unit (harmony on the other side) "thin" allows more voices
+ANIMA_SEAT_VEL_ADD = 0.05   # a harmony on a seat unit is heard apart from its hero: a touch louder
+ANIMA_HARM_ACC_UP_MIN = 52  # accompaniment below this gets no ghost above (bass lines stay low)
+# Seat units ("second desk"): a GS unit no family or file insert has claimed
+# plays the harmony ghosts, each channel panned to the mirror of its hero
+# (flute at 44 → harmony at 84). One spare takes every family; two or more are
+# shared out by family. A claimed unit stops being a seat. No spare: the
+# hero's unit, as before. Sub-octaves, mallet strokes and dirt unisons stay put.
+ANIMA_SEAT_JITTER = 0.05      # ± share of the pan range added to the mirror (seeded per channel)
+ANIMA_SEAT_CENTRE = 8         # a hero within this of 64 counts as centred ...
+ANIMA_SEAT_CENTRE_SPREAD = 32 # ... and its harmony goes this far to a seeded side
+ANIMA_HARM_THIN = 1         # other voices at most this many: thin source, harmony on both sides
+ANIMA_HARM_CHORD_SEC = 1.0  # a channel that held a chord this recently is chordal
+ANIMA_HARM_QUIET_CATS = frozenset({"sfx", "percussive", "fx", "bass"})  # not "another part"
+ANIMA_HARM_HOLD = 0.080  # ignore passing tones younger than this
+# Featured lines ("other heroes"): a fast, mostly single-note, mostly stepwise
+# part in the middle/top register (97: the ch3 string solo under a loud pad).
+ANIMA_LINE_WIN = 2.0         # seconds of onsets looked at
+ANIMA_LINE_MIN_NOTES = 6
+ANIMA_LINE_RATE = 2.5        # notes per second, at least
+ANIMA_LINE_MONO = 0.75       # share of onsets with nothing else held on the channel
+ANIMA_LINE_STEP = 0.50       # share of moves of a tone or less (arpeggios leap)
+ANIMA_LINE_MIN_NOTE = 55     # median pitch, at least (G3)
+ANIMA_LINE_HOLD = 1.0        # stays featured this long after its last note
+ANIMA_LINE_LIFT = 0.60       # close this share of the gap to the loudest part over it
+ANIMA_LINE_LIFT_MAX = 1.40   # never more than this times the file's velocity
+ANIMA_LINE_DUCK = 0.85       # other parts starting in the line's register
+ANIMA_LINE_DUCK_NEAR = 0.75  # ... within a tone of the line's current note (unison masking)
+ANIMA_LINE_COMPETE = 0.90    # only duck a note at least this loud vs the line's last note
+ANIMA_LINE_COMPETE_NEAR = 0.60  # ... or this loud when within a tone of it (unison masks)
+ANIMA_LINE_RANK = 1.5        # a line this many times busier outranks another
+ANIMA_LINE_MARGIN = 8        # lift aims this far over the loudest part over it
+# Slow featured line: a sustained single-note tune (97 at 2:50: ch4 Metal Pad
+# playing a violin-like line under a string chord and a fast arpeggio).
+ANIMA_LINE_SLOW_WIN = 6.0
+ANIMA_LINE_SLOW_NOTES = 4
+ANIMA_LINE_SLOW_RATE = 0.4   # notes per second, at least
+ANIMA_LINE_SLOW_MAX = 3.0    # and at most (faster is an arpeggio or a fast line)
+ANIMA_LINE_SLOW_LEGATO = 0.75  # share of notes that follow the last one without a gap
+ANIMA_LINE_SLOW_MOVE = 5     # most moves are a fourth or less (no arpeggio leaps)
+ANIMA_LINE_SLOW_HOLD = 2.5   # stays featured this long after its last note
+ANIMA_HARM_TEMPLATES = (
+    ((0, 4, 7, 11), "maj7"),
+    ((0, 3, 7, 10), "m7"),
+    ((0, 4, 7, 10), "7"),
+    ((0, 3, 7, 11), "mMaj7"),
+    ((0, 3, 6, 9), "dim7"),
+    ((0, 3, 6, 10), "m7b5"),
+    ((0, 4, 8), "aug"),
+    ((0, 3, 6), "dim"),
+    ((0, 4, 7), "maj"),
+    ((0, 3, 7), "min"),
+    ((0, 5, 7), "sus4"),
+    ((0, 2, 7), "sus2"),
+    ((0, 7), "pow"),
+)
+ANIMA_FOLEY_VEL = (36, 64)
+ANIMA_FOLEY_MS = 0.070
+ANIMA_FOLEY_GAP = 1.85          # phrase-level, not every riff note
+ANIMA_FOLEY_GAP_JITTER = 0.45
+ANIMA_FOLEY_SKIP = 0.18         # drop some hits so it is not a grid
+ANIMA_FOLEY_JUMP = 5
 ANIMA_FOLEY_SLIDE = 7
+ANIMA_FOLEY_BEND = 380          # mild scoop (~¼–½ st at range 2)
+ANIMA_FOLEY_BEND_SEC = 0.09
+ANIMA_FOLEY_BEND_JUMP = 12      # only wide leaps get a bend
+ANIMA_FOLEY_CC7 = 82
+ANIMA_FOLEY_CC91 = 100  # a bit of hall on noise so it sits in the mix
+ANIMA_FOLEY_EFX_PRE = 0.028   # EFX On before the SFX note
+ANIMA_FOLEY_EFX_POST = 0.045  # keep the insert through the tail
 ANIMA_FOLEY_IDLE = 8.0
+ANIMA_GHOST_POLY_FRAC = 0.70   # skip ghosts when port is this full
+ANIMA_GHOST_SUB_VEL = 0.55
+ANIMA_GHOST_UNI_VEL = 0.72
+ANIMA_GHOST_MIN_NOTE = 24      # no sub-octave below C1
+ANIMA_GHOST_LOG_SEC = 2.5
+# Waveform sub (Bass Multi / organ stack): GM PC, 0-based
+ANIMA_WAVE_SUB_PCS = (80, 81, 38)   # Square, Saw, Synth Bass 2 (legacy fallback)
+ANIMA_WAVE_SUB_CC7 = 127            # cap; actual send is 60% of source CC7
+ANIMA_WAVE_SUB_VOL = 0.60           # vs the hero part's CC7
+ANIMA_WAVE_SUB_VEL = 0.75           # sit under the hero, not beside it
+# Named 8850 variations on Square / Saw / SynBass 1 / SynBass 2.
+# slot = (cc00, cc32=4, pc 0-based, name). adapt_tone_slot shrinks for 88Pro/88/55.
+ANIMA_BASS_SUB_SOFT = (
+    (9, 4, 80, "Sine Lead"),
+    (11, 4, 80, "Twin Sine"),
+    (35, 4, 38, "OB sine Bass"),
+    (19, 4, 39, "Smooth Bass"),
+    (32, 4, 39, "Mild Bass"),
+    (17, 4, 39, "SH101 Bass 1"),
+    (18, 4, 39, "SH101 Bass 2"),
+)
+ANIMA_BASS_SUB_HARD = (
+    (4, 4, 80, "CC Solo"),
+    (10, 4, 80, "KG Lead"),
+    (24, 4, 80, "Pulse Lead"),
+    (8, 4, 81, "Doctor Solo"),
+    (21, 4, 38, "Jungle Bass"),
+    (34, 4, 38, "AtkSineBass"),
+    (21, 4, 39, "Spike Bass"),
+)
+ANIMA_BASS_SUB_SLOTS = ANIMA_BASS_SUB_SOFT + ANIMA_BASS_SUB_HARD
+# Picked / slap — already a hard front. Syn-bass click is the same idea.
+ANIMA_BASS_HARD_PC = frozenset({34, 36, 37, 38, 39})
+ANIMA_FOLEY_DRUM_GATE = 0.14  # skip foley this close to a ch10 hit
 # SC-8850 Inst. List ~p.184 SFX: PC 121/122 + GS variations (CC32)
 # (pc 0-based, bankLSB, keys)
 ANIMA_FOLEY_SPEC = {
@@ -452,7 +835,7 @@ ANIMA_FOLEY_SPEC = {
     "bass_electric":   (120, 2, (36, 38, 40)),
     "bass_acoustic":   (120, 2, (36, 38)),
     "bass_wide":       (120, 5, (48, 50, 52)),
-    "ethnic_wind":     (121, 1, (72, 74, 76)),
+    "ethnic_wind":     (121, 0, (60, 64, 67)),
     "harmonica":       (121, 0, (60, 62, 64)),
 }
 ANIMA_FOLEY_HOLD = 0.022
@@ -468,6 +851,7 @@ ANIMA_FOLEY_CAT = {
 
 ANIMA_FILE_EFX_HOLD = 1e9   # file-owned EFX lasts until GS Reset / format clear
 ANIMA_SESSION_IDLE_SEC = 30.0  # quiet MIDI → drop Anima EFX/slot state
+ANIMA_EFX_ECHO_SEC = 0.5      # own SysEx seen back on IN within this = echo
 ANIMA_GAME_IDLE_SEC = 4.0      # --anima-game: shorter "new cue" silence
 ANIMA_GAME_PC_BURST = 3        # PCs in a window = song setup dump
 ANIMA_GAME_PC_WINDOW = 0.28
@@ -475,10 +859,521 @@ ANIMA_GAME_PC_SETTLE = 0.12
 ANIMA_GAME_SNAP_DIFF = 3       # channels whose PC changed vs last cue
 ANIMA_EFX_IDLE_SEC = 15.0   # keep current EFX this long after hero goes quiet
 ANIMA_EFX_HOLD_SEC = 5.0    # family stays "sounding" this long after last note
-ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX *type* changes (priority upgrade exempt)
-ANIMA_EFX_CTRL_CC = 16    # 8850 EFX C.Src1 → CC16 after one SysEx bind
-ANIMA_WAH_LFO_HZ = 0.55
+ANIMA_EFX_ARM_SEC = 12.0    # unused by the 0.19 planner; kept so older logs stay readable
+# Hero split: a featured line whose family shares one unit gets a spare unit of its own
+# with a different type of the same family (only when every family is placed and no
+# part makes harmony, since seat units then want every spare). Type goes onto the empty unit first; the hero moves over
+# in a breath at least PREP_SEC later (Part On there, unpin + Part Off on the old unit).
+ANIMA_HERO_SPLIT_PREP_SEC = 0.30
+ANIMA_HERO_SPLIT_BREATH = 0.25   # the hero has been silent this long (notes, ghosts, strums)
+ANIMA_HERO_SPLIT_WAIT = 10.0     # give a prepared unit back once the hero is no longer featured past this
+ANIMA_HERO_SPLIT_SKIP = frozenset({"guitar_dist", "seat", "file_park"})
+# Tone traits (tables_8850.ANIMA_TONE_TRAITS): a marked tone the part does not suit goes back
+# to the capital once, at a rest (never under a note), or one step down a tone set
+# (tables_8850.ANIMA_TONE_STEPDOWN, 0.19.050). Counts since the program change.
+ANIMA_TRAIT_LONG_SEC = 0.60     # "short" stab: notes held longer than this ...
+ANIMA_TRAIT_LONG_N = 2          # ... this many times
+ANIMA_TRAIT_QUICK_SEC = 0.25    # "slow" attack: notes shorter than this, onsets closer than
+ANIMA_TRAIT_QUICK_GAP = 0.35    # this ...
+ANIMA_TRAIT_QUICK_N = 4         # ... this many times
+ANIMA_TRAIT_HIGH_NOTE = 67      # "low" register: notes at or above G4 ...
+ANIMA_TRAIT_HIGH_N = 2          # ... this many times
+ANIMA_TRAIT_SWEEP = ((36, 2.0), (72, 0.0))   # "sweep" squeal: settles in 2 s at C2, none by C5 ...
+ANIMA_TRAIT_SWEEP_N = 3         # ... notes ending before it settles, this many times
+ANIMA_TRAIT_REST_SEC = 0.12     # the part has been silent this long before the swap
+ANIMA_EFX_SWITCH_SEC = 1.20 # min seconds between EFX type/owner changes on one unit
+ANIMA_EFX_FLUSH_GAP = 0.18  # unused; 166 flush applies on the part's own note-off
+ANIMA_EFX_SETTLE_SEC = 0.060  # unused; notes are not delayed
+ANIMA_EFX_DUMP_SEC = 1.0    # an unheard claim is not stolen for this long; after it a quiet unheard box can be taken
+ANIMA_EFX_BURST_SEC = 0.25  # PC dump is placed once after this much PC silence (or at the first note)
+ANIMA_EFX_PC_GRACE_SEC = 12.0  # mid-song PC claim: lower families leave it alone this long while unheard
+ANIMA_EFX_PAN_OFF = 20        # |CC10-64| beyond this = a placed guitar (keep a pan-capable dirt type)
+ANIMA_EFX_BIG_BURST = 4       # this many PC channels in one burst = song setup (short DUMP grace)
+ANIMA_HARM_TOP = 96          # no chord-tone harmony ghost above C7
+ANIMA_EFX_WET_SEC = 0.15      # after a type/Part On change, that part's notes use another box this long
+ANIMA_EFX_CTRL_CC = 16    # Anima writes EFX C.Src1/2 (40 03 1B/1D, default Off) = CC16; not built in
+ANIMA_WAH_LFO_HZ = 0.55      # (legacy steady sweep; the wah now follows the phrasing)
+# Wah follows the player: CC16 0..127 on top of the Manual base.
+ANIMA_WAH_REST = 10          # silence: heel down
+ANIMA_WAH_PICK = 0.45        # a pick's quack, x velocity/127
+ANIMA_WAH_QUACK_SEC = 0.12   # quack decay
+ANIMA_WAH_HOLD_OPEN = 0.40   # a held note sweeps open by this much ...
+ANIMA_WAH_HOLD_SEC = (0.20, 0.80)   # ... starting after 0.2 s, fully open at 0.8 s
+ANIMA_WAH_ROCK = (0.10, 1.6)        # then moves (0.19.051: a seeded gesture per held note) ...
+ANIMA_WAH_GESTURES = (("rock", 45), ("hold", 20), ("close", 15), ("follow", 20))   # ... picked by weight
+ANIMA_WAH_ROCK_DEPTH = (0.06, 0.14)       # rock: depth range ...
+ANIMA_WAH_ROCK_BEATS = (0.5, 1.0, 1.0, 2.0)   # ... one cycle per this many beats (else 0.7-2.3 Hz) ...
+ANIMA_WAH_ROCK_DRIFT = 0.30               # ... speeding up by up to this much over 2 s, like a tiring foot
+ANIMA_WAH_CLOSE = (0.12, 0.25)            # close: per second, at most (toe slowly eases back)
+ANIMA_WAH_BEND_OPEN = 0.35   # a bend up opens it this much more at full bend
+ANIMA_WAH_REGISTER = 0.15    # high notes sit this much more open (E4 .. A6)
+ANIMA_WAH_FAST_RATE = (5.0, 10.0)   # notes/s where runs start / finish narrowing the quack
+ANIMA_WAH_ATTACK_SEC = 0.03  # pedal speed toward open ...
+ANIMA_WAH_RELEASE_SEC = 0.18 # ... and back toward the heel
+ANIMA_WAH_SCREAM_NOTE = 84   # scream: a note this high ...
+ANIMA_WAH_SCREAM_VEL = 105   # ... this hard ...
+ANIMA_WAH_SCREAM_HELD = 0.50 # ... held this long raises the Manual base (SysEx)
+ANIMA_WAH_SCREAM_REST = 8.0  # ... and not again until this long after the last one ended
+ANIMA_WAH_BASE_GAP = 0.30    # at most one Manual write per unit this often
+# Lead or rhythm? Two or more notes at once, or a low register, is rhythm; single
+# high notes are lead. The role glides (seconds) so it does not flicker.
+ANIMA_WAH_LEAD_NOTES = (55, 67)     # single notes from G3 (rhythm) .. G4 (lead)
+ANIMA_WAH_ROLE_SEC = 1.5           # glide back to rhythm (a stab inside a solo does not flip it)
+ANIMA_WAH_ROLE_LEAD_SEC = 0.25     # glide to lead: a solo opens up within a few notes
+ANIMA_WAH_RHYTHM_AMOUNT = 0.60      # a rhythm part's pedal moves this much of the lead's
+ANIMA_WAH_PEAK_GAP = 1.0            # at most one Peak write per unit this often
+# The file's own wah: adopted only when the file set it and left it (writes
+# only in its setup burst, knob Control Source Off, wah switch On, no CC16 of
+# its own). The file's Manual is the pedal's rest; its Peak and everything
+# else stay. Any later file EFX write hands it back at once, for the song.
+ANIMA_FILE_EFX_SETUP_SEC = 4.0      # file EFX writes this soon after its first are setup
+ANIMA_FILE_WAH_REST = 30            # CC16 at rest = the file's Manual (Manual written 30 lower)
+ANIMA_FILE_WAH_MID = 55             # the pedal's usual playing position maps onto the file's Manual ...
+ANIMA_FILE_WAH_SWING = 0.70         # ... and swings around it this much (the file's tone stays the centre)
 ANIMA_ROTARY_HOLD_SEC = 0.60
+
+# File player (0.19.065): Duality plays MIDI files itself (--play), so it sees what an
+# outside player keeps to itself: each track's MIDI Port marker (FF 21), the tempo map
+# and every SysEx. Its events take the same path as live input, which keeps working.
+PLAYER_EXTS = (".mid", ".midi", ".kar", ".smf")
+PLAYER_LEAD_IN = 0.5      # seconds of silence before a song's first event
+PLAYER_GAP = 2.0          # seconds between songs
+PLAYER_RESTART_SEC = 3.0  # Z within this much of a song's start goes to the previous song
+LANE_HOTKEYS = "fglrymvpabsx"  # keys a multi-port song's lanes also take (not W / C / Q / player keys)
+
+
+def player_playlist(paths: List[str]) -> List[str]:
+    """Files, folders (their MIDI files, by name) and wildcards → the playlist."""
+    import glob
+    out: List[str] = []
+    for raw in paths:
+        p = os.path.expanduser(str(raw).strip().strip('"'))
+        if os.path.isdir(p):
+            files = [f for f in glob.glob(os.path.join(p, "*")) if f.lower().endswith(PLAYER_EXTS)]
+            out += sorted(files, key=lambda f: os.path.basename(f).lower())
+        elif any(c in p for c in "*?["):
+            out += sorted((f for f in glob.glob(p) if os.path.isfile(f)),
+                          key=lambda f: os.path.basename(f).lower())
+        elif os.path.isfile(p):
+            out.append(p)
+        else:
+            raise ValueError(f"--play: no such file or folder: {raw}")
+    if not out:
+        raise ValueError("--play: no MIDI files in " + ", ".join(str(p) for p in paths))
+    return out
+
+
+def parse_port_request(text: str, track_port: int):
+    """A song's request for a port's device, in a Text / Marker / Cue meta event:
+        "duality: 8850"            this track's port wants an SC-8850 (any --outs tag works)
+        "duality: port B mt32 x2"  port B wants two MT-32-family units
+        "duality: C=xg"            port C wants an XG unit
+        "duality: 8850, cm64"      an SC-8850 if one is free, else a CM-64 (kinds in order of preference)
+    Returns (port, wanted tags in order or None, units or None), or None if the text is not one."""
+    t = str(text or "").strip().lower()
+    if not t.startswith("duality"):
+        return None
+    rest = t[len("duality"):].lstrip()
+    if not rest.startswith(":"):
+        return None
+    toks = rest[1:].replace("=", " ").replace(",", " ").split()
+    port, wants, units = track_port, [], None
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        if tok == "port" and i + 1 < len(toks):
+            nxt = toks[i + 1]
+            if len(nxt) == 1 and "a" <= nxt <= "p":
+                port = ord(nxt) - ord("a")
+            elif nxt.isdigit() and 1 <= int(nxt) <= 16:
+                port = int(nxt) - 1
+            i += 2
+            continue
+        if len(tok) == 1 and "a" <= tok <= "p":
+            port = ord(tok) - ord("a")
+        elif tok.startswith("x") and tok[1:].isdigit() and int(tok[1:]) > 0:
+            units = int(tok[1:])
+        elif tok in FORMAT_ALIASES:
+            tag = FORMAT_ALIASES[tok]
+            if tag != "any" and tag not in wants:
+                wants.append(tag)
+        i += 1
+    return port, (tuple(wants) or None), units
+
+
+def out_matches(tags, want) -> bool:
+    """Can an out with these --outs tags take a port that asked for `want`?
+    No request: any out that is not LA-only (a GM / GS / XG stream's home)."""
+    tags = set(tags or ()) or {"any"}
+    if "any" in tags:
+        return True
+    if want is None:
+        return not tags <= set(LA_TAGS)
+    if want in tags:
+        return True
+    if want == "gs":
+        return any(t.startswith("gs") for t in tags)
+    if want == "gm":
+        return bool(tags & {"gm", "gm2", "xg"}) or any(t.startswith("gs") for t in tags)
+    if want == "gm2":
+        return bool(tags & {"gm2", "gs8850", "gs8820"})
+    if want == "mt32":
+        return bool(tags & set(LA_TAGS))
+    if want == "cm32":
+        return bool(tags & {"cm32", "cm64"})
+    return False
+
+
+class PlayerSong:
+    """A MIDI file as timed events [(seconds, port, message)] through its tempo map.
+    Format 0 / 1 tracks play together, Format 2 tracks one after another. A track's
+    port is its last MIDI Port meta (FF 21), port 0 until it has one. requests:
+    port -> (wanted tag, units) from "duality: ..." text events (parse_port_request)."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self.name = os.path.basename(path)
+        mf = mido.MidiFile(path, clip=True)
+        tpb = mf.ticks_per_beat
+        rows, tempos, end_tick, offset = [], [], 0, 0
+        self.requests: dict = {}
+        for ti, track in enumerate(mf.tracks):
+            tick, port = offset, 0
+            for seq, m in enumerate(track):
+                tick += m.time
+                if m.is_meta:
+                    if m.type == "set_tempo":
+                        tempos.append((tick, m.tempo))
+                    elif m.type == "midi_port":
+                        port = int(m.port)
+                    elif m.type in ("text", "marker", "cue_marker"):
+                        req = parse_port_request(m.text, port)
+                        if req is not None:
+                            self.requests[req[0]] = (req[1], req[2])
+                    continue
+                rows.append((tick, ti, seq, port, m))
+            end_tick = max(end_tick, tick)
+            if mf.type == 2:
+                offset = tick
+        rows.sort(key=lambda r: (r[0], r[1], r[2]))
+        tempos.sort(key=lambda r: r[0])
+        segs = [(0, 0.0, 500000)]            # (tick, seconds, µs per beat): 120 BPM until the first tempo
+        for tk, us in tempos:
+            t0, s0, us0 = segs[-1]
+            if tk == t0:
+                segs[-1] = (t0, s0, us)
+            else:
+                segs.append((tk, s0 + (tk - t0) * us0 / 1e6 / tpb, us))
+        k = 0
+
+        def sec(tk):
+            nonlocal k
+            while k + 1 < len(segs) and segs[k + 1][0] <= tk:
+                k += 1
+            t0, s0, us = segs[k]
+            return s0 + (tk - t0) * us / 1e6 / tpb
+
+        self.events = [(sec(tk), port, m) for tk, _ti, _seq, port, m in rows]
+        self.length = sec(end_tick)            # end-of-track can leave room for a last ring-out
+        self.ports = sorted({p for _s, p, _m in self.events})
+
+
+class MidiPlayer:
+    """The playlist and its clock. tick(now) returns the (port, message) pairs that are due.
+    Pausing, skipping, stopping and a song's end return note-offs (and sustain off) for
+    what still sounds. The next song loads in the background while one plays."""
+
+    def __init__(self, paths: List[str], loop: bool = False, threaded: bool = True):
+        self.files = player_playlist(paths)
+        self.loop = loop
+        self.threaded = threaded
+        self.index = 0
+        self.song: Optional[PlayerSong] = None
+        self.state = "ready"        # ready | loading | playing | paused | stopped | gap | done
+        self.pos = 0                # next event
+        self.t0 = 0.0               # monotonic time of the song's second 0
+        self.held = 0.0             # song seconds while paused / stopped
+        self.gap_until = 0.0
+        self.want = 0               # the song a 'loading' state waits for
+        self.sounding: dict = {}    # (port, ch, note) -> notes on
+        self.used: set = set()      # (port, ch) with notes this song
+        self.last: Optional[float] = None
+        self.session = None             # a number while a song is under way (playing / paused), else None
+        self._sessions = 0
+        self._wrap = True               # may a skip go past the end of the list (see _begin)
+        self._step = 1                  # which way an unreadable file is skipped
+        self.messages: List[str] = []   # status lines for Duality (oldest first)
+        self.logs: List[str] = []       # log lines for Duality
+        self._cache: dict = {}          # index -> PlayerSong | Exception
+        self._busy: set = set()
+
+    # --- loading ---------------------------------------------------------
+    def _fetch(self, i: int) -> None:
+        """Load file i into the cache (in a thread unless threaded=False)."""
+        if i in self._cache or i in self._busy or not (0 <= i < len(self.files)):
+            return
+        path = self.files[i]
+
+        def work():
+            try:
+                song = PlayerSong(path)
+            except Exception as e:      # unreadable: noted when it is wanted
+                song = e
+            self._cache[i] = song
+            self._busy.discard(i)
+
+        self._busy.add(i)
+        if self.threaded:
+            threading.Thread(target=work, daemon=True).start()
+        else:
+            work()
+
+    def _begin(self, i: int, now: float, wrap: bool = True, step: int = 1) -> List:
+        """Start song i (waiting for its load if needed); unreadable files are skipped in
+        the direction of step. wrap: skipping may go past the end of the list (N and Z do;
+        the end of a song does only with --play-loop)."""
+        self._wrap = wrap
+        self._step = step
+        self.session = None             # whatever played before is over
+        for _ in range(len(self.files)):
+            self.index = i % len(self.files)
+            self.want = self.index
+            self._fetch(self.index)
+            got = self._cache.get(self.index)
+            if got is None:
+                self.state = "loading"
+                return []
+            if not isinstance(got, Exception):
+                break
+            name = os.path.basename(self.files[self.index])
+            self.messages.append(f"Player: skipped {name} ({got})")
+            self.logs.append(f"PLAY  Skipped unreadable {self.files[self.index]}: {got}")
+            del self._cache[self.index]
+            if self.index + step >= len(self.files) and not (wrap or self.loop):
+                self.state = "done"
+                return []
+            i = self.index + step
+        else:
+            self.state = "done"
+            return []
+        self.song = got
+        self.pos = 0
+        self.t0 = now + PLAYER_LEAD_IN
+        self.state = "playing"
+        self._sessions += 1
+        self.session = self._sessions
+        for k in list(self._cache):
+            if k != self.index:
+                del self._cache[k]
+        nxt = self.index + 1
+        if nxt < len(self.files) or self.loop:
+            self._fetch(nxt % len(self.files))
+        ports = "" if self.song.ports in ([], [0]) else f", ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
+        self.messages.append(f"▶ {self.index + 1}/{len(self.files)} {self.song.name} ({_mmss(self.song.length)}{ports})")
+        self.logs.append(f"PLAY  Song {self.index + 1}/{len(self.files)}: {self.song.path} "
+                         f"({_mmss(self.song.length)}, {len(self.song.events)} events{ports})")
+        return []
+
+    # --- playback ----------------------------------------------------------
+    def _track(self, port: int, m) -> None:
+        if m.type == "note_on" and m.velocity:
+            key = (port, m.channel, m.note)
+            self.sounding[key] = self.sounding.get(key, 0) + 1
+            self.used.add((port, m.channel))
+        elif m.type in ("note_off", "note_on"):
+            key = (port, m.channel, m.note)
+            n = self.sounding.get(key, 0)
+            if n <= 1:
+                self.sounding.pop(key, None)
+            else:
+                self.sounding[key] = n - 1
+        elif m.type == "control_change" and m.control == 64:
+            self.used.add((port, m.channel))
+
+    def _flush(self) -> List:
+        """Note-offs for every sounding note, then sustain off where the song played."""
+        out = []
+        for (port, ch, note), n in sorted(self.sounding.items()):
+            for _ in range(n):
+                out.append((port, mido.Message("note_off", channel=ch, note=note, velocity=0)))
+        for port, ch in sorted(self.used):
+            out.append((port, mido.Message("control_change", channel=ch, control=64, value=0)))
+        self.sounding = {}
+        self.used = set()
+        return out
+
+    def song_time(self, now: float) -> float:
+        if self.state == "playing":
+            return max(0.0, now - self.t0)
+        if self.state in ("paused", "stopped"):
+            return self.held
+        if self.state == "gap" and self.song:
+            return self.song.length
+        return 0.0
+
+    def tick(self, now: float, stall: bool = False) -> List:
+        """Events due by now. stall: Duality is busy (a Voodoo bank load); the song waits."""
+        if self.last is not None and stall and self.state == "playing":
+            self.t0 += now - self.last
+        self.last = now
+        if stall:
+            return []
+        if self.state == "ready":
+            return self._begin(0, now)
+        if self.state == "loading":
+            return self._begin(self.want, now, self._wrap, self._step) if self.want in self._cache else []
+        if self.state == "gap" and now >= self.gap_until:
+            nxt = self.index + 1
+            if nxt >= len(self.files) and not self.loop:
+                self.state = "done"
+                self.messages.append("Player: end of the playlist")
+                self.logs.append("PLAY  End of the playlist")
+                return []
+            return self._begin(nxt % len(self.files), now, wrap=self.loop)
+        if self.state != "playing" or self.song is None:
+            return []
+        t = now - self.t0
+        ev = self.song.events
+        out = []
+        while self.pos < len(ev) and ev[self.pos][0] <= t:
+            _s, port, m = ev[self.pos]
+            self.pos += 1
+            self._track(port, m)
+            out.append((port, m))
+        if self.pos >= len(ev) and t >= self.song.length:
+            out += self._flush()
+            self.state = "gap"
+            self.session = None
+            self.gap_until = now + PLAYER_GAP
+        return out
+
+    # --- controls (hotkeys) ------------------------------------------------
+    def toggle(self, now: float) -> List:
+        """Space: pause / resume; from stopped or done, play."""
+        if self.state == "playing":
+            self.held = max(0.0, now - self.t0)
+            self.state = "paused"
+            self.messages.append(f"⏸ Paused at {_mmss(self.held)}")
+            return self._flush()
+        if self.state in ("paused", "stopped") and self.song is not None:
+            self.t0 = now - self.held + (PLAYER_LEAD_IN if self.held == 0.0 else 0.0)
+            if self.state == "stopped":
+                self._sessions += 1
+                self.session = self._sessions
+            self.state = "playing"
+            self.messages.append(f"▶ {self.song.name} from {_mmss(self.held)}")
+            return []
+        if self.state == "done":
+            return self._begin(0, now)
+        if self.state == "gap":
+            return self.next(now)
+        return []
+
+    def next(self, now: float) -> List:
+        out = self._flush()
+        return out + self._begin(self.index + 1, now)
+
+    def prev(self, now: float) -> List:
+        """Z: back to the start of this song, or (near its start) the one before."""
+        out = self._flush()
+        if self.state == "gap" or (self.state in ("playing", "paused")
+                                   and self.song_time(now) > PLAYER_RESTART_SEC):
+            return out + self._begin(self.index, now)
+        return out + self._begin(self.index - 1, now, step=-1)
+
+    def stop(self, now: float) -> List:
+        out = self._flush()
+        if self.song is not None:
+            self.state = "stopped"
+            self.session = None
+            self.held = 0.0
+            self.pos = 0
+            self.messages.append("■ Stopped (Space plays from the start)")
+        return out
+
+    def status(self, now: float) -> str:
+        """One line for the status panel."""
+        n = len(self.files)
+        if self.state == "done":
+            return f"■ end of the playlist ({n} song{'s' if n != 1 else ''}) — Space plays it again"
+        if self.state in ("ready", "loading"):
+            return f"… loading {os.path.basename(self.files[self.want])}"
+        if self.song is None:
+            return "—"
+        icon = {"playing": "▶", "paused": "⏸", "stopped": "■", "gap": "▶"}.get(self.state, " ")
+        t = self.song_time(now)
+        ports = "" if self.song.ports in ([], [0]) else f"  ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
+        nxt = ""
+        if self.state == "gap":
+            nxt = "  (next song…)" if self.index + 1 < n or self.loop else ""
+        return f"{icon} {self.index + 1}/{n} {self.song.name}  {_mmss(t)} / {_mmss(self.song.length)}{ports}{nxt}"
+
+
+def _mmss(sec: float) -> str:
+    sec = max(0, int(sec))
+    return f"{sec // 3600}:{sec // 60 % 60:02d}:{sec % 60:02d}" if sec >= 3600 else f"{sec // 60}:{sec % 60:02d}"
+
+
+def player_system_sysex(data) -> bool:
+    """SysEx for a whole device rather than one part: universal (GM / GM2 On, master
+    volume), GS system / patch common / EQ (40 00 xx, 40 01 xx, 40 02 xx) and the
+    system mode set, XG system and effects."""
+    d = [int(b) & 0x7F for b in (data or [])]
+    if len(d) >= 2 and d[0] in (0x7E, 0x7F):
+        return True
+    if len(d) >= 7 and d[0] == 0x41 and d[2] == 0x42 and d[3] == 0x12:
+        if d[4] == 0x40 and d[5] in (0x00, 0x01, 0x02):
+            return True
+        if d[4] == 0x00 and d[5] == 0x00 and d[6] == 0x7F:
+            return True
+    if len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C and d[3] in (0x00, 0x02):
+        return True
+    return False
+
+
+class _LaneOut:
+    """A lane's view of one of the router's outputs: its sends take the router's own
+    send path (health, reconnect, --record); closing it leaves the real port open."""
+
+    def __init__(self, router, idx: int):
+        self.router = router
+        self.idx = idx
+        self.name = router.port_names[idx]
+        self.closed = False
+
+    def send(self, msg) -> None:
+        self.router._safe_out_send(self.idx, msg)
+
+    def panic(self) -> None:
+        try:
+            self.router.outs[self.idx].panic()
+        except Exception:
+            pass
+
+    def reset(self) -> None:
+        try:
+            self.router.outs[self.idx].reset()
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        pass
+
+
+class _NoInput:
+    """Stands in for the input port when Duality only plays files."""
+    name = "(no live input)"
+    closed = False
+
+    def iter_pending(self):
+        return iter(())
+
+    def poll(self):
+        return None
+
+    def close(self):
+        pass
+
 
 class Duality:
     def __init__(
@@ -504,19 +1399,28 @@ class Duality:
         voodoo: bool = False,
         voodoo_bank: str = "mtgm",
         voodoo_layout: str = "stripe",
+        cm64_seats: str = "live",
         anima: bool = False,
         anima_efx_stable: bool = False,
+        anima_seed: int | None = None,
         anima_game: bool = False,
         record_dir: str | None = None,
+        play: List[str] | None = None,
+        play_loop: bool = False,
+        opener=None,
     ):
-        # Alchemy / Voodoo / Anima may run with a single output.
-        # Classic router still requires at least two ports.
-        min_ports = 1 if (alchemy or voodoo or anima or anima_game) else 2
-        if len(out_names) < min_ports:
-            extra = " with --alchemy/--voodoo/--anima." if (alchemy or voodoo or anima or anima_game) else "."
-            raise ValueError(
-                f"At least {min_ports} output port(s) required{extra}"
-            )
+        # One output is a valid pass-through (like-for-like / 88emu tests).
+        if len(out_names) < 1:
+            raise ValueError("At least 1 output port is required.")
+        # File player (--play): a playlist that feeds process() like live input does
+        self.player: Optional[MidiPlayer] = MidiPlayer(play, loop=play_loop) if play else None
+        self._player_port_note: set = set()
+        # Multi-port songs (0.19.066): a lane (a router of its own) per port, on its own outs
+        self._opener = opener or mido.open_output
+        self._lanes: dict = {}              # port -> Duality lane while a multi-port song plays
+        self._lane_outs: dict = {}          # port -> out indices
+        self._lane_session = None           # the player session the lanes belong to
+        self._player_main_port = 0          # the port a single-port song plays on
 
         self.mode = mode
         self.n_ports = len(out_names)
@@ -538,6 +1442,21 @@ class Duality:
             if len(out_formats) != self.n_ports:
                 raise ValueError("out_formats length must match number of output ports")
             self.out_formats = out_formats
+        # CM-64 outs: two halves (LA ch1-10 at the port's --poly, PCM ch11-16 at 31).
+        self._cm64_ports = frozenset(
+            i for i, t in enumerate(self.out_formats) if t and "cm64" in t
+        )
+        self._ch_program: list[int | None] = [None] * 16   # last PC per channel (any mode)
+        self._cm64v_reset()
+
+        # GS part Rx channel (0–15). Defaults 1:1. YS4 stacks parts 7+16
+        # on ch7 and writes Key Shift after/before the remap.
+        self._gs_part_rx = list(range(16))
+        self._gs_part_ks = [0x40] * 16
+        self._gs_part_rel = [None] * 16
+        self._ys_stack_fixed = set()
+        self._ys_rel_fixed = set()
+        self._ys_skip_ks = False  # Hirari revision: 88emu50 already in tune
 
         # New status tracking variables
         self.peak_voices = 0
@@ -566,8 +1485,22 @@ class Duality:
         self.anima_game = bool(anima_game)
         self.anima = bool(anima) or self.anima_game
         self.anima_efx_stable = bool(anima_efx_stable)
+        # --anima-seed N → lock that value. --anima-seed (no N) or old
+        # --anima-efx-stable → lock the first rolled seed.
+        self._anima_efx_launch = None
+        if anima_seed is not None and int(anima_seed) >= 0:
+            self._anima_efx_seed = int(anima_seed) & 0xFFFF
+            self._anima_seed_locked = True
+        elif anima_efx_stable or anima_seed == -1:
+            self._anima_efx_seed = None
+            self._anima_seed_locked = True
+        else:
+            self._anima_efx_seed = None
+            self._anima_seed_locked = False
         self._anima_game_pc_t = []
+        self._anima_game_pc_ch = []      # channels of those PCs (same order)
         self._anima_game_snap = None
+        self._anima_cue_chs = None       # game mode: channels of the current cue (None = every used one)
         self.record_dir = record_dir
         self._rec_on = False
         self._rec_wanted = False
@@ -578,9 +1511,19 @@ class Duality:
         self._rec_stamp = ""
         self._anima_prog = [0] * 16
         self._anima_tone_cc0 = [None] * 16
+        self._anima_tone_slot = [None] * 16
+        self._anima_cm64 = [False] * 16
+        self._file_used_ch = [False] * 16
+        self._anima_cue_chs = None
+        self._anima_seen_cc0 = [False] * 16
+        self._anima_seen_cc32 = [False] * 16
+        self._file_pc = [0] * 16
+        self._anima_pend_bank = [None] * 16
+        self._anima_pend_bank = [None] * 16  # (cc0, cc32) waiting for a legal PC
         self._anima_last_note = [-1] * 16
         self._anima_last_vel = [-1] * 16
         self._anima_last_on = [0.0] * 16
+        self._anima_last_dur = [1.0] * 16
         self._anima_file_cc11_t = [0.0] * 16
         self._anima_mod_on = set()          # (ch, note) already armed for auto-mod
         self._anima_mod_ch = [False] * 16
@@ -592,34 +1535,60 @@ class Duality:
         self._anima_file_efx_home = None   # GS port that keeps the file insert
         self._anima_file_efx_type = None   # (msb, lsb) last file EFX type
         self._anima_file_efx_parts = set() # parts the FILE turned On
+        self._anima_file_efx_vals = {}     # 40 03 xx -> the file's last value
+        self._anima_file_efx_first_t = 0.0 # first file EFX write this song
+        self._anima_file_efx_live = False  # file writes EFX during the song: hands off
+        self._anima_file_cc16 = set()      # channels where the file sends CC16 itself
+        self._anima_file_wah = None        # adopted file wah state
         self._anima_file_dirt = [False] * 16
         self._anima_hetfield_roll = [False] * 16
         self._anima_file_off_sent = set()
         self._anima_file_park = []  # [{port, typ, chs}] previous file types
         self._anima_efx_ours = False
+        self._anima_efx_sent_sig = []
         self._anima_efx_hero = None     # channel owning the insertion slot
         self._anima_efx_key = None      # palette key currently applied
         self._anima_efx_label = ""
         self._anima_efx_sent = None     # (msb,lsb) last sent
         self._anima_efx_sound_t = {}
+        self._anima_fam_played = {}     # family -> last real note (not a PC)
+        self._anima_efx_burst_dirty = False  # PC dump waiting for one settle
+        self._anima_efx_burst_t = 0.0
+        self._anima_efx_seek_t = [0.0] * 16
         self._anima_efx_switch_t = 0.0
         self._anima_efx_pending = None  # (fam, since)
         self._anima_split_on = False
         self._anima_split_saved_pan = {}  # ch -> original CC10
         self._anima_slots = [{} for _ in range(self.n_ports)]
         self._anima_ch_port = {}  # channel -> GS port that owns its EFX
+        self._anima_fam_was = [None] * 16  # last EFX family per channel (leave-dirt)
+        self._anima_note_port = {}  # channel -> last port that played it (phrase pin)
         self._anima_rhythm = [False] * 16
         self._anima_rhythm[9] = True  # ch10 is always rhythm
         self._last_key_ports = {}  # (ch,note) -> ports of last sounding voice
         self._anima_efx_on = [[False] * 16 for _ in range(self.n_ports)]
-        self._anima_efx_seed = None
         self._anima_efx_pick = {}  # (fam, port) -> (msb, lsb, label)
+        # Beat tracking for delay inserts: MIDI clock first, note onsets second.
+        self._tempo_clock_t = 0.0
+        self._tempo_clock_iv = 0.0
+        self._tempo_onsets = []        # note-on times (chords merged)
+        self._tempo_beat = 0.0         # cached beat length in seconds (0 = unknown)
+        self._tempo_beat_t = 0.0
+        # Dirt fade: file CC7/CC11 per channel and the loudest seen since its PC.
+        self._dirt_cc7 = [100] * 16
+        self._dirt_cc11 = [127] * 16
+        self._dirt_ref = [0] * 16
+        self._dirt_seen7 = [False] * 16
         self._anima_ports = [[] for _ in range(16)]
         self._anima_cc1_cur = [0] * 16
         self._anima_cc1_tgt = [0] * 16
         self._anima_cc11_cur = [ANIMA_EXPR_DEFAULT] * 16
         self._anima_cc11_tgt = [ANIMA_EXPR_DEFAULT] * 16
         self._anima_cc11_own = [False] * 16  # Anima is driving CC11
+        self._anima_expr_phrase = [False] * 16   # first note of phrase already set peak
+        self._anima_expr_peak = [ANIMA_EXPR_DEFAULT] * 16
+        self._anima_expr_shape = [None] * 16     # None | swell | fp | sfz
+        self._anima_expr_shape_t = [0.0] * 16
         self._anima_idle_t = [0.0] * 16
         self._anima_ramp_t = time.monotonic()
         self._anima_cc_sent = [(-1, -1)] * 16   # last (cc1, cc11) actually sent
@@ -627,15 +1596,42 @@ class Duality:
         self._anima_strum_dir = [1] * 16     # 1 = down (low→high)
         self._anima_strum_n = [0] * 16       # completed strokes per ch
         self._anima_strum_q = []             # (when, port, msg)
+        self._anima_efx_settle = [0.0] * self.n_ports  # port -> monotonic, notes wait
+        self._anima_settle_q = []            # (when, port, msg) — no voice-count changes
+        self._anima_settle_on = {}           # (port, ch, note) -> [{when, recv}, ...]
+        self._anima_settle_bypass = False
+        self._anima_settle_draining = False
         self._anima_strum_last_t = [0.0] * 16
+        self._anima_mallet_q = []            # [when, port, msg, ch, own_off]
+        self._anima_mallet_hist = [[] for _ in range(16)]   # recent stroke times per ch
+        self._anima_mallet_n = [0] * 16
         self._anima_strum_burst = [0] * 16
         self._anima_strum_off_hold = [0.0] * 16
         self._anima_foley_ch = [None] * self.n_ports   # reserved noise channel
         self._anima_foley_armed = [False] * self.n_ports
         self._anima_foley_last = 0.0
+        self._anima_drum_last = 0.0
         self._anima_foley_pitch = [-1] * 16
         self._anima_foley_n = 0
         self._anima_foley_pend = None
+        self._anima_ghosts = {}          # (ch, note) -> [(port, ch, note), ...]
+        self._anima_ghost_sound = {}     # (ch, gnote) -> hero key sounding that pitch
+        self._anima_ghost_log_t = 0.0
+        self._anima_wave_sub_armed = set()  # (port, ch) already on a waveform sub patch
+        self._anima_fam_ghost = {}       # "bass"|"organ" -> owning (ch, note)
+        self._anima_harm_next = None     # (key, plan) decided before the hero is sent
+        self._anima_harm_hero = {}       # hero key -> velocity scale while it has harmony
+        self._anima_harm_up = {}         # hero key -> upper harmony ghost pitch
+        self._anima_harm_recent = {}     # ch -> (top note, t) of its latest onsets
+        self._anima_harm_chord_t = {}    # ch -> last time it held two or more notes
+        self._anima_line_hist = {}       # ch -> [(t, note, mono, legato, mono_loose)] recent onsets
+        self._anima_line_off = {}        # ch -> time of its last note-off
+        self._anima_line_vel = {}        # ch -> the featured line's last sent level (vel x CC7 x CC11)
+        self._anima_harm_ctx = []        # [(t, ch, note)] recent pitched onsets (chord context)
+        self._anima_seat_pan = {}        # (port, ch) -> mirrored pan sent to a seat unit
+        self._anima_seat_fam = {}        # family -> seat unit, when there are several
+        self._anima_line = {}            # ch -> (lo, hi, last_t, rate, hold) while it is a featured line
+        self._anima_bass_sub_choice = None  # (cc0, cc32, pc, name) for this seed
         self.format_locked = False                  # L hotkey: freeze format against SysEx overrides
         # Per-channel bank select state (for Alchemy PC mapping)
         self.bank_msb = [0] * 16
@@ -658,6 +1654,7 @@ class Duality:
             self.voodoo_bank = DEFAULT_VOODOO_BANK
         layout = (voodoo_layout or "stripe").lower().strip()
         self.voodoo_layout = layout if layout in ("stripe", "pairs") else "stripe"
+        self.cm64_seats = cm64_seats if cm64_seats in ("live", "fixed") else "live"
         self.voodoo_active = False            # GM bank is loaded / mode on
         self.voodoo_loading = False           # paced SysEx in progress
         self.voodoo_catchup = False           # draining deferred input queue
@@ -670,6 +1667,7 @@ class Duality:
         self._voodoo_send_list: list = []  # entries: (payload_bytes, ports|None)
         self._voodoo_send_idx = 0
         self._voodoo_next_send = 0.0
+        self._voodoo_wire: dict[int, float] = {}   # port -> when its MIDI line is free again
         self._voodoo_targets: list[int] = []
         self._voodoo_catchup_idx = 0
         self._voodoo_catchup_end = 0
@@ -677,22 +1675,24 @@ class Duality:
         self._voodoo_catchup_origin = 0.0
         self._voodoo_catchup_t0 = 0.0
         self._log_file = None
+        # A path with {stamp} (the default logs/duality-{stamp}.log) gives one
+        # log per run, and with --record one per take (same stamp as its
+        # IN/OUT files). A plain path is appended to as before.
+        self._log_template = log_path if (log_path and "{stamp}" in log_path) else None
         if log_path:
-            try:
-                self._log_file = open(log_path, "a", encoding="utf-8")
-                self._log_file.write(
-                    f"\n--- Duality session start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"
-                )
-                self._log_file.flush()
-            except OSError as e:
-                console.print(f"[yellow]Could not open log {log_path!r}: {e}[/]")
-                self._log_file = None
+            if self._log_template:
+                self._log_path = self._log_template.format(stamp=time.strftime("%Y%m%d-%H%M%S"))
+            if self._log_open("a", f"\n--- Duality session start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n"):
+                pass
+            else:
+                console.print(f"[yellow]Could not open log {self._log_path!r}[/]")
         self.status_history: list[tuple[float, str]] = []   # (timestamp, message)
         self.STATUS_HISTORY_MAX = 7
         self.STATUS_HISTORY_TTL = 10                       # seconds before a message ages out 
  
         # Per-channel controller state (0-indexed)
-        self.vol = [None] * 16          # CC7
+        self.vol = [None] * 16          # CC7 (display; may be Anima-lifted)
+        self._file_vol = [None] * 16    # last file CC7 before organ lift
         self.pan = [None] * 16          # CC10 (64 = center)
         self.mod = [None] * 16          # CC1
         self.pitch = [None] * 16        # Pitch bend (display value)
@@ -752,13 +1752,26 @@ class Duality:
             self._log_line(f"PORT  Could not list ports: {e}")
 
         self.in_name = in_name
-        console.print(f"[bold cyan]Opening input[/] : {in_name}")
-        try:
-            self.inport = mido.open_input(in_name)
-            self._log_line(f"PORT  Opened input: {in_name}")
-        except Exception as e:
-            self._log_line(f"PORT  FAILED input: {in_name} – {e}")
-            raise
+        if in_name is None:
+            # --play without --input: the player is the only source
+            self.inport = _NoInput()
+            self.in_name = _NoInput.name
+            console.print(f"[bold cyan]Input[/] : none (playing files only)")
+            self._log_line("PORT  No live input (playing files only)")
+        else:
+            console.print(f"[bold cyan]Opening input[/] : {in_name}")
+            try:
+                self.inport = mido.open_input(in_name)
+                self._log_line(f"PORT  Opened input: {in_name}")
+            except Exception as e:
+                self._log_line(f"PORT  FAILED input: {in_name} – {e}")
+                raise
+        if self.player is not None:
+            n = len(self.player.files)
+            console.print(f"[bold cyan]Player[/] : {n} song{'s' if n != 1 else ''}"
+                          f"{' (looping)' if self.player.loop else ''} — Space pause, N next, Z back, T stop")
+            for i, f in enumerate(self.player.files):
+                self._log_line(f"PLAY  Playlist {i + 1}/{n}: {f}")
 
         self.outs = []
         self.port_names = out_names
@@ -769,7 +1782,7 @@ class Duality:
                 f"(limit {self.poly_limits[i]}, format {tag_disp})"
             )
             try:
-                self.outs.append(mido.open_output(name))
+                self.outs.append(self._opener(name))
                 self._log_line(f"PORT  Opened out {i + 1}: {name}")
             except Exception as e:
                 self._log_line(f"PORT  FAILED out {i + 1}: {name} – {e}")
@@ -783,8 +1796,15 @@ class Duality:
         self._out_offline = [False] * self.n_ports
         self._out_last_reconnect_attempt = [0.0] * self.n_ports
         self._out_last_ok = [0.0] * self.n_ports          # last successful send (monotonic)
+        self._gs_syx_last = [0.0] * self.n_ports          # last GS SysEx send (88Pro pace)
+
         self._out_fail_logged = [False] * self.n_ports    # rate-limit fail log spam
         self._reconnect_cooldown = 2.0  # seconds between reconnect attempts per port
+
+        # File init dump (GS Reset → first note / 3s quiet): wire-speed forward
+        self._init_dump = False
+        self._init_dump_last = 0.0
+        self._init_dump_n = 0
 
         self.active: dict[tuple[int, int], dict] = {}
         self.rr_next = 0
@@ -819,7 +1839,8 @@ class Duality:
         console.print(
             "[green]Ready.[/] Notes will be distributed. Ctrl+C to stop + panic.\n"
             "  Hotkeys: [bold]F[/]=clear  [bold]L[/]=lock format  [bold]G[/]=GM/GM2  [bold]R[/]=GS  "
-            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]A[/]=Anima/game  [bold]C[/]=log  [bold]X[/]=reset  [bold]Q[/]=quit"
+            "[bold]Y[/]=XG  [bold]M[/]=MT-32/Voodoo  [bold]B[/]=balance/rr  [bold]A[/]=Anima/game  "
+            "[bold]S[/]=seed lock  [bold]C[/]=log  [bold]X[/]=reset  [bold]Q[/]=quit"
         )
         # --voodoo: seed MT-32 format (so L can lock) then begin paced GM load
         if self.voodoo_requested:
@@ -829,6 +1850,40 @@ class Duality:
 
     # ------------------------------------------------------------------
     
+
+    def _log_open(self, mode: str, header: str) -> bool:
+        try:
+            folder = os.path.dirname(self._log_path)
+            if folder:
+                os.makedirs(folder, exist_ok=True)
+            self._log_file = open(self._log_path, mode, encoding="utf-8")
+            self._log_file.write(header)
+            self._log_file.flush()
+            return True
+        except OSError:
+            self._log_file = None
+            return False
+
+    def _log_rotate(self, stamp: str, why: str) -> bool:
+        """Close this log and open logs/duality-<stamp>.log (template logs only)."""
+        if not self._log_template:
+            return False
+        path = self._log_template.format(stamp=stamp)
+        if path == self._log_path and self._log_file is not None:
+            return True
+        if self._log_file is not None:
+            try:
+                self._log_file.write(
+                    f"{time.strftime('%H:%M:%S')} --- continued in {os.path.basename(path)} ({why}) ---\n"
+                )
+                self._log_file.close()
+            except OSError:
+                pass
+            self._log_file = None
+        self._log_path = path
+        return self._log_open(
+            "a", f"--- Duality log {time.strftime('%Y-%m-%d %H:%M:%S')} ({why}) ---\n"
+        )
 
     def _log_line(self, line: str) -> None:
         """Append one line to --log file (no-op if logging disabled).
@@ -848,9 +1903,15 @@ class Duality:
             pass
 
     def _clear_log(self) -> None:
-        """Truncate the --log file and start a fresh section (hotkey C)."""
+        """Hotkey C: start a new timestamped log (or truncate a fixed-name one)."""
         if not getattr(self, "_log_path", None):
             self._set_status("No log file (--log not set)", duration=2.0)
+            return
+        if self._log_template:
+            if self._log_rotate(time.strftime("%Y%m%d-%H%M%S"), "hotkey C"):
+                self._set_status(f"New log: {os.path.basename(self._log_path)}", duration=2.5)
+            else:
+                self._set_status("New log failed", duration=3.0)
             return
         try:
             if self._log_file is not None:
@@ -922,6 +1983,8 @@ class Duality:
                 self._log_line(f"{tag}  ch{ch:02d}  CC{cc}={val}{extra}")
             return
         if msg.type == "sysex":
+            if getattr(self, "_init_dump", False) and not extra:
+                return
             data = list(msg.data)[:10]
             hx = " ".join(f"{b:02X}" for b in data)
             more = "…" if len(msg.data) > 10 else ""
@@ -1049,6 +2112,7 @@ class Duality:
         was_locked = self.format_locked
         self._anima_release_efx_lock("format clear")
         self._anima_reset_efx_seed()
+        self._gs_reset_part_rx()
         self.detected_format = None
         self.format_pulse_time = 0.0
         self.format_locked = False
@@ -1083,6 +2147,10 @@ class Duality:
         """
         tags = self.out_formats[port_idx]
         if not tags or "any" in tags:
+            return True
+        # Voodoo plays the GM stream on the LA outs (a single unit has no
+        # channel map, so this is its only way in under Crucible).
+        if (tags & LA_TAGS) and (self.voodoo_active or self.voodoo_loading or self.voodoo_catchup):
             return True
 
         if fmt_display is None:
@@ -1568,27 +2636,136 @@ class Duality:
 
     def _count(self, port: int) -> int:
         return sum(1 for info in self.active.values() if info["port"] == port)
-        
+
+    def _tone_voices(self, ch: int, port: int | None = None) -> int:
+        """8850 (and mapped) hardware voices for this part's sounding tone.
+
+        Unknown slot → 1 (MIDI-note fallback). Rhythm / missing table → 1.
+        """
+        ch = ch & 0x0F
+        if port is not None and self._cm64_half(port, ch):
+            return self._cm64_pcm_partials(ch)
+        if ch == 9 or (hasattr(self, "_anima_is_rhythm") and self._anima_is_rhythm(ch)):
+            return 1
+        slot = None
+        if self.anima and ch < len(getattr(self, "_anima_tone_slot", []) or []):
+            slot = self._anima_tone_slot[ch]
+        if slot and port is not None and hasattr(self, "_anima_adapt_tone_slot"):
+            try:
+                adapted = self._anima_adapt_tone_slot(port, slot)
+                if adapted:
+                    slot = adapted
+            except Exception:
+                pass
+        if slot:
+            cc0, cc32, pc = int(slot[0]) & 0x7F, int(slot[1]) & 0x7F, int(slot[2]) & 0x7F
+        else:
+            cc0 = int(self.bank_msb[ch]) & 0x7F if hasattr(self, "bank_msb") else 0
+            cc32 = int(self.bank_lsb[ch]) & 0x7F if hasattr(self, "bank_lsb") else 0
+            pc = 0
+            if hasattr(self, "_anima_prog"):
+                pc = int(self._anima_prog[ch]) & 0x7F
+            elif hasattr(self, "_file_pc"):
+                pc = int(self._file_pc[ch]) & 0x7F
+        try:
+            n = int(gs8850_tone_voices(cc0, cc32, pc))
+        except Exception:
+            n = 1
+        return n if n >= 1 else 1
+
     def _resync_voice_counts(self):
         """Quietly rebuild counts from active notes. Never triggers steals by itself."""
         actual = [0] * self.n_ports
         for info in self.active.values():
-            port = info["port"]
-            if 0 <= port < self.n_ports:
-                actual[port] += 1
+            w = int(info.get("voices") or 1)
+            ports = info.get("ports") or [info["port"]]
+            for port in ports:
+                if 0 <= port < self.n_ports:
+                    actual[port] += w
+        for key, ghosts in (self._anima_ghosts or {}).items():
+            ch = key[0] if isinstance(key, tuple) else 0
+            for item in ghosts:
+                port, gch = item[0], item[1]
+                w = item[3] if len(item) > 3 else self._tone_voices(gch, port)
+                if 0 <= port < self.n_ports:
+                    actual[port] += int(w or 1)
         self.voice_counts = actual
         # Optional: uncomment the next line if you want to see when it heals
         # self._set_status("Voice counts re-synchronized", duration=2.0)
 
-    def _steal_least_important(self, port: int):
+    def _cm64_half(self, port: int, ch: int | None):
+        """On a CM-64 out: True for the PCM half (ch11-16), False for LA. None elsewhere."""
+        if port not in self._cm64_ports:
+            return None
+        if ch is None:
+            return False
+        return self._pcm_ch(port, ch)
+
+    def _pcm_ch(self, port: int, ch: int) -> bool:
+        """Does channel `ch` sound on `port`'s PCM half? Native streams: ch11-16. Voodoo: a
+        channel with a PCM part on that unit (a layer counts on its LA side)."""
+        ch &= 0x0F
+        if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
+            part = self._cm64v_owned(ch) if self._cm64v_parts else None
+            if part is None or part["port"] != port:
+                return False
+            return self._cm64v_seats or self._cm64v_pick(ch)[0] == "pcm"
+        return ch in CM64_PCM_CHANNELS
+
+    def _cm64_pcm_partials(self, ch: int) -> int:
+        """Partials one note uses on a CM-64 PCM part (channel 11-16, its current program;
+        under Voodoo the PCM tone its part plays)."""
+        ch &= 0x0F
+        if self._cm64v_parts and (self.voodoo_active or self.voodoo_catchup):
+            part = self._cm64v_owned(ch)
+            pcm = part["prog"] if part and part["prog"] is not None else self._cm64v_pick(ch)[1]
+            return CM64_PCM_PARTIALS[pcm] if 0 <= pcm < len(CM64_PCM_PARTIALS) else 1
+        prog = self._ch_program[ch]
+        if prog is None:
+            return CM64_PCM_DEFAULT_PARTIALS[ch - 10]
+        if prog < len(CM64_PCM_PARTIALS):
+            return CM64_PCM_PARTIALS[prog]
+        return 1
+
+    def _port_voices(self, port: int, ch: int | None = None) -> tuple[int, int]:
+        """(voices in use, limit) on `port`; a CM-64 counts only the half `ch` plays."""
+        half = self._cm64_half(port, ch)
+        if half is None:
+            return self.voice_counts[port], self.poly_limits[port]
+        pcm = 0
+        for (c, _), info in self.active.items():
+            if self._pcm_ch(port, c) and port in info.get("ports", [info["port"]]):
+                pcm += int(info.get("voices") or 1)
+        if half:
+            return pcm, CM64_PCM_POLY
+        return max(0, self.voice_counts[port] - pcm), self.poly_limits[port]
+
+    def _port_notes(self, port: int, ch: int | None = None) -> tuple[int, int]:
+        """(notes sounding, limit) on `port`; a CM-64 counts only the half `ch` plays
+        (the PCM half in partials)."""
+        half = self._cm64_half(port, ch)
+        n = 0
+        for (c, _), info in self.active.items():
+            if port in info.get("ports", [info["port"]]):
+                if half is None or self._pcm_ch(port, c) == half:
+                    # The PCM half's 31 voices are partials (1 or 2 per note).
+                    n += int(info.get("voices") or 1) if half else 1
+        lim = CM64_PCM_POLY if half else self.poly_limits[port]
+        return n, lim
+
+    def _steal_least_important(self, port: int, ch: int | None = None):
         """
         Steal the least important note on the given port.
-        Priority: lowest velocity first, then oldest.
+        Priority: lowest velocity first, then oldest. On a CM-64 only the
+        half that `ch` plays is searched (LA and PCM voices are separate).
         """
+        half = self._cm64_half(port, ch)
         candidates = []
         for key, info in self.active.items():
             ports = info.get("ports", [info["port"]])
             if port in ports:
+                if half is not None and self._pcm_ch(port, key[0]) != half:
+                    continue
                 candidates.append((info.get("velocity", 64), info["time"], key))
 
         if not candidates:
@@ -1602,18 +2779,31 @@ class Duality:
         ch, note = key
 
         off = mido.Message("note_off", channel=ch, note=note, velocity=0)
-        ports = self.active[key].get("ports", [port])
+        info = self.active[key]
+        ports = info.get("ports", [port])
+        w = int(info.get("voices") or 1)
         for p in ports:
             self._send_routed(p, off)
-            self.voice_counts[p] = max(0, self.voice_counts[p] - 1)
+            self.voice_counts[p] = max(0, self.voice_counts[p] - w)
         del self.active[key]
+        if self.anima:
+            self._anima_ghost_kill(key)
         self.steal_count += 1
 
-    def _choose_from_ports(self, eligible: list[int], is_chord: bool) -> int | None:
+    def _choose_from_ports(
+        self, eligible: list[int], is_chord: bool, ch: int | None = None
+    ) -> int | None:
         """Utilization / RR / chord pick among a concrete eligible list."""
         if not eligible:
             return None
         counts = self.voice_counts
+        if self._cm64_ports:
+            # A CM-64 is judged by the half this channel plays.
+            load = {i: self._port_voices(i, ch) for i in eligible}
+            counts = [load[i][0] if i in load else c for i, c in enumerate(counts)]
+            limits = [load[i][1] if i in load else l for i, l in enumerate(self.poly_limits)]
+        else:
+            limits = self.poly_limits
 
         if self.mode == "rr":
             for _ in range(self.n_ports):
@@ -1625,11 +2815,11 @@ class Duality:
 
         if is_chord and self.last_chord_port is not None and self.last_chord_port in eligible:
             preferred = self.last_chord_port
-            if counts[preferred] < self.poly_limits[preferred]:
+            if counts[preferred] < limits[preferred]:
                 return preferred
 
         def _util(i: int) -> float:
-            lim = self.poly_limits[i] or 1
+            lim = limits[i] or 1
             return counts[i] / lim
 
         min_util = min(_util(i) for i in eligible)
@@ -1652,7 +2842,6 @@ class Duality:
         prefer primary (native) ports with free polyphony; overflow to
         GS↔XG translate targets only when primary would steal/drop.
         """
-        counts = self.voice_counts
         if self.alchemy_all:
             return self._choose_from_ports(self._eligible_note_ports(), is_chord)
 
@@ -1660,7 +2849,12 @@ class Duality:
         overflow = self._overflow_note_ports() if self.alchemy else []
 
         def _free(pool: list[int]) -> list[int]:
-            return [i for i in pool if counts[i] < self.poly_limits[i]]
+            out = []
+            for i in pool:
+                n, lim = self._port_voices(i)
+                if n < lim:
+                    out.append(i)
+            return out
 
         free_primary = _free(primary)
         if free_primary:
@@ -1682,13 +2876,17 @@ class Duality:
         SysEx and important messages always return True.
         Continuous controllers / pitch bend are filtered if unchanged.
         """
+        # Single-out pass-through: do not collapse repeats (like-for-like).
+        if self.n_ports <= 1:
+            return True
         # Always send these
         if msg.type in ("sysex", "program_change", "reset", "stop", "start", "continue", "songpos", "song_select"):
             return True
 
         if msg.type == "control_change":
-            # Always send Bank Select and mode messages
-            if msg.control in (0, 32, 120, 121, 122, 123, 124, 125, 126, 127):
+            # Always send Bank Select, mode, and RPN/NRPN data entry
+            if msg.control in (0, 32, 6, 38, 96, 97, 98, 99, 100, 101,
+                               120, 121, 122, 123, 124, 125, 126, 127):
                 return True
             key = (port_idx, msg.channel, "cc", msg.control)
             last = self.last_sent.get(key)
@@ -1740,7 +2938,7 @@ class Duality:
             self._log_line(f"PORT  Close before reconnect out {port + 1}: {e}")
 
         try:
-            self.outs[port] = mido.open_output(name)
+            self.outs[port] = self._opener(name)
             self._out_offline[port] = False
             self._out_fail_logged[port] = False
             self._log_line(f"PORT  Reconnected out {port + 1}: {name}")
@@ -1794,8 +2992,45 @@ class Duality:
 
         try:
             self.outs[port].send(msg)
+            mt = getattr(msg, "type", "")
+            if mt in ("program_change", "control_change"):
+                # Per-unit tone as sent (bank / PC / CC7), so a bass-sub
+                # reprogram can be undone for the file's own notes.
+                tone = getattr(self, "_tone_port", None)
+                if tone is None:
+                    tone = self._tone_port = [[[None, None, None, None] for _ in range(16)] for _ in range(self.n_ports)]
+                if port < len(tone):
+                    slot = tone[port][msg.channel & 0x0F]
+                    if mt == "program_change":
+                        slot[2] = int(msg.program)
+                    elif msg.control == 0:
+                        slot[0] = int(msg.value)
+                    elif msg.control == 32:
+                        slot[1] = int(msg.value)
+                    elif msg.control == 7:
+                        slot[3] = int(msg.value)
+            if mt == "control_change" and msg.control == 1:
+                # Per-unit CC1 as sent. Anima mod swells go only to live ports,
+                # so one unit can keep a stale wheel the others already reset.
+                shadow = getattr(self, "_cc1_port", None)
+                if shadow is None:
+                    shadow = self._cc1_port = [[0] * 16 for _ in range(self.n_ports)]
+                if port < len(shadow):
+                    shadow[port][msg.channel & 0x0F] = int(msg.value)
             self._out_last_ok[port] = time.monotonic()
             self._out_fail_logged[port] = False
+            if getattr(self, "_anima_efx_ours", False) and getattr(msg, "type", "") == "sysex":
+                # Remember our own SysEx briefly, so a loop-back echo is not
+                # read as the file's. Timed: an echo is back within ms, while
+                # the file may send the very same bytes a song later.
+                sig = tuple(int(b) & 0xFF for b in (msg.data or [])[:10])
+                now_s = time.monotonic()
+                bag = [
+                    (s, t) for s, t in (getattr(self, "_anima_efx_sent_sig", None) or [])
+                    if now_s - t < ANIMA_EFX_ECHO_SEC
+                ]
+                bag.append((sig, now_s))
+                self._anima_efx_sent_sig = bag[-12:]
             self._record_out(port, msg)
             return True
         except Exception as e:
@@ -1886,6 +3121,244 @@ class Duality:
         if data[6] == 0x22:
             return "part"
         return None
+
+
+    def _gs_canvas_class(self, tags) -> str:
+        """55 / 88 / 88pro / 8850 / none — EFX + tone map generation."""
+        tags = {str(x).lower() for x in (tags or [])}
+        if tags & {"gs8850", "gs8820", "sc", "8820", "8850", "scva", "sc8850", "sc-8850"}:
+            return "8850"
+        if tags & {"gs88pro"}:
+            return "88pro"
+        if tags & {"gs55"}:
+            return "55"
+        if tags & {"gs88"}:
+            return "88"
+        if tags & ({"xg"} | LA_TAGS):
+            return "none"
+        # bare :gs / :gm / any → 8850-class (SCVA). Tag 88emu :gs+88pro.
+        if tags & {"gs", "gm", "gm2", "any"} or not tags:
+            return "8850"
+        return "none"
+
+    def _port_wants_8850_keyshift_compat(self, tags) -> bool:
+        """Only 8820/8850. 88Pro/88emu must receive 40 1x 16 as the file wrote it."""
+        return self._gs_canvas_class(tags) == "8850"
+
+    def _port_has_insertion_efx(self, tags) -> bool:
+        return self._gs_canvas_class(tags) in ("88pro", "8850")
+
+    def _gs_keyshift_fixup(self, port: int, msg: mido.Message):
+        """8850 last-mile: pass Key Shift unless this is the YS4 stack."""
+        tags = self.out_formats[port] if port < len(self.out_formats) else set()
+        if self._gs_canvas_class(tags) != "8850":
+            return None
+        return self._gs_8850_compat(msg, cls="8850")
+
+    def _gs_88pro_keyshift_zero(self, msg: mido.Message):
+        """File writes 40 1x 16 (88Pro vel-offset / 88emu Key Shift display).
+        Also pin 40 1x 12 to 0 so sounding Key Shift cannot stick at -6.
+        Does not replace 16.
+        """
+        if msg.type != "sysex":
+            return None
+        data = list(msg.data or [])
+        if data and data[0] == 0xF0:
+            data = data[1:]
+        addr = None
+        for i in range(0, max(0, len(data) - 7)):
+            if data[i] == 0x41 and data[i + 2] == 0x42 and data[i + 3] == 0x12:
+                if data[i + 4] == 0x40:
+                    addr = (data[i + 5], data[i + 6], data[i + 7] & 0x7F)
+                    break
+        if addr is None:
+            return None
+        bb, cc, val = addr
+        if not (0x10 <= bb <= 0x1F) or cc != 0x16:
+            return None
+        if val == 0x40:
+            return None
+        part = (bb - 0x10) + 1
+        self._anima_feedback(
+            "gs-compat",
+            f"P{part} 88Pro pin Key Shift 0 (12) keep 16={val}",
+            status=True,
+        )
+        return self._gs_dt1([0x40, bb, 0x12], [0x40])
+
+    @staticmethod
+    def _gs_bb_to_part(bb: int):
+        """GS part mid-byte → 1–16. None if not a part block."""
+        if bb == 0x10:
+            return 10
+        if 0x11 <= bb <= 0x19:
+            return bb - 0x10
+        if 0x1A <= bb <= 0x1F:
+            return 11 + (bb - 0x1A)
+        return None
+
+    def _gs_reset_part_rx(self) -> None:
+        self._gs_part_rx = list(range(16))
+        self._gs_part_ks = [0x40] * 16
+        self._gs_part_rel = [None] * 16
+        self._ys_stack_fixed = set()
+        self._ys_rel_fixed = set()
+        self._ys_skip_ks = False
+
+    @staticmethod
+    def _gs_part_to_bb(part: int) -> int:
+        if part == 10:
+            return 0x10
+        if 1 <= part <= 9:
+            return 0x10 + part
+        return 0x1A + (part - 11)
+
+    def _gs_stacked_parts(self) -> set:
+        """Parts that share an Rx channel with at least one other part."""
+        rx = getattr(self, "_gs_part_rx", None)
+        if not rx or len(rx) < 16:
+            return set()
+        counts = {}
+        for ch in rx:
+            counts[ch] = counts.get(ch, 0) + 1
+        shared = {ch for ch, n in counts.items() if n >= 2}
+        return {i + 1 for i, ch in enumerate(rx) if ch in shared}
+
+    def _gs_ys_stack_apply(self) -> None:
+        """After Rx remaps settle, zero Key Shift on stacked parts (8850 only).
+
+        YS4 writes 16=−6 on parts 7 and 16 *before* part 16 is remapped
+        onto ch7, so in-flight intercept always misses. Last write wins
+        and this runs before the first note.
+        """
+        stacked = self._gs_stacked_parts()
+        if not stacked:
+            return
+        if getattr(self, "_ys_skip_ks", False):
+            self._gs_ys_release_apply()
+            return
+        ks = getattr(self, "_gs_part_ks", [0x40] * 16)
+        ports = [
+            i for i, tags in enumerate(self.out_formats)
+            if self._gs_canvas_class(tags) == "8850"
+        ]
+        if not ports:
+            return
+        for part in sorted(stacked):
+            if part in self._ys_stack_fixed:
+                continue
+            val = ks[part - 1]
+            if val == 0x40:
+                continue
+            bb = self._gs_part_to_bb(part)
+            msg = self._gs_dt1([0x40, bb, 0x16], [0x40])
+            for i in ports:
+                self._send(i, msg)
+            self._ys_stack_fixed.add(part)
+            self._gs_part_ks[part - 1] = 0x40
+            self._log_line(f"GS YS-stack: P{part} KS {val - 64:+d} → 0 after remap")
+            self._set_status(
+                f"YS stack: part {part} Key Shift 0 (8850)",
+                duration=2.0,
+            )
+        self._gs_ys_release_apply()
+
+    def _gs_ys_release_apply(self) -> None:
+        """YS4 slams TVA release (40 1x 1F) to 1 on Hyper Alto.
+
+        That patch sustains normally on 8850; only this dump does it.
+        Restore default 64 when the YS stack is in effect.
+        """
+        if not self._gs_stacked_parts():
+            return
+        ports = [
+            i for i, tags in enumerate(self.out_formats)
+            if self._gs_canvas_class(tags) == "8850"
+        ]
+        if not ports:
+            return
+        rel = getattr(self, "_gs_part_rel", None) or [None] * 16
+        for part in range(1, 17):
+            if part in self._ys_rel_fixed:
+                continue
+            val = rel[part - 1]
+            if val is None or val >= 16:
+                continue
+            bb = self._gs_part_to_bb(part)
+            msg = self._gs_dt1([0x40, bb, 0x1F], [0x40])
+            for i in ports:
+                self._send(i, msg)
+            self._ys_rel_fixed.add(part)
+            self._gs_part_rel[part - 1] = 0x40
+            self._log_line(f"GS YS-stack: P{part} release {val} → 64 (8850)")
+            self._set_status(
+                f"YS stack: part {part} release 64 (8850)",
+                duration=2.0,
+            )
+
+    def _gs_observe_part_dt1(self, msg: mido.Message) -> None:
+        """Track part Rx (40 1x 02), Key Shift (40 1x 16), GS Reset."""
+        if msg.type != "sysex":
+            return
+        data = list(msg.data or [])
+        if data and data[0] == 0xF0:
+            data = data[1:]
+        if len(data) < 8:
+            return
+        if data[0] != 0x41 or data[2] != 0x42 or data[3] != 0x12:
+            return
+        aa, bb, cc, val = data[4], data[5], data[6], data[7] & 0x7F
+        if aa == 0x40 and bb == 0x00 and cc == 0x7F:
+            self._gs_reset_part_rx()
+            return
+        # Hirari SC-88Pro revision LCD. That dump still writes 16=−6 but
+        # 88emu50 already plays the lead in tune; neutralizing KS then
+        # pushes it +6. Keep the Hyper Alto release fix only.
+        if aa == 0x41 and bb in (0x00, 0x10) and cc == 0x00:
+            raw = bytes(data[7:-1])
+            if b"Hirari" in raw or b"HIRARI" in raw:
+                if not self._ys_skip_ks:
+                    self._ys_skip_ks = True
+                    self._log_line("GS YS-stack: Hirari dump — skip KS neutralize")
+            return
+        if aa != 0x40:
+            return
+        part = self._gs_bb_to_part(bb)
+        if part is None:
+            return
+        if cc == 0x02:
+            self._gs_part_rx[part - 1] = val & 0x0F
+            # KS neutralize waits for dump end so Hirari LCD can set skip.
+        elif cc == 0x16:
+            self._gs_part_ks[part - 1] = val
+        elif cc == 0x1F:
+            # Store only. Sending 64 here is overwritten when this
+            # same message is forwarded later in process().
+            self._gs_part_rel[part - 1] = val
+
+    def _gs_8850_compat(self, msg: mido.Message, cls: str = "8850"):
+        """8850 last-mile: replace slammed TVA release while YS stack is on."""
+        if cls != "8850" or msg.type != "sysex":
+            return None
+        data = list(msg.data or [])
+        if data and data[0] == 0xF0:
+            data = data[1:]
+        if len(data) < 8:
+            return None
+        if data[0] != 0x41 or data[2] != 0x42 or data[3] != 0x12:
+            return None
+        aa, bb, cc, val = data[4], data[5], data[6], data[7] & 0x7F
+        if aa != 0x40 or cc != 0x1F:
+            return None
+        part = self._gs_bb_to_part(bb)
+        if part is None or val >= 16:
+            return None
+        if not self._gs_stacked_parts():
+            return None
+        self._log_line(f"GS YS-stack: P{part} release {val} → 64 (last-mile)")
+        self._ys_rel_fixed.add(part)
+        self._gs_part_rel[part - 1] = 0x40
+        return [self._gs_dt1([0x40, bb, 0x1F], [0x40])]
 
     def _gs_dt1(self, addr: list[int], values: list[int]) -> mido.Message:
         """Build Roland GS DT1 SysEx with checksum."""
@@ -2382,10 +3855,12 @@ class Duality:
         return msg
 
     def _la_port_kind(self, port: int) -> str | None:
-        """Return 'mt32', 'cm32', or None for pan-table selection."""
+        """Return 'mt32', 'cm32', 'cm64', or None for pan-table selection."""
         tags = self.out_formats[port] if port < len(self.out_formats) else None
         if not tags:
             return None
+        if "cm64" in tags:
+            return "cm64"
         if "cm32" in tags or "cm" in tags:
             return "cm32"
         if "mt32" in tags:
@@ -2438,7 +3913,15 @@ class Duality:
         if not self._should_map_mt32_pan(port):
             return msg
         kind = self._la_port_kind(port)
-        positions = CM32_PAN_POSITIONS if kind == "cm32" else MT32_PAN_POSITIONS
+        if (
+            kind == "cm64"
+            and (msg.channel & 0x0F) in CM64_PCM_CHANNELS
+            and not (self.voodoo_active or self.voodoo_loading or self.voodoo_catchup)
+        ):
+            # The PCM half pans continuously but reversed like LA (0 = right).
+            # (Under Voodoo these channels are LA parts; PCM parts go via _cm64v_send.)
+            return msg.copy(value=127 - msg.value)
+        positions = CM32_PAN_POSITIONS if kind in ("cm32", "cm64") else MT32_PAN_POSITIONS
         val = self._gm_pan_to_la(msg.value, positions, channel=msg.channel)
         try:
             return msg.copy(value=val)
@@ -2452,6 +3935,8 @@ class Duality:
 
     def _send_routed(self, port: int, msg: mido.Message) -> None:
         """Send with optional Alchemy prepare (skip if translation says None)."""
+        if self._cm64v_parts and self._cm64v_intercept(port, msg):
+            return   # played on a CM-64 PCM part only
         self._alchemy_last_label = None
         out_msg = self._alchemy_prepare(msg, port)
         if out_msg is None:
@@ -2476,13 +3961,29 @@ class Duality:
         if isinstance(out_msg, list):
             for m in out_msg:
                 m = self._apply_mt32_pan_invert(port, m)
-                self._send(port, m)
-                self._log_msg(port, m, note=note or "Alchemy multi")
+                m = self._anima_seat_pan_fix(port, m)
+                fixed = self._gs_keyshift_fixup(port, m)
+                if fixed is None:
+                    self._send(port, m)
+                    self._log_msg(port, m, note=note or "Alchemy multi")
+                else:
+                    for fm in fixed:
+                        self._send(port, fm)
+                        self._log_msg(port, fm, note="ks-fix")
             if label:
                 self._set_status(f"Alchemy: {label} → out {port + 1}", duration=2.5)
             return
         out_msg = self._apply_mt32_pan_invert(port, out_msg)
-        self._send(port, out_msg)
+        out_msg = self._anima_seat_pan_fix(port, out_msg)
+        fixed = self._gs_keyshift_fixup(port, out_msg)
+        if fixed is None:
+            self._send(port, out_msg)
+        else:
+            for m in fixed:
+                self._send(port, m)
+                if m is not out_msg:
+                    self._log_msg(port, m, note="ks-fix")
+            return
         # Log non-notes on the wire (mapped or pass-through)
         if out_msg.type != "note_on" and out_msg.type != "note_off":
             self._log_msg(port, out_msg, note=note)
@@ -2494,12 +3995,42 @@ class Duality:
     # Voodoo – Super-Munt-style GM bank for MT-32 hardware
     # ------------------------------------------------------------------
     def _mt32_port_indices(self) -> list[int]:
-        """Ports whose capability tags include mt32 or cm32 (LA family)."""
+        """Ports whose capability tags include mt32, cm32 or cm64 (LA family)."""
         out = []
         for i, tags in enumerate(self.out_formats):
-            if tags and (tags & {"mt32", "cm32"}):
+            if tags and (tags & LA_TAGS):
                 out.append(i)
         return out
+
+    def _cm_port_indices(self) -> list[int]:
+        """LA outs with the CM-32L rhythm sound effects (cm32 / cm64 tags)."""
+        return [i for i, tags in enumerate(self.out_formats) if tags and (tags & {"cm32", "cm64"})]
+
+    def _cm_sfx_items(self, targets) -> list:
+        """Voodoo send-list steps that put the CM sound effects back on their keys
+        (tables_cm64.CM_VOODOO_SFX) on every CM target, after a kit was written."""
+        items = []
+        if not CM_VOODOO_SFX:
+            return items
+        cm = [p for p in targets if p in set(self._cm_port_indices())]
+        base = (0x03 << 14) | (0x01 << 7) | 0x10          # rhythm setup, key 24
+        keys = sorted(CM_VOODOO_SFX)
+        runs, run = [], [keys[0]]
+        for k in keys[1:]:
+            if k == run[-1] + 1:
+                run.append(k)
+            else:
+                runs.append(run)
+                run = [k]
+        runs.append(run)
+        for run in runs:
+            a = base + 4 * (run[0] - 24)
+            addr = ((a >> 14) & 0x7F, (a >> 7) & 0x7F, a & 0x7F)
+            data = [x for k in run for x in CM_VOODOO_SFX[k]]
+            payload = _mt32_dt1(addr, data)
+            for p in cm:
+                items.append((payload, [p]))
+        return items
 
     def _mt32_display_msg(self, text: str) -> mido.Message:
         """
@@ -2524,13 +4055,13 @@ class Duality:
             self._safe_out_send(p, msg)
 
     def _only_mt32_outs(self) -> bool:
-        """True when every port is mt32-capable and none offer gm/gs/xg/any."""
+        """True when every port is LA-family (mt32/cm32/cm64) and none offer gm/gs/xg/any."""
         if self.n_ports < 1:
             return False
         for tags in self.out_formats:
             if not tags or "any" in tags:
                 return False
-            if "mt32" not in tags:
+            if not (tags & LA_TAGS):
                 return False
             # pure mt32 (may also list nothing else) – reject if gm/gs/xg/gm2 present
             if tags & {"gm", "gm2", "gs", "xg"}:
@@ -2587,7 +4118,14 @@ class Duality:
 
         banner_load = bytes(self._mt32_display_msg("Duality Voodoo...").data)
         banner_gm = bytes(self._mt32_display_msg(("Loading " + bank_display(self.voodoo_bank))[:20]).data)
-        send_list = _all([banner_load, banner_gm]) + _all(bank) + _all(kit)
+        send_list = _all([banner_load, banner_gm])
+        # CM-64: the PCM half stops listening (channel OFF) until its parts are
+        # placed below, so GM data never doubles with CM-32P sounds.
+        for port in targets:
+            if port in self._cm64_ports:
+                send_list.extend(_one([_mt32_dt1(CM64_PCM_RX, [16] * 6)], port))
+        send_list += _all(bank) + _all(kit)
+        send_list += self._cm_sfx_items(targets)
 
         # Phase V2: with 2+ MT-32s, program alternating channel map + equal reserve
         if len(targets) >= 2:
@@ -2629,6 +4167,8 @@ class Duality:
             # Single unit: no remap – leave factory/bank receive channels as-is
             self._voodoo_ch_owners = [[] for _ in range(16)]
 
+        self._cm64v_plan(targets, bank, plan if len(targets) >= 2 else None, send_list, _one)
+
         # Master volume last so it wins over any level in the bank dump.
         # MT-32 scale is 0–100; GM banks at 100 often clip on original hardware.
         vol = max(0, min(100, int(VOODOO_MASTER_VOLUME)))
@@ -2646,6 +4186,12 @@ class Duality:
         n_units = max(1, len(targets))
         # Honest ETA: paced gap is a floor; shared USB MIDI scales with unit count.
         est = n * max(VOODOO_SYSEX_GAP, n_units * VOODOO_SEC_PER_UNIT_STEP)
+        per_unit: dict[int, int] = {}
+        for it in self._voodoo_send_list:
+            for pl, ports in (it if isinstance(it, list) else [it]):
+                for d_ in (ports if ports is not None else targets):
+                    per_unit[d_] = per_unit.get(d_, 0) + len(pl) + 2
+        est = max(est, max(per_unit.values(), default=0) / MIDI_WIRE_BYTES_PER_SEC)
         multi = " 16ch" if len(targets) >= 2 else ""
         self._set_status(
             f"Voodoo: loading {bank_label(self.voodoo_bank)}{multi} "
@@ -2685,19 +4231,469 @@ class Duality:
                 self._voodoo_display("Voodoo Off")
             except Exception:
                 pass
+            self._cm64v_release_all()
+            # CM-64: the PCM half listens on ch11-16 again (factory map).
+            pcm_on = mido.Message(
+                "sysex", data=list(_mt32_dt1(CM64_PCM_RX, list(range(10, 16))))
+            )
+            for p in sorted(self._cm64_ports):
+                self._safe_out_send(p, pcm_on)
             self._set_status(f"Voodoo: exited ({reason})", duration=3.0)
             self._log_line(f"VOODOO exit ({reason})")
+
+    # ------------------------------------------------------------------
+    # CM-64 PCM half under Voodoo (0.19.055)
+    #
+    # The LA maps stay as they are. Each CM-64 adds 6 PCM parts:
+    #   1 unit  - fixed seats: the parts listen on the melody channels the
+    #             bank's LA parts leave free (MTGM: 9, 11-15) and always play
+    #             PCM (the program's nearest tone, tables_cm64).
+    #   2+ units - a pool: a GM channel whose program is "pcm" / "layer" in
+    #             tables_cm64 claims a part; Duality sends it that channel's
+    #             traffic on the part's own receive channel (one the unit's LA
+    #             parts do not use), with the PC translated to the PCM tone.
+    # Notes sent to a part are kept here (not in self.active), so a note-off
+    # always reaches the part its note went to, and the 31 PCM partials are
+    # counted and stolen per CM-64.
+    # ------------------------------------------------------------------
+    def _cm64v_reset(self) -> None:
+        self._cm64v_parts: list[dict] = []
+        self._cm64v_active: dict = {}      # (gm ch, note) -> [part, partials, vel, t]
+        self._cm64v_state = [
+            {"cc": {7: 100, 10: 64, 11: 127, 64: 0}, "pitch": 0} for _ in range(16)
+        ]
+        self._cm64v_seats = False
+        self._cm64v_live = False
+        self._cm64v_la: list[dict] = []    # one-unit live seats: LA parts 1-8 {port, i, owner, last}
+
+    def _cm64v_plan(self, targets, bank, plan, send_list, _one) -> None:
+        """Place the PCM parts of every CM-64 Voodoo target (receive channels + reserve)."""
+        self._cm64v_reset()
+        if cm64_gm_pick is None:
+            return
+        seats = plan is None
+        self._cm64v_seats = seats
+        for u, port in enumerate(targets):
+            if port not in self._cm64_ports:
+                continue
+            if seats:
+                bank_la = _bank_la_channels(bank)
+                la = {c for c in bank_la if c is not None}
+                self._cm64v_live = self.cm64_seats == "live"
+                self._cm64v_la = [
+                    {"port": port, "i": i, "owner": c, "last": 0.0}
+                    for i, c in enumerate(bank_la)
+                ]
+            else:
+                la = {c - 1 for c in plan[u]}
+            la.add(9)
+            rx = [c for c in range(16) if c not in la][:6]
+            for k, c in enumerate(rx):
+                self._cm64v_parts.append({
+                    "port": port, "k": k, "rx": c,
+                    "owner": c if seats else None, "prev": None,
+                    "prog": None, "last": 0.0, "primed": False,
+                })
+            rx_data = rx + [16] * (6 - len(rx))
+            send_list.extend(_one([
+                _mt32_dt1(CM64_PCM_RESERVE, list(CM64_VOODOO_RESERVE)),
+                _mt32_dt1(CM64_PCM_RX, rx_data),
+            ], port))
+            what = ("live seats" if self._cm64v_live else "seats") if seats else "pool"
+            self._log_line(
+                f"VOODOO port{port + 1}: CM-64 PCM {what} on ch "
+                + ",".join(str(c + 1) for c in rx)
+            )
+
+    # ---- one CM-64, live seats (0.19.056) ----
+    # 15 GM melody channels share 8 LA + 6 PCM parts. Every part listens on its
+    # owner's own channel (LA: 10 00 0D+i, PCM: 52 00 0A+k), so nothing is
+    # rewritten. At each program change a channel moves to the half its pick
+    # wants when a part there is free (or its owner rested 10 s); its notes on
+    # the old half are ended first. A channel with no part takes one at its
+    # next note; with none to take it stays silent, as before.
+    def _cm64v_la_owned(self, ch: int):
+        for lap in self._cm64v_la:
+            if lap["owner"] == ch:
+                return lap
+        return None
+
+    def _cm64v_la_sounding(self, lap) -> bool:
+        return lap["owner"] is not None and any(
+            (k[0] & 0x0F) == lap["owner"] for k in self.active
+        )
+
+    def _cm64v_rx_write(self, port: int) -> None:
+        rx = [16] * 6
+        for part in self._cm64v_parts:
+            if part["port"] == port and part["owner"] is not None:
+                rx[part["k"]] = part["owner"]
+        self._safe_out_send(port, mido.Message("sysex", data=list(_mt32_dt1(CM64_PCM_RX, rx))))
+
+    def _cm64v_la_rx_write(self, lap) -> None:
+        val = lap["owner"] if lap["owner"] is not None else VOODOO_MIDI_CH_OFF
+        self._safe_out_send(
+            lap["port"], mido.Message("sysex", data=list(_mt32_dt1((0x10, 0x00, 0x0D + lap["i"]), [val])))
+        )
+
+    def _cm64v_cut(self, ch: int) -> None:
+        """End this channel's sounding notes (both halves) before it changes half."""
+        for key in [k for k in self._cm64v_active if k[0] == ch]:
+            rec = self._cm64v_active.pop(key)
+            self._cm64v_send(rec[0], mido.Message("note_off", channel=ch, note=key[1], velocity=0))
+        for key in [k for k in self.active if (k[0] & 0x0F) == ch]:
+            info = self.active.pop(key)
+            w = int(info.get("voices") or 1)
+            for p in info.get("ports") or [info["port"]]:
+                self._send_routed(p, mido.Message("note_off", channel=key[0], note=key[1], velocity=0))
+                self.voice_counts[p] = max(0, self.voice_counts[p] - w)
+
+    def _cm64v_live_free(self, half: str):
+        """A part of `half` to take: free first, else one whose owner rested a while."""
+        now = time.monotonic()
+        if half == "pcm":
+            pool, busy = self._cm64v_parts, self._cm64v_sounding
+        else:
+            pool, busy = self._cm64v_la, self._cm64v_la_sounding
+        free = [p for p in pool if p["owner"] is None and not busy(p)]
+        if free:
+            return free[0]
+        rested = [
+            p for p in pool
+            if not busy(p) and now - p["last"] >= CM64_POOL_IDLE_SEC
+        ]
+        return min(rested, key=lambda p: p["last"]) if rested else None
+
+    def _cm64v_live_place(self, ch: int, at_note: bool = False):
+        """Put channel `ch` on the half its program wants; returns 'pcm', 'la' or None."""
+        use = self._cm64v_pick(ch)[0]
+        want = "la" if use == "la" else "pcm"   # one unit: a layer plays on PCM
+        cur_pcm, cur_la = self._cm64v_owned(ch), self._cm64v_la_owned(ch)
+        cur = "pcm" if cur_pcm else ("la" if cur_la else None)
+        if cur == want:
+            return cur
+        new = self._cm64v_live_free(want)
+        if new is None:
+            if cur is not None:
+                return cur
+            want = "pcm" if want == "la" else "la"
+            new = self._cm64v_live_free(want)
+            if new is None:
+                return None
+        now = time.monotonic()
+        if cur is not None:
+            self._cm64v_cut(ch)
+            old = cur_pcm or cur_la
+            old["owner"] = None
+            if cur == "pcm":
+                self._cm64v_rx_write(old["port"])
+            else:
+                self._cm64v_la_rx_write(old)
+        if new["owner"] is not None:
+            self._log_line(f"CM-64 seat: ch{new['owner'] + 1} rested, its {want.upper()} part goes to ch{ch + 1}")
+        new["owner"] = ch
+        new["last"] = now
+        if want == "pcm":
+            new["rx"] = ch
+            new["prev"] = None
+            self._cm64v_rx_write(new["port"])
+            self._cm64v_prime(new, ch)
+        else:
+            self._cm64v_la_rx_write(new)
+            st = self._cm64v_state[ch]
+            for cc, val in st["cc"].items():
+                self._send_routed(new["port"], mido.Message("control_change", channel=ch, control=cc, value=val))
+            self._send_routed(new["port"], mido.Message("pitchwheel", channel=ch, pitch=st["pitch"]))
+            prog = self._ch_program[ch]
+            if at_note and prog is not None:
+                self._send_routed(new["port"], mido.Message("program_change", channel=ch, program=prog))
+        self._log_line(
+            f"CM-64 seat: ch{ch + 1} → {want.upper()} part {(new.get('k', new.get('i')) or 0) + 1}"
+            + (f" (was {cur.upper()})" if cur else "")
+        )
+        return want
+
+    def _cm64v_pick(self, ch: int):
+        prog = self._ch_program[ch]
+        return cm64_gm_pick(prog if prog is not None else 0)
+
+    def _cm64v_owned(self, ch: int):
+        for part in self._cm64v_parts:
+            if part["owner"] == ch:
+                return part
+        return None
+
+    def _cm64v_sounding(self, part) -> bool:
+        return any(rec[0] is part for rec in self._cm64v_active.values())
+
+    def _cm64v_send(self, part, msg: mido.Message) -> None:
+        # Straight to the port: the PCM half pans continuously (no LA pan table),
+        # but reversed like the LA half (0 = right, 127 = left), so GM pan flips.
+        out = msg.copy(channel=part["rx"])
+        if out.type == "control_change" and out.control == 10:
+            out = out.copy(value=127 - out.value)
+        self._send(part["port"], out)
+        self._log_msg(part["port"], out, note="CM-64 PCM")
+
+    def _cm64v_level(self, value: int, pct: int) -> int:
+        return max(0, min(127, int(round(value * pct / 100.0))))
+
+    def _cm64v_claim(self, ch: int):
+        """A free pool part for GM channel `ch` (None: play on LA)."""
+        now = time.monotonic()
+        owners = set(self._voodoo_ch_owners[ch]) if self._voodoo_ch_owners else set()
+        load = {}
+        for part in self._cm64v_parts:
+            if part["owner"] is not None:
+                load[part["port"]] = load.get(part["port"], 0) + 1
+
+        def _rank(part):
+            return (part["port"] not in owners, load.get(part["port"], 0), part["port"], part["k"])
+
+        free = [p for p in self._cm64v_parts if p["owner"] is None and not self._cm64v_sounding(p)]
+        if not free:
+            # A part whose owner has rested a while and has nothing sounding.
+            free = [
+                p for p in self._cm64v_parts
+                if not self._cm64v_sounding(p) and now - p["last"] >= CM64_POOL_IDLE_SEC
+            ]
+        if not free:
+            return None
+        part = min(free, key=_rank)
+        if part["owner"] is not None:
+            self._log_line(f"CM-64 PCM part {part['k'] + 1} port{part['port'] + 1}: "
+                           f"ch{part['owner'] + 1} rested, now ch{ch + 1}")
+        part["owner"] = ch
+        part["prev"] = None
+        part["last"] = now
+        self._cm64v_prime(part, ch)
+        return part
+
+    def _cm64v_prime(self, part, ch: int) -> None:
+        """Bring a part up to its channel: program, then the controllers."""
+        use, pcm, _la, lv = self._cm64v_pick(ch)
+        part["primed"] = True
+        self._cm64v_prog(part, pcm)
+        st = self._cm64v_state[ch]
+        for cc, val in st["cc"].items():
+            if cc == 7:
+                val = self._cm64v_level(val, lv)
+            self._cm64v_send(part, mido.Message("control_change", channel=ch, control=cc, value=val))
+        self._cm64v_send(part, mido.Message("pitchwheel", channel=ch, pitch=st["pitch"]))
+
+    def _cm64v_prog(self, part, pcm: int) -> None:
+        if part["prog"] != pcm:
+            part["prog"] = pcm
+            self._cm64v_send(part, mido.Message("program_change", channel=0, program=pcm & 0x7F))
+
+    def _cm64v_release(self, part) -> None:
+        part["prev"] = part["owner"]
+        part["owner"] = None
+
+    def _cm64v_release_all(self) -> None:
+        """Voodoo ends: silence every part and drop the plan."""
+        for part in self._cm64v_parts:
+            self._cm64v_send(part, mido.Message("control_change", channel=0, control=64, value=0))
+            self._cm64v_send(part, mido.Message("control_change", channel=0, control=123, value=0))
+        self._cm64v_reset()
+
+    def _cm64v_note_on(self, part, msg: mido.Message, pcm: int, layered: bool = False) -> None:
+        if not part["primed"]:
+            self._cm64v_prime(part, msg.channel & 0x0F)
+        self._cm64v_prog(part, pcm)
+        need = CM64_PCM_PARTIALS[pcm] if pcm < len(CM64_PCM_PARTIALS) else 1
+        port = part["port"]
+
+        def _used():
+            return sum(r[1] for r in self._cm64v_active.values() if r[0]["port"] == port)
+
+        while _used() + need > CM64_PCM_POLY:
+            mine = [(r[2], r[3], k) for k, r in self._cm64v_active.items() if r[0]["port"] == port]
+            if not mine:
+                break
+            _v, _t, k = min(mine)
+            r = self._cm64v_active.pop(k)
+            self._cm64v_send(r[0], mido.Message("note_off", channel=k[0], note=k[1], velocity=0))
+            self.steal_count += 1
+        now = time.monotonic()
+        key = (msg.channel & 0x0F, msg.note)
+        old = self._cm64v_active.pop(key, None)
+        if old is not None:
+            self._cm64v_send(old[0], mido.Message("note_off", channel=key[0], note=key[1], velocity=0))
+        self._cm64v_send(part, msg)
+        self._cm64v_active[key] = [part, need, msg.velocity, now, layered]
+        part["last"] = now
+
+    def _cm64v_part_cc(self, part, msg: mido.Message) -> None:
+        """A controller / bend / pressure for a PCM part (CC7 at the part's level of the
+        file's own volume, so a layer's LA scaling never doubles up)."""
+        ch = msg.channel & 0x0F
+        if msg.type == "control_change" and msg.control == 7:
+            lv = self._cm64v_pick(ch)[3]
+            raw = self._cm64v_state[ch]["cc"].get(7, msg.value)
+            self._cm64v_send(part, msg.copy(value=self._cm64v_level(raw, lv)))
+        else:
+            self._cm64v_send(part, msg)
+
+    def _cm64v_intercept(self, port: int, msg) -> bool:
+        """Voodoo: a channel message sent to `port` for a channel with a PCM part there goes
+        to that part (receive channel, PCM tone, partials, reversed pan). True when the LA
+        copy must not go out: the channel plays on PCM only (a layer sends both); on a seat
+        the part listens on the channel itself, so its copy is the only one."""
+        if not (self.voodoo_active or self.voodoo_catchup):
+            return False
+        t = getattr(msg, "type", "")
+        if t not in _CM64V_TYPES or t == "program_change":
+            return False
+        ch = msg.channel & 0x0F
+        if ch == 9:
+            return False
+        if t in ("note_on", "note_off"):
+            key = (ch, msg.note)
+            if t == "note_on" and msg.velocity > 0:
+                part = self._cm64v_owned(ch)
+                if part is None or part["port"] != port:
+                    return False
+                use, pcm, _la, _lv = self._cm64v_pick(ch)
+                layered = use == "layer" and not self._cm64v_seats
+                self._cm64v_note_on(part, msg, pcm, layered)
+                return not layered
+            rec = self._cm64v_active.get(key)
+            if rec is None or rec[0]["port"] != port:
+                return False
+            self._cm64v_active.pop(key, None)
+            self._cm64v_send(rec[0], msg)
+            return not rec[4]
+        hit = False
+        for p in self._cm64v_parts:
+            if p["port"] != port:
+                continue
+            if p["owner"] == ch or (p["prev"] == ch and self._cm64v_sounding(p)):
+                self._cm64v_part_cc(p, msg)
+                hit = True
+        return hit and self._cm64v_seats
+
+    def _cm64v_route(self, msg: mido.Message):
+        """
+        Voodoo with CM-64 PCM parts. Returns the message for the normal (LA)
+        path, possibly with CC7 scaled for a layer, or None when it was played
+        on a PCM part only.
+        """
+        if not self.voodoo_active:
+            return msg
+        ch = msg.channel & 0x0F
+        if ch == 9:
+            return msg
+        t = msg.type
+        st = self._cm64v_state[ch]
+        if t == "control_change" and msg.control in st["cc"]:
+            st["cc"][msg.control] = msg.value
+        elif t == "control_change" and msg.control == 121:
+            st["cc"].update({11: 127, 64: 0})
+            st["pitch"] = 0
+        elif t == "pitchwheel":
+            st["pitch"] = msg.pitch
+        use, pcm, la_lv, pcm_lv = self._cm64v_pick(ch)
+        part = self._cm64v_owned(ch)
+
+        if self._cm64v_seats:
+            if self._cm64v_live:
+                if t == "program_change":
+                    self._cm64v_live_place(ch)
+                    # A program change counts as use: the burst at a song's start
+                    # must not hand this channel's part to the next channel in it.
+                    for p in (self._cm64v_owned(ch), self._cm64v_la_owned(ch)):
+                        if p is not None:
+                            p["last"] = time.monotonic()
+                elif t == "note_on" and msg.velocity > 0:
+                    if part is None and self._cm64v_la_owned(ch) is None:
+                        self._cm64v_live_place(ch, at_note=True)
+                    lap = self._cm64v_la_owned(ch)
+                    if lap is not None:
+                        lap["last"] = time.monotonic()
+                part = self._cm64v_owned(ch)
+            if part is None:
+                return msg                      # an LA channel on the single unit
+            use = "pcm"
+        elif t == "program_change":
+            if use in ("pcm", "layer"):
+                if part is not None:
+                    self._cm64v_prime(part, ch)
+                else:
+                    part = self._cm64v_claim(ch)   # primes the part it takes
+            elif part is not None:
+                self._cm64v_release(part)
+                part = None
+            # The LA part takes the PC too, so it is ready to play again;
+            # a layer runs its LA side at the layer level, and leaving one
+            # puts the file's volume back.
+            if use == "layer" and la_lv != 100:
+                self._cm64v_la_level(ch, la_lv)
+                st["la_scaled"] = True
+            elif st.get("la_scaled"):
+                self._cm64v_la_level(ch, 100)
+                st["la_scaled"] = False
+            return msg
+        elif part is None and t == "note_on" and msg.velocity > 0 and use in ("pcm", "layer"):
+            part = self._cm64v_claim(ch)
+
+        if t == "program_change":
+            # Seat: the part follows the program to its nearest PCM tone.
+            self._cm64v_prime(part, ch)
+            return None
+        if t in ("note_on", "note_off"):
+            # 0.19.061: notes take the normal path (Anima, counters, steals);
+            # _send_routed hands them to the PCM part (_cm64v_intercept).
+            return msg
+        # Controllers, bend, pressure: the normal path sends them to the
+        # channel's units, and _send_routed passes them to a PCM part there.
+        # A part on a unit that does not carry the channel on LA gets them here.
+        if not self._cm64v_seats:
+            reached = set(self._voodoo_ports_for_channel(ch) or [])
+            for p in self._cm64v_parts:
+                mine = p is part or (p["prev"] == ch and self._cm64v_sounding(p))
+                if mine and p["port"] not in reached:
+                    self._cm64v_part_cc(p, msg)
+        if t == "control_change" and msg.control == 7 and use == "layer" and la_lv != 100:
+            return msg.copy(value=self._cm64v_level(msg.value, la_lv))
+        return msg
+
+    def _cm64v_la_level(self, ch: int, pct: int) -> None:
+        """CC7 on the channel's LA owners at `pct` of the file's volume."""
+        val = self._cm64v_level(self._cm64v_state[ch]["cc"][7], pct)
+        m = mido.Message("control_change", channel=ch, control=7, value=val)
+        for port in (self._voodoo_ports_for_channel(ch) or []):
+            self._send_routed(port, m)
 
     def _voodoo_tick(self) -> None:
         """Advance paced bank load or elastic catch-up. Call from run loop."""
         now = time.monotonic()
         if self.voodoo_loading:
             # One SysEx per tick keeps the Live panel + hotkeys responsive
+            # Wire pacing (0.19.059): a driver that buffers (virtual cables, the
+            # gearmulator, some USB interfaces) takes SysEx faster than a unit's
+            # MIDI line can deliver it. Each unit's line is tracked; a step waits
+            # until its units' lines are free, and "ready" until every line is.
+            wire = self._voodoo_wire
+            item = (
+                self._voodoo_send_list[self._voodoo_send_idx]
+                if self._voodoo_send_idx < len(self._voodoo_send_list) else None
+            )
+            pairs = item if isinstance(item, list) else ([item] if item is not None else [])
+            pairs = [p_ if isinstance(p_, tuple) else (p_, None) for p_ in pairs]
+            dests = {
+                d_ for _pl, ports in pairs
+                for d_ in (ports if ports is not None else self._voodoo_targets)
+            }
+            if item is not None and any(wire.get(d_, 0.0) > now for d_ in dests):
+                return
             if (
                 self._voodoo_send_idx < len(self._voodoo_send_list)
                 and now >= self._voodoo_next_send
             ):
-                item = self._voodoo_send_list[self._voodoo_send_idx]
+                for pl, ports in pairs:
+                    for d_ in (ports if ports is not None else self._voodoo_targets):
+                        wire[d_] = max(wire.get(d_, 0.0), now) + (len(pl) + 2) / MIDI_WIRE_BYTES_PER_SEC
                 # Formats:
                 #   (payload, ports|None) — None = all voodoo targets
                 #   [(payload, ports), ...] — parallel step (different maps to
@@ -2733,6 +4729,10 @@ class Duality:
                     self._voodoo_fanout(dest, payload)
                 self._voodoo_send_idx += 1
                 self._voodoo_next_send = step_t0 + VOODOO_SYSEX_GAP
+            if self._voodoo_send_idx >= len(self._voodoo_send_list) and any(
+                w > time.monotonic() for w in self._voodoo_wire.values()
+            ):
+                return   # the last bytes are still on their way to a unit
             if self._voodoo_send_idx >= len(self._voodoo_send_list):
                 self.voodoo_loading = False
                 self.voodoo_active = True
@@ -2849,8 +4849,10 @@ class Duality:
 
     def _voodoo_on_foreign_format(self, fmt: str) -> None:
         """
-        Leave Voodoo when the input stream identifies as a non-MT-32 format
-        (GS / XG / GM / GM2) and the user has not locked the format.
+        Leave Voodoo when the input stream identifies as GS or XG and the user
+        has not locked the format. A GM / GM2 System On keeps Voodoo running
+        (0.19.058): Voodoo is the GM player, and reloading the bank would
+        resend the whole setup for nothing.
 
         Restores normal Crucible routing (notes, pitch bends, CC, SysEx) to the
         appropriate tagged outs instead of keeping everything pinned to :mt32
@@ -2858,7 +4860,9 @@ class Duality:
         """
         if not (self.voodoo_active or self.voodoo_loading or self.voodoo_catchup):
             return
-        if not fmt or fmt == "MT-32":
+        if not fmt or fmt in ("MT-32", "GM", "GM2"):
+            if fmt in ("GM", "GM2"):
+                self._log_line(f"VOODOO stays on ({fmt} System On)")
             return
         if self.format_locked:
             # User intentionally locked (typically to MT-32) – stay in Voodoo
@@ -2931,15 +4935,19 @@ class Duality:
         targets = self._mt32_port_indices()
         if not targets:
             return False
-        if msg.program in GM_ORCHESTRA_KIT_PC:
-            if self.voodoo_kit == "orchestra":
-                return True  # already there – swallow duplicate
+        # Two Voodoo kits: Orchestra (GM 49) and Standard for every other kit PC
+        # (Room, Power, Brush, Jazz, TR-808 ...). A PC that lands on the kit already
+        # loaded is swallowed: no SysEx, no input held back (0.19.060; before, any
+        # Standard-family PC but 0 resent the Standard kit).
+        want = "orchestra" if msg.program in GM_ORCHESTRA_KIT_PC else "standard"
+        if self.voodoo_kit == want:
+            self._log_line(f"VOODOO kit: ch10 PC {msg.program + 1} → {want} (already loaded)")
+            return True
+        if want == "orchestra":
             blob = list(mtr_orch_sysex())
             label = "Orchestra"
             self.voodoo_kit = "orchestra"
         else:
-            if self.voodoo_kit == "standard" and msg.program == 0:
-                return True
             blob = list(mtr_stnd_sysex())
             label = "Standard"
             self.voodoo_kit = "standard"
@@ -2950,7 +4958,7 @@ class Duality:
         banner = bytes(self._mt32_display_msg(f"Kit: {label}"[:20]).data)
         kit_items = [(banner, None)] + [
             (b if isinstance(b, (bytes, bytearray)) else bytes(b), None) for b in blob
-        ]
+        ] + self._cm_sfx_items(targets)
         if not self.voodoo_loading:
             self.voodoo_loading = True  # brief — only kit msgs
             self._voodoo_full_bank = False
@@ -2985,34 +4993,272 @@ class Duality:
 
     def _anima_on_cc(self, msg: mido.Message) -> None:
         """Track file-driven expression so we do not fight it."""
+        if msg.type == "control_change" and msg.control == ANIMA_EFX_CTRL_CC:
+            self._anima_file_cc16.add(msg.channel & 0x0F)   # the file uses CC16 itself
         if msg.type == "control_change" and msg.control == 11:
             self._anima_file_cc11_t[msg.channel & 0x0F] = time.monotonic()
+        if msg.type == "control_change" and msg.control in (7, 11):
+            ch = msg.channel & 0x0F
+            if msg.control == 7:
+                self._dirt_cc7[ch] = int(msg.value)
+            else:
+                self._dirt_cc11[ch] = int(msg.value)
+            cur = self._dirt_cc7[ch] * self._dirt_cc11[ch]
+            if msg.control == 7 and not self._dirt_seen7[ch]:
+                # First real CC7 since the PC sets the reference (not the
+                # assumed 100 we started from).
+                self._dirt_seen7[ch] = True
+                self._dirt_ref[ch] = cur
+            else:
+                self._dirt_ref[ch] = max(self._dirt_ref[ch], cur)
+            port = self._anima_ch_port.get(ch)
+            if port is not None:
+                self._anima_dirt_level(port)
+
+    def _anima_dirt_level(self, port: int, force: bool = False) -> None:
+        """Dirt insert Level follows the file's CC7/CC11 fade on its players."""
+        if not (0 <= port < len(self._anima_slots)):
+            return
+        sl = self._anima_slots[port]
+        typ = tuple(sl.get("typ") or ())[:2]
+        base = ANIMA_EFX_DIRT_LEVEL.get(typ)
+        if base is not None and sl.get("fam") != "file_park":
+            # Anima's own type: full volume is the Level it wrote with the type.
+            base = dict(ANIMA_EFX_TYPE_SET.get(typ, ())).get(0x16, base)
+        chs = list(sl.get("chs") or [])
+        if base is None or not chs:
+            return
+        ratio = 0.0
+        for c in chs:
+            ref = self._dirt_ref[c] or (100 * 127)
+            ratio = max(ratio, min(1.0, (self._dirt_cc7[c] * self._dirt_cc11[c]) / float(ref)))
+        # Mix trims above 75 % are left alone; a fade-out goes 75 % → 0.
+        lvl = int(round(base * min(1.0, ratio / 0.75)))
+        old = sl.get("dirt_lvl")
+        if old is None:
+            old = base  # a type write resets Level to its default
+        if not force and (lvl == old or (abs(lvl - old) < 2 and lvl not in (0, base))):
+            return
+        if force and lvl == base:
+            sl["dirt_lvl"] = base
+            return
+        sl["dirt_lvl"] = lvl
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x16], [lvl & 0x7F]))
 
     def _anima_port_8850(self, port: int) -> bool:
+        """True for any Sound Canvas-class port (55/88/Pro/8850)."""
         tags = self.out_formats[port] if port < len(self.out_formats) else frozenset()
-        if not tags or "any" in tags:
-            return True
-        return bool(tags & {"gs", "sc", "gm", "gm2"})
+        return self._gs_canvas_class(tags) != "none"
 
-    def _anima_tone_pick(self, ch: int, pc: int) -> int:
-        pal = ANIMA_TONE_VARS.get(pc & 0x7F)
-        if not pal:
-            return 0
-        cached = self._anima_tone_cc0[ch]
+    def _anima_adapt_tone_slot(self, port: int, slot):
+        """Shrink an 8850-centric (cc00, cc32, pc) to what this port's map has."""
+        if not slot:
+            return None
+        cc0, cc32, pc = slot
+        cls = self._gs_canvas_class(self.out_formats[port] if port < len(self.out_formats) else set())
+        if cls == "8850":
+            return slot
+        if cls == "none":
+            return None
+        # CM-64 banks live on the 55 map of an 8850; skip on earlier boxes.
+        if cc0 in (126, 127):
+            return (0, 0, pc & 0x7F)
+        if cls == "88pro":
+            # Native 88Pro/880: capitals + CC00 variations, no 8850 map 4.
+            if cc32 >= 4:
+                return (0, 0, pc & 0x7F)
+            return (cc0, 0, pc & 0x7F)
+        if cls == "88":
+            if cc32 >= 3:
+                return (0, 0, pc & 0x7F)
+            return (cc0 if cc32 <= 2 else 0, 0, pc & 0x7F)
+        # 55
+        if cc32 >= 2:
+            return (0, 0, pc & 0x7F)
+        return (cc0 if cc32 <= 1 else 0, 0, pc & 0x7F)
+
+    def _anima_file_map(self, cc0: int, cc32: int) -> int:
+        """Map LSB that makes this file bank exist on an 8850."""
+        cc0, cc32 = int(cc0) & 0x7F, int(cc32) & 0x7F
+        if cc0 in (126, 127):
+            return 1          # CM-64 only on SC-55 map
+        if cc32 in (1, 2, 3, 4):
+            return cc32       # file asked for a canvas map
+        return 0              # classic GS variation (CC32=0)
+
+    def _anima_cm64_restore_pc(self, msg: mido.Message) -> None:
+        """File sent a bank after Anima/CM — drop our slot; map snap happens on PC."""
+        if not self.anima or msg.type != "control_change":
+            return
+        if msg.control not in (0, 32):
+            return
+        ch = msg.channel & 0x0F
+        self._anima_park_on_program(ch)
+        if msg.control == 0 and msg.value not in (0,):
+            self._anima_cm64[ch] = False
+            self._anima_tone_slot[ch] = None
+        elif msg.control == 32 and self._anima_cm64[ch] and msg.value not in (1,):
+            self._anima_cm64[ch] = False
+            self._anima_tone_slot[ch] = None
+
+    def _anima_gs_map_home(self, reason: str = "") -> None:
+        """GS Reset does not clear tone map. Force CC32=4 on GS parts."""
+        for i in range(self.n_ports):
+            if not self._anima_port_8850(i):
+                continue
+            for ch in range(16):
+                if getattr(self, "_anima_cm64", [False]*16)[ch]:
+                    continue
+                # File GS variation (CC00!=0, often CC32=0): do not yank map.
+                if int(self.bank_msb[ch]) & 0x7F:
+                    continue
+                try:
+                    self._send_routed(
+                        i, mido.Message("control_change", channel=ch, control=32, value=4)
+                    )
+                except Exception:
+                    break
+        if reason:
+            self._log_line(f"ANIMA map home CC32=4 ({reason})")
+
+    def _anima_acoustic_pc(self, pc: int) -> bool:
+        return (pc & 0x7F) in (24, 25)  # Nylon / Steel
+
+    def _anima_acoustic_mate(self, ch: int, pc: int):
+        """Other channel already in the same acoustic 'one guitar' cluster."""
+        pc = pc & 0x7F
+        if not self._anima_acoustic_pc(pc):
+            return None
+        my_msb = int(self.bank_msb[ch]) & 0x7F
+        my_lsb = int(self.bank_lsb[ch]) & 0x7F
+        my_file = bool(self._anima_seen_cc0[ch] or self._anima_seen_cc32[ch]) and (my_msb or my_lsb)
+        if my_file:
+            return None
+        for other in range(16):
+            if other == ch or self._anima_is_rhythm(other):
+                continue
+            opc = int(self._anima_prog[other]) & 0x7F
+            if not self._anima_acoustic_pc(opc):
+                continue
+            slot = self._anima_tone_slot[other]
+            if not slot:
+                continue
+            o_file = bool(self._anima_seen_cc0[other] or self._anima_seen_cc32[other]) and (
+                (int(self.bank_msb[other]) & 0x7F) or (int(self.bank_lsb[other]) & 0x7F)
+            )
+            if o_file:
+                continue
+            return other
+        return None
+
+    @staticmethod
+    def _anima_weighted_pick(items: list, weights: list, mix: int):
+        """Seeded weighted pick. Weights are 2 x the picker's multiplier (2 normal, 4 x2,
+        1 x1/2, 6 x3, 2/3 x1/3 ...). Only the old 1 / 2 / 4 weights: the original
+        mix % total roll, so existing seeds keep their picks. Any other step: weights
+        scaled to integers and the 16-bit mix spread over the total."""
+        if all(w in (1, 2, 4) for w in weights):
+            ws = [int(w) for w in weights]
+            roll = mix % sum(ws)
+        else:
+            ws = [max(1, int(round(w * 60))) if w > 0 else 0 for w in weights]
+            if sum(ws) <= 0:
+                return items[mix % len(items)]
+            roll = ((mix & 0xFFFF) * sum(ws)) >> 16
+        for item, w in zip(items, ws):
+            if roll < w:
+                return item
+            roll -= w
+        return items[-1]
+
+    @staticmethod
+    def _anima_tone_choose(pc: int, slots: list, mix: int):
+        """Seeded pick from slots, weighted by the Tone Palettes picks (x2 / x1/2).
+        With every weight normal this is slots[mix % len(slots)], as before."""
+        ws = [anima_tone_weight(pc, s) for s in slots]
+        if all(w == 2 for w in ws) or sum(ws) <= 0:
+            return slots[mix % len(slots)]
+        return Duality._anima_weighted_pick(slots, ws, mix)
+
+    def _anima_tone_pick(self, ch: int, pc: int):
+        """Return (cc00, cc32, pc) or None for capital-as-written."""
+        cached = self._anima_tone_slot[ch]
         if cached is not None:
-            return int(cached)
-        seed = self._anima_ensure_efx_seed()
-        mix = (seed + (ch + 1) * 17 + (pc + 1) * 31) & 0xFFFF
-        var = int(pal[mix % len(pal)])
-        self._anima_tone_cc0[ch] = var
-        return var
+            return cached
+        pc = pc & 0x7F
+        mate = self._anima_acoustic_mate(ch, pc)
+        if mate is not None:
+            slot = self._anima_tone_slot[mate]
+            self._anima_tone_slot[ch] = slot
+            self._anima_tone_cc0[ch] = slot[0]
+            self._anima_cm64[ch] = (slot[0] in (126, 127)) or (slot[2] != pc)
+            self._anima_feedback(
+                "tone",
+                f"cluster ch{ch + 1} → ch{mate + 1} CC00={slot[0]:03d} map{slot[1]} (one guitar)",
+                status=True,
+            )
+            return slot
+        slots = anima_tone_slots(pc)
+        # Guitar Harmonics (GM 32): file put this in an insert for a reason
+        # (pinch squeals). Keep capital. Dry GM streams: 75% keep.
+        if pc == 31:
+            file_on = ch in (getattr(self, "_anima_file_efx_parts", set()) or set())
+            file_dirt = (
+                getattr(self, "_anima_file_efx_type", None) in ANIMA_FILE_DIRT_TYPES
+            )
+            mix = self._anima_mix((ch + 1) * 17, 32 * 31)
+            # File insert on this part, or a dirt insert anywhere in the cue
+            # (other guitar in the Multi/OD) → keep capital Harmonics.
+            if file_on or file_dirt or (mix % 4) != 0:
+                slot = (0, 4, 31)
+                self._anima_tone_slot[ch] = slot
+                self._anima_tone_cc0[ch] = 0
+                self._anima_cm64[ch] = False
+                return slot
+        if not slots:
+            slot = (0, 4, pc & 0x7F)
+        else:
+            mix = self._anima_mix((ch + 1) * 17, (pc + 1) * 31)
+            same = [s for s in slots if s[0] not in (126, 127) and s[2] == (pc & 0x7F)]
+            cm = [s for s in slots if s[0] in (126, 127)]
+            varied = [s for s in same if s[0] != 0]
+            # Official CM-64 PCM/LA (CC00 126/127, SC-55 map) ~1 in 4.
+            if cm and (mix % 4 == 0):
+                slot = self._anima_tone_choose(pc, cm, mix // 4)
+            elif varied and (mix % 3 != 0):
+                slot = self._anima_tone_choose(pc, varied, mix)
+                rare_n = ANIMA_TONE_RARE.get((slot[0], slot[2]))
+                if rare_n and not anima_tone_pref(pc, slot) and (mix % rare_n) != 0:
+                    alt = [s for s in varied if (s[0], s[2]) != (slot[0], slot[2])]
+                    if alt:
+                        slot = alt[mix % len(alt)]
+            elif same:
+                slot = self._anima_tone_choose(pc, same, mix)
+            else:
+                slot = (0, 4, pc & 0x7F)
+        self._anima_tone_slot[ch] = slot
+        self._anima_tone_cc0[ch] = slot[0]
+        self._anima_cm64[ch] = (slot[0] in (126, 127)) or (slot[2] != (pc & 0x7F))
+        return slot
 
     def _anima_on_pc(self, msg: mido.Message) -> None:
+        # New tone: whatever volume the file has set now is its full level.
+        _c = msg.channel & 0x0F
+        self._dirt_ref[_c] = self._dirt_cc7[_c] * self._dirt_cc11[_c]
         if msg.type != "program_change":
             return
         ch = msg.channel & 0x0F
+        self._anima_mallet_cancel(ch)   # no xylophone strokes on the next instrument
+        self._anima_mallet_hist[ch] = []
         self._anima_prog[ch] = msg.program & 0x7F
         self._anima_tone_cc0[ch] = None
+        self._anima_tone_slot[ch] = None
+        self._anima_cm64[ch] = False
+        self._file_used_ch[ch] = True
+        self._file_pc[ch] = msg.program & 0x7F
+        self._anima_seen_cc0[ch] = False
+        self._anima_seen_cc32[ch] = False
         # File reclaimed a channel we had borrowed for fret noise.
         for i, fch in enumerate(getattr(self, "_anima_foley_ch", []) or []):
             if fch == ch and (msg.program & 0x7F) not in (120, 121):
@@ -3021,6 +5267,19 @@ class Duality:
         self._anima_mod_on = {k for k in self._anima_mod_on if k[0] != ch}
         self._anima_mod_ch[ch] = False
         if self.anima:
+            # New instrument starts with a resting wheel on every unit; the
+            # file re-sends CC1 after the PC if it wants one.
+            self._anima_mod_clear(ch)
+            # The file's PC reached every unit and replaced any bass-sub
+            # patch on this channel; old sub snapshots no longer apply.
+            armed = getattr(self, "_anima_wave_sub_armed", None) or set()
+            for key in [k for k in armed if k[1] == ch]:
+                armed.discard(key)
+                (getattr(self, "_anima_wave_sub_saved", None) or {}).pop(key, None)
+            self._anima_expr_phrase[ch] = False
+            self._anima_expr_shape[ch] = None
+            self._anima_expr_peak[ch] = ANIMA_EXPR_DEFAULT
+            self._anima_park_on_program(ch)
             cat = self._anima_category(ch)
             bank = getattr(self, "_anima_stream_bank", None) or "-"
             msb = self.bank_msb[ch] if hasattr(self, "bank_msb") else 0
@@ -3032,13 +5291,66 @@ class Duality:
                 status=True,
             )
             if self.anima_game:
-                self._anima_game_note_pc()
+                self._anima_game_note_pc(ch)
+            # Insert types are placed once the PC dump settles (or at the
+            # first note), still ahead of the notes. Not per PC in arrival order.
+            self._anima_efx_on_pc(ch)
+
+    def _anima_cat_pc(self, ch: int) -> int:
+        """GM capital this part is *for*, even if we are sounding a CM-64 PC."""
+        ch = ch & 0x0F
+        if self._anima_cm64[ch] and self._file_used_ch[ch]:
+            return int(self._file_pc[ch]) & 0x7F
+        msb = int(self.bank_msb[ch]) & 0x7F
+        prog = int(self._anima_prog[ch]) & 0x7F
+        if msb in (126, 127):
+            gm = anima_cm_to_gm(msb, prog)
+            if gm is not None:
+                return gm
+        return prog
+
+    def _anima_la_native(self) -> bool:
+        """A native MT-32 / CM-32L / CM-64 stream (not Voodoo): program numbers are LA patches."""
+        if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
+            return False
+        fmt = (getattr(self, "detected_format", None) or "").upper()
+        return fmt in ("MT-32", "MT32", "MT") or getattr(self, "_anima_stream_map", None) == "mt32"
+
+    def _anima_pcm_native(self, ch: int) -> bool:
+        """Channel 11-16 of a native LA stream with a CM-64 out: a CM-32P part (PCM tones)."""
+        return bool(self._cm64_ports) and (ch & 0x0F) in CM64_PCM_CHANNELS and self._anima_la_native()
+
+    def _anima_gm_pc(self, ch: int) -> int:
+        """The GM program this part stands for, for Anima's GM-numbered sets (mallet sticking,
+        unroll, Hetfield, acoustic strum). Native LA streams map their LA patch (MT32_TO_GM) or,
+        on a CM-64's PCM channels, their PCM tone (CM64_PCM_GM); -1 when nothing fits."""
+        pc = self._anima_cat_pc(ch)
+        if not self._anima_la_native():
+            return pc
+        if self._anima_pcm_native(ch):
+            return CM64_PCM_GM[pc] if 0 <= pc < len(CM64_PCM_GM) else -1
+        bank = getattr(self, "_anima_stream_bank", None)
+        if bank and bank in ANIMA_SIERRA_PC:
+            spec = ANIMA_SIERRA_PC[bank].get(pc)
+            if isinstance(spec, str) and spec.startswith("P"):
+                try:
+                    return MT32_TO_GM[int(spec[1:]) & 0x7F]
+                except ValueError:
+                    return -1
+            return -1 if spec is not None else MT32_TO_GM[pc & 0x7F]
+        return MT32_TO_GM[pc & 0x7F]
 
     def _anima_category(self, ch: int) -> str:
         """Pick articulation family from the active tonemap."""
         if self._anima_is_rhythm(ch):
             return "sfx"
-        prog = self._anima_prog[ch & 0x0F]
+        if self._anima_pcm_native(ch):
+            # a CM-64's PCM part plays CM-32P tones, not the LA patch of the same number
+            pc = self._anima_cat_pc(ch)
+            if 0 <= pc < len(CM64_PCM_GM):
+                return _gm_category(CM64_PCM_GM[pc])
+            return _mt32_category(pc)
+        prog = self._anima_cat_pc(ch)
         voodoo_on = bool(
             getattr(self, "voodoo_active", False)
             or getattr(self, "voodoo_loading", False)
@@ -3212,27 +5524,77 @@ class Duality:
         self._anima_release_efx_lock(reason)
         self._anima_reset_efx_seed()
         self._anima_efx_sound_t = {}
+        self._anima_fam_played = {}     # family -> last real note (not a PC)
+        self._anima_efx_burst_dirty = False  # PC dump waiting for one settle
+        self._anima_efx_burst_t = 0.0
+        self._anima_efx_seek_t = [0.0] * 16
         self._anima_ch_port = {}
+        self._anima_fam_was = [None] * 16
+        self._anima_note_port = {}
         self._anima_rhythm = [False] * 16
         self._anima_rhythm[9] = True
         self._anima_strum_q = []
+        self._anima_mallet_q = []
+        self._anima_mallet_hist = [[] for _ in range(16)]
+        self._anima_settle_q = []
+        self._anima_settle_on = {}
+        self._anima_efx_settle = [0.0] * self.n_ports
+        self._anima_settle_bypass = False
         self._anima_strum_buf = [None] * 16
         self._anima_foley_ch = [None] * self.n_ports
         self._anima_foley_armed = [False] * self.n_ports
         self._anima_foley_patch = None
         self._anima_foley_pitch = [-1] * 16
+        self._file_used_ch = [False] * 16
+        self._anima_cue_chs = None
+        self._anima_seen_cc0 = [False] * 16
+        self._anima_seen_cc32 = [False] * 16
         self._anima_tone_cc0 = [None] * 16
+        self._anima_tone_slot = [None] * 16
+        self._anima_cm64 = [False] * 16
+        self.bank_msb = [0] * 16
+        self.bank_lsb = [0] * 16
+        self._anima_gs_map_home("session")
         self._anima_session_idle_done = True
+        self._anima_fam_ghost = {}
+        self._anima_bass_sub_choice = None
+        self._anima_wave_sub_armed = set()
+        self._anima_wave_sub_saved = {}
+        self._anima_cc11_cur = [ANIMA_EXPR_DEFAULT] * 16
+        self._anima_cc11_tgt = [ANIMA_EXPR_DEFAULT] * 16
+        self._anima_cc11_own = [False] * 16
+        self._anima_expr_phrase = [False] * 16
+        self._anima_expr_peak = [ANIMA_EXPR_DEFAULT] * 16
+        self._anima_expr_shape = [None] * 16
+        self._anima_expr_shape_t = [0.0] * 16
+        # YS4 stack Rx map is session state — drop so the next cue's KS
+        # is not neutralized from a previous song.
+        self._gs_reset_part_rx()
+        # Do not send new PCs here — that was audible "X changes patches".
+        # Next file PC / prime picks from the new seed.
         self._set_status(f"Anima reset ({reason})", duration=2.5)
 
     def _check_anima_session_idle(self) -> None:
         if not self.anima:
             return
         self._anima_game_poll()
+        self._anima_park_idle_poll()
+        self._anima_efx_burst_poll()
+        self._anima_efx_dly_upkeep()
+        if not getattr(self, "_anima_efx_burst_dirty", False) and any(self._file_used_ch):
+            self._anima_seat_efx()   # never ahead of the planner's setup pass
+            self._anima_hero_split_tick()
+        self._anima_trait_tick()
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
-        if time.monotonic() - self.last_midi_time < idle_need:
+        now = time.monotonic()
+        # Held notes, ghosts and queued strums are not idle: a game cue that
+        # sustains a chord past 4 s with no new MIDI was being reset mid-scene.
+        if self.active or (self._anima_ghosts or {}) or self._anima_strum_q:
+            self._anima_sound_t = now
+        quiet_since = max(self.last_midi_time, float(getattr(self, "_anima_sound_t", 0.0) or 0.0))
+        if now - quiet_since < idle_need:
             self._anima_session_idle_done = False
             return
         if getattr(self, "_anima_session_idle_done", False):
@@ -3240,10 +5602,12 @@ class Duality:
         if not (self._anima_efx_key or any(self._anima_slots) or self._anima_file_efx_t):
             self._anima_session_idle_done = True
             return
-        self._anima_reset_session("30s idle")
+        label = f"{int(idle_need)}s idle"
+        self._anima_reset_session(label)
 
     def _send_format_resets(self, reason: str = "hotkey X") -> None:
         """GM / GS / XG / MT-32 reset on each out from its tags. Format lock stays."""
+        self._anima_ghost_kill_all()
         gm = mido.Message("sysex", data=[0x7E, 0x7F, 0x09, 0x01])
         gs = self._gs_dt1([0x40, 0x00, 0x7F], [0x00])
         xg = mido.Message("sysex", data=[0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00])
@@ -3251,19 +5615,20 @@ class Duality:
         mt_body = [0x7F, 0x00, 0x00, 0x01, 0x00]
         mt_ck = _roland_checksum(mt_body)
         mt = mido.Message("sysex", data=[0x41, 0x10, 0x16, 0x12, *mt_body, mt_ck])
+        self._ch_program = [None] * 16
         sent = []
         for i, tags in enumerate(self.out_formats):
             names = {str(x).lower() for x in tags}
             msgs = []
-            if names & {"gs", "sc", "sc-8850", "sc8850"}:
+            if names & {"gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820", "sc", "sc-8850", "sc8850"}:
                 msgs = [gm, gs]
                 kind = "GS"
             elif names & {"xg"}:
                 msgs = [gm, xg]
                 kind = "XG"
-            elif names & {"mt32", "mt-32", "mt", "cm"}:
+            elif names & (LA_TAGS | {"mt-32", "mt", "cm"}):
                 msgs = [mt]
-                kind = "MT-32"
+                kind = "CM-64" if "cm64" in names else ("CM-32L" if "cm32" in names else "MT-32")
             else:
                 msgs = [gm]
                 kind = "GM"
@@ -3271,6 +5636,7 @@ class Duality:
                 self._safe_out_send(i, m)
             sent.append(f"{kind}:P{i + 1}")
         self.panic(reason=reason)
+        self._gs_reset_part_rx()
         self._anima_reset_session(reason)
         self._set_status(f"Reset {', '.join(sent)} ({reason})", duration=3.0)
 
@@ -3281,33 +5647,59 @@ class Duality:
         self._anima_file_efx_home = None
         self._anima_file_efx_type = None
         self._anima_file_efx_parts = set()
+        self._anima_file_efx_vals = {}
+        self._anima_file_efx_first_t = 0.0
+        self._anima_file_efx_live = False
+        self._anima_file_cc16 = set()
+        self._anima_file_wah = None
+        self._anima_efx_sent_sig = []   # a new file: nothing of ours is in flight
         self._anima_file_dirt = [False] * 16
         self._anima_hetfield_roll = [False] * 16
         self._anima_file_off_sent = set()
         self._anima_file_park = []
+        self._anima_file_prev_typ = None
+        self._anima_file_last_typ = None
         self._anima_efx_key = None
         self._anima_efx_sent = None
         self._anima_efx_hero = None
         self._anima_efx_label = ""
+        self._anima_cc16_state = {}
         self._gs_efx_parts_on = [False] * 16
         self._anima_slots = [{} for _ in range(self.n_ports)]
+        self._anima_settle_q = []
+        self._anima_settle_on = {}
+        self._anima_efx_settle = [0.0] * self.n_ports
+        self._anima_settle_bypass = False
         self._anima_ch_port = {}
+        self._anima_fam_was = [None] * 16
+        self._anima_note_port = {}
         self._anima_efx_on = [[False] * 16 for _ in range(self.n_ports)]
         self._anima_split_restore()
         if had and reason:
             self._anima_feedback("efx", f"EFX lock cleared ({reason})", status=True)
-    def _anima_park_file_efx(self, old_typ: tuple, home: int) -> None:
-        """File changed insert type — keep the previous type on another GS unit."""
+    def _anima_park_file_efx(self, old_typ: tuple, home: int, chs=None) -> None:
+        """Keep a file insert that just lost P1 on the next GS unit (ahead of Anima extras)."""
         gs = [p for p in self._anima_gs_ports() if p != home]
         if not gs or not old_typ:
             return
         used = {home} | {p.get("port") for p in self._anima_file_park}
         dest = next((p for p in gs if p not in used), None)
         if dest is None:
-            dest = gs[0]
-        chs = sorted(self._anima_file_efx_parts)
+            dest = next(
+                (p for p in gs
+                 if (self._anima_slots[p] if p < len(self._anima_slots) else {}).get("fam") != "file_park"),
+                gs[0],
+            )
+        if chs is None:
+            chs = sorted(self._anima_file_efx_parts)
+        chs = [c for c in chs if c not in (9,)]
+        if not chs:
+            return
         self._anima_file_park = [p for p in self._anima_file_park if p.get("port") != dest]
-        self._anima_file_park.append({"port": dest, "typ": old_typ, "chs": chs})
+        self._anima_file_park.append({
+            "port": dest, "typ": old_typ, "chs": chs,
+            "t": time.monotonic(), "heard": time.monotonic(),
+        })
         self._anima_efx_ours = True
         self._safe_out_send(dest, self._gs_dt1([0x40, 0x03, 0x00], [old_typ[0], old_typ[1]]))
         for c in chs:
@@ -3327,6 +5719,60 @@ class Duality:
             status=True,
         )
 
+    def _anima_unpark(self, ch=None, reason: str = "") -> None:
+        """Drop file-parks for a channel (or all empty parks). Slot goes back to Anima."""
+        parks = list(getattr(self, "_anima_file_park", []) or [])
+        if not parks:
+            return
+        keep = []
+        dropped = []
+        for park in parks:
+            chs = [c for c in (park.get("chs") or []) if ch is None or c != ch]
+            if not chs:
+                dropped.append(park)
+                continue
+            park = dict(park)
+            park["chs"] = chs
+            keep.append(park)
+        if not dropped and keep == parks:
+            return
+        self._anima_file_park = keep
+        for park in dropped:
+            port = park.get("port")
+            if port is None:
+                continue
+            sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
+            if sl.get("fam") == "file_park":
+                self._anima_clear_slot(port)
+            for c in park.get("chs") or []:
+                if self._anima_ch_port.get(c) == port:
+                    self._anima_ch_port.pop(c, None)
+        if dropped and reason:
+            ports = ",".join(f"P{p.get('port', 0)+1}" for p in dropped)
+            self._anima_feedback("efx-park", f"unpark {ports} ({reason})", status=True)
+
+    def _anima_park_on_program(self, ch: int) -> None:
+        ch = ch & 0x0F
+        if any(ch in (p.get("chs") or []) for p in self._anima_file_park):
+            self._anima_unpark(ch, "PC/bank")
+
+    def _anima_park_idle_poll(self) -> None:
+        if not self._anima_file_park:
+            return
+        now = time.monotonic()
+        idle = ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_EFX_IDLE_SEC
+        gone = []
+        for park in self._anima_file_park:
+            chs = park.get("chs") or []
+            if any(self._anima_ch_has_notes(c) for c in chs):
+                park["heard"] = now
+                continue
+            heard = park.get("heard") or park.get("t") or now
+            if now - heard >= idle:
+                gone.extend(chs)
+        for c in sorted(set(gone)):
+            self._anima_unpark(c, "idle")
+
     def _anima_refresh_file_dirt(self) -> None:
         """Clean/acoustic/mute PCs whose FILE insert is an OD/dist type."""
         dirt_type = self._anima_file_efx_type in ANIMA_FILE_DIRT_TYPES
@@ -3340,8 +5786,8 @@ class Duality:
             on = dirt_type and ch in self._anima_file_efx_parts and fam in ANIMA_FILE_DIRT_FAMS
             self._anima_file_dirt[ch] = bool(on)
             if on and not self._anima_hetfield_roll[ch]:
-                seed = self._anima_ensure_efx_seed()
-                self._anima_hetfield_roll[ch] = ((seed + ch * 17) % 10) < 7
+                mix = self._anima_mix(ch * 17)
+                self._anima_hetfield_roll[ch] = (mix % 10) < 7
             if on:
                 self._anima_feedback(
                     "dirt",
@@ -3349,29 +5795,80 @@ class Duality:
                     status=True,
                 )
 
-    def _anima_observe_file_efx(self, msg: mido.Message, description: str) -> None:
+    def _anima_file_off_park(self, part: int, home: int, src: str = "") -> None:
+        """Park a file insert that just lost a part. Always log so we can see misses."""
+        typ = (
+            getattr(self, "_anima_file_prev_typ", None)
+            or self._anima_file_efx_type
+            or getattr(self, "_anima_file_last_typ", None)
+        )
+        was = part in (self._anima_file_efx_parts or set())
+        self._anima_feedback(
+            "efx-park",
+            f"Off Part {part + 1} typ={typ} in_set={was} src={src}",
+            status=True,
+        )
+        if typ and home is not None:
+            self._anima_park_file_efx(typ, home, [part])
+        self._anima_file_efx_parts.discard(part)
+
+    def _anima_observe_file_efx(self, msg: mido.Message, description: str, quiet: bool = False) -> None:
         """File EFX owns the home GS port only; other :gs units stay Anima."""
-        if self._anima_efx_ours:
-            self._anima_efx_ours = False
+        if not self.anima:
             return
+        # Only ignore our own echo, not the next file SysEx.
+        if msg.type == "sysex":
+            sig = tuple(int(b) & 0xFF for b in (msg.data or [])[:10])
+            now_s = time.monotonic()
+            bag = [
+                (s, t) for s, t in (getattr(self, "_anima_efx_sent_sig", None) or [])
+                if now_s - t < ANIMA_EFX_ECHO_SEC
+            ]
+            hit = next((i for i, (s, _t) in enumerate(bag) if s == sig), None)
+            if hit is not None:
+                del bag[hit]
+                self._anima_efx_sent_sig = bag
+                self._anima_efx_ours = False
+                return
+            self._anima_efx_sent_sig = bag
+        self._anima_efx_ours = False
         desc = (description or "").lower()
         if "gs reset" in desc or desc.startswith("xg system on") or "gm system on" in desc:
             self._anima_release_efx_lock("reset")
             self._anima_reset_efx_seed()
             return
         data = list(msg.data) if msg.type == "sysex" else []
+        if data and data[0] == 0xF0:
+            data = data[1:]
+        if data and data[-1] == 0xF7:
+            data = data[:-1]
         gs = self._anima_gs_ports()
         home = gs[0] if gs else None
         changed = False
+        if "gs efx off" in desc and home is not None:
+            part = None
+            for tok in desc.replace("→", " ").replace(",", " ").split():
+                if tok.isdigit():
+                    part = int(tok) - 1
+                    break
+            if part is not None and 0 <= part <= 15:
+                self._anima_file_off_park(part, home, src="desc")
+        if len(data) >= 8 and data[0] == 0x41 and data[2] == 0x42 and data[3] == 0x12 \
+                and data[4] == 0x40 and data[5] == 0x03:
+            self._anima_file_efx_note(data[6], data[7:-1] if len(data) > 8 else data[7:])
         if len(data) >= 9 and data[0] == 0x41 and data[2] == 0x42 and data[3] == 0x12:
             aa, bb, cc = data[4], data[5], data[6]
             if aa == 0x40 and bb == 0x03 and cc == 0x00:
                 typ = (data[7] & 0x7F, data[8] & 0x7F)
                 if typ != (0x00, 0x00):
                     prev = self._anima_file_efx_type
-                    if prev and prev != typ and home is not None:
-                        self._anima_park_file_efx(prev, home)
+                    # Type change with the same parts still On = file replaced
+                    # the insert under those players. Do NOT park them.
+                    # Handoff is Part Off only.
+                    if prev and prev != typ:
+                        self._anima_file_prev_typ = prev
                     self._anima_file_efx_type = typ
+                    self._anima_file_last_typ = typ
                     self._anima_file_efx_t = time.monotonic()
                     self._anima_file_efx_home = home
                     changed = True
@@ -3380,8 +5877,23 @@ class Duality:
                 if part is not None:
                     if data[7] == 0x01:
                         self._anima_file_efx_parts.add(part)
+                        self._anima_unpark(part, "file EFX on")
+                        if (int(self._anima_prog[part]) & 0x7F) == 31:
+                            self._anima_tone_slot[part] = None
+                            self._anima_tone_cc0[part] = None
+                            self._anima_cm64[part] = False
+                            slot = self._anima_tone_pick(part, 31)
+                            if slot:
+                                cc0, cc32, pc_out = slot
+                                for i in range(self.n_ports):
+                                    if not self._anima_port_8850(i):
+                                        continue
+                                    self._safe_out_send(i, mido.Message("control_change", channel=part, control=0, value=cc0))
+                                    self._safe_out_send(i, mido.Message("control_change", channel=part, control=32, value=cc32))
+                                    self._safe_out_send(i, mido.Message("program_change", channel=part, program=pc_out))
+                                self._anima_feedback("tone", f"keep Gt.Harmonics ch{part+1} (file EFX)", status=True)
                     else:
-                        self._anima_file_efx_parts.discard(part)
+                        self._anima_file_off_park(part, home, src="syx")
                     self._anima_file_efx_t = time.monotonic()
                     self._anima_file_efx_home = home
                     changed = True
@@ -3396,15 +5908,61 @@ class Duality:
             if home is not None:
                 for c in self._anima_file_efx_parts:
                     self._anima_ch_port[c] = home
-            parts = ",".join(str(p + 1) for p in sorted(self._anima_file_efx_parts)) or "-"
-            self._anima_feedback(
-                "efx-file",
-                f"file EFX on P{(home or 0) + 1} parts {parts}",
-                status=True,
-            )
+            if not quiet:
+                parts = ",".join(str(p + 1) for p in sorted(self._anima_file_efx_parts)) or "-"
+                self._anima_feedback(
+                    "efx-file",
+                    f"file EFX on P{(home or 0) + 1} parts {parts}",
+                    status=True,
+                )
 
-    def _anima_observe_rhythm(self, msg: mido.Message) -> None:
+    @staticmethod
+    def _gs_bulk_efx_msgs(msg: mido.Message) -> list:
+        """SC-88Pro/8850 bulk dump (Port A) → the plain DT1s Anima reads.
+
+        A bulk dump packs parameters as nibbles at 48 xx xx instead of the
+        usual 40 xx xx. Two packets matter to Anima:
+          48 1D 10  EQ + insertion block: byte 4+a = the value of 40 03 a
+                    (type at 4-5, params, sends, EFX Control Source/Depth)
+          48 1E 10 … 48 25 10  per-part extension, two blocks of 32 bytes
+                    per packet (block 0 = part 10, 1-9, A-F); byte 16 = Part
+                    EFX assign (40 4x 22).
+        Only "On" assigns are returned; the dump lists every other part as
+        Off, which is the power-on default, not a file decision.
+        """
+        if msg.type != "sysex":
+            return []
+        x = list(msg.data)
+        if len(x) < 10 or x[0] != 0x41 or x[2] != 0x42 or x[3] != 0x12 or x[4] != 0x48:
+            return []
+        bb, cc = x[5], x[6]
+        body = x[7:-1]
+        dec = [((body[i] & 0x0F) << 4) | (body[i + 1] & 0x0F) for i in range(0, len(body) - 1, 2)]
+
+        def dt1(addr, val):
+            s = (-(sum(addr) + sum(val))) & 0x7F
+            return mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, *addr, *val, s])
+
+        out = []
+        if (bb, cc) == (0x1D, 0x10) and len(dec) >= 6:
+            out.append(dt1([0x40, 0x03, 0x00], [dec[4] & 0x7F, dec[5] & 0x7F]))
+            # The rest of the block follows 40 03 xx in order (params 03-16,
+            # sends 17-19, EFX Control 1B-1E, send EQ 1F): byte 4 + addr.
+            for addr in range(0x03, 0x20):
+                if 4 + addr < len(dec):
+                    out.append(dt1([0x40, 0x03, addr], [dec[4 + addr] & 0x7F]))
+        elif cc == 0x10 and 0x1E <= bb <= 0x25:
+            for half in (0, 1):
+                seg = dec[half * 32:(half + 1) * 32]
+                if len(seg) > 16 and seg[16] == 0x01:
+                    block = (bb - 0x1E) * 2 + half
+                    out.append(dt1([0x40, 0x40 | block, 0x22], [0x01]))
+        return out
+
+    def _anima_observe_rhythm(self, msg: mido.Message, quiet: bool = False) -> None:
         """Track GS 'use for rhythm' so Anima never puts EFX on a drum part."""
+        if not self.anima:
+            return
         if msg.type != "sysex":
             return
         data = list(msg.data)
@@ -3425,7 +5983,7 @@ class Duality:
             if part == 9:
                 on = True
             self._anima_rhythm[part] = on
-            if on:
+            if on and not quiet:
                 self._anima_feedback(
                     "rhythm",
                     f"GS drums on ch{part + 1} — Anima EFX skipped",
@@ -3455,6 +6013,23 @@ class Duality:
             "ethnic": "ethnic_wind",
         }.get(cat or "")
 
+    def _anima_ch_lfo_insert(self, ch: int) -> bool:
+        """True if this channel is currently patched through a modulating insert."""
+        ch = ch & 0x0F
+        port = self._anima_ch_port.get(ch)
+        if port is None:
+            port = self._anima_note_port.get(ch)
+        if port is None or port >= len(self._anima_slots):
+            return False
+        typ = self._anima_slots[port].get("typ")
+        if not typ:
+            return False
+        if ch not in (self._anima_slots[port].get("chs") or []):
+            # Sounding on this box with EFX still armed
+            if port < len(self._anima_efx_on) and not self._anima_efx_on[port][ch]:
+                return False
+        return tuple(typ)[:2] in ANIMA_LFO_EFX
+
     def _anima_efx_family(self, ch: int) -> str | None:
         """Map program (+ GS bank) to an Anima GS insertion family."""
         if self._anima_is_rhythm(ch):
@@ -3471,14 +6046,18 @@ class Duality:
             return self._anima_efx_from_cat(_mt32_category(p))
         if msb == 126:
             return self._anima_efx_from_cat(_gm_category(p))
-        if p <= 2:
-            return "piano_acoustic"
+        if p <= 2 or p == 6:
+            return "piano_acoustic"   # + Harpsichord: piano inserts, never the clav's wah
+        if p == 3 or 8 <= p <= 14 or p == 114:
+            return "chromatic"      # + Steel Drums (GM 115): mallets share the unit
+        if 96 <= p <= 103:
+            return "fx"
         if p == 4:
             return "ep_rhodes"
         if p == 5:
             return "ep_dx"
-        if p in (6, 7):
-            return "keys_pluck"
+        if p == 7:
+            return "keys_pluck"     # Clavi
         if p in (16, 17, 18):
             return "organ_rotary"   # Drawbar / Percussive / Rock
         if p == 22:
@@ -3495,16 +6074,18 @@ class Duality:
             return "guitar_dist"
         if p == 32:
             return "bass_acoustic"   # upright — never Bass Multi
-        if p in (33, 34, 36, 37):
-            return "bass_electric"
-        if p in (35, 38, 39):
-            return "bass_wide"
+        if p in (33, 34):
+            return "bass_electric"   # finger / picked — Bass Multi ok
+        if p in (35, 36, 37, 38, 39):
+            return "bass_wide"       # fretless / slap / synth — stay stereo
         if 56 <= p <= 61:
             return "orch_brass"      # GM 57–62 Trumpet … Brass Section
         if p in (62, 63):
             return "synth_brass"     # GM 63–64 Synth Brass 1 and 2
-        if 40 <= p <= 47:
-            return "strings"
+        if 40 <= p <= 55:
+            return "strings"         # Violin…Timp + ensemble/choir (48–55)
+        if p in (64, 65, 66, 67, 68, 69, 70, 71, 72, 73):
+            return "ethnic_wind"     # Sax / flute / recorder (was unmapped → no slot)
         if p in (74, 75, 76, 77, 78):
             return "ethnic_wind"     # Pan Flute … Ocarina
         if 80 <= p <= 87:
@@ -3516,15 +6097,26 @@ class Duality:
         return None
 
     def _anima_gs_ports(self) -> list[int]:
+        """GS units Anima's insert / seat / hero / foley layer may use: insert-capable Sound
+        Canvases that can get notes now. Under Voodoo, or when Crucible routes the stream to
+        other outs (an MT-32 stream on a mixed rig), the GS units sit idle: nothing is placed
+        there (0.19.063; before, inserts and seats were planned on them all the same)."""
+        if self.voodoo_active or self.voodoo_loading or self.voodoo_catchup:
+            return []
         ports = []
         fmt = (getattr(self, "detected_format", None) or "").upper()
+        elig = set(self._eligible_note_ports())
         for i, tags in enumerate(self.out_formats):
             names = {str(t).lower() for t in tags}
-            if names & {"xg", "mt32", "mt-32", "mt"}:
+            if names & ({"xg", "mt-32", "mt"} | LA_TAGS):
                 continue
-            if names & {"gs", "sc", "sc-8850", "sc8850"}:
+            if i not in elig:
+                continue
+            cls = self._gs_canvas_class(names)
+            # Insertion EFX only exists on 88Pro/880 and 8820/8850.
+            if cls in ("88pro", "8850"):
                 ports.append(i)
-            elif names <= {"any"} and fmt in ("GS", "SC", "SC-8850"):
+            elif names <= {"any"} and fmt in ("GS", "SC", "SC-8850", "8850"):
                 ports.append(i)
         return ports
 
@@ -3584,49 +6176,84 @@ class Duality:
                 self._anima_send_cc(ports, ch, 10, int(val) & 0x7F)
         self._anima_split_saved_pan = {}
 
-    def _anima_apply_od_split(self, chs: list) -> None:
-        """Type OD1/OD2, hard-split engine pans, optional part pans."""
-        ports = self._anima_gs_ports()
+    def _anima_apply_od_split(self, chs: list, ports: list | None = None) -> None:
+        """OD1/OD2 on the slot that owns these guitars only.
+
+        Writing the insert to every GS port stomped Bass Multi / flanger
+        on the other boxes and looked like EFX in-fighting.
+        """
+        if ports is None:
+            ports = self._anima_gs_ports()
+        ports = [p for p in ports if 0 <= p < self.n_ports]
         if not ports:
             return
         now = time.monotonic()
+        orig = []
+        for c in chs:
+            v = self.pan[c]
+            if c in self._anima_split_saved_pan and self._anima_split_saved_pan[c] is not None:
+                orig.append(int(self._anima_split_saved_pan[c]))
+            else:
+                orig.append(64 if v is None else int(v))
+        if len(chs) == 1:
+            sides = ["L" if orig[0] <= 64 else "R"]
+        else:
+            # Prefer already-left / already-right; else chs[0]=L, chs[1]=R.
+            sides = []
+            for v in orig:
+                if v <= ANIMA_SPLIT_PAN_LO:
+                    sides.append("L")
+                elif v >= ANIMA_SPLIT_PAN_HI:
+                    sides.append("R")
+                else:
+                    sides.append(None)
+            if sides.count("L") == 0:
+                sides[0] = "L"
+            if len(sides) > 1 and sides.count("R") == 0:
+                idx = 1 if sides[0] == "L" else 0
+                sides[idx] = "R"
+            for i, s in enumerate(sides):
+                if s is None:
+                    sides[i] = "L" if sides.count("L") <= sides.count("R") else "R"
+        od1_pan = 0
+        od2_pan = 127
+        for c, s, v in zip(chs, sides, orig):
+            if s == "L":
+                od1_pan = v
+            else:
+                od2_pan = v
+            if c not in self._anima_split_saved_pan:
+                self._anima_split_saved_pan[c] = self.pan[c] if self.pan[c] is not None else 64
+            hard = 0 if s == "L" else 127
+            self.pan[c] = hard
+            self._anima_send_cc(ports, c, 10, hard)
         msgs = [
             self._gs_dt1([0x40, 0x03, 0x00], [ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB]),
-            self._gs_dt1([0x40, 0x03, 0x03], [0x00]),  # OD1 = Overdrive
-            self._gs_dt1([0x40, 0x03, 0x08], [0x01]),  # OD2 = Distortion
-            self._gs_dt1([0x40, 0x03, 0x12], [0x00]),  # OD1 out pan L
-            self._gs_dt1([0x40, 0x03, 0x14], [0x7F]),  # OD2 out pan R
+            self._gs_dt1([0x40, 0x03, 0x03], [ANIMA_SPLIT_OD1_SEL]),     # OD1 Sel
+            self._gs_dt1([0x40, 0x03, 0x13], [ANIMA_SPLIT_OD1_LEVEL]),   # OD1 Level
+            self._gs_dt1([0x40, 0x03, 0x08], [ANIMA_SPLIT_OD2_SEL]),     # OD2 Sel
+            self._gs_dt1([0x40, 0x03, 0x12], [int(od1_pan) & 0x7F]),
+            self._gs_dt1([0x40, 0x03, 0x14], [int(od2_pan) & 0x7F]),
         ]
         self._anima_efx_ours = True
         for i in ports:
             for m in msgs:
                 self._safe_out_send(i, m)
-        # Part pans: leave opposite halves; hard-pan a centered pair.
-        pans = []
-        for c in chs:
-            v = self.pan[c]
-            pans.append(64 if v is None else int(v))
-        leftish = [c for c, v in zip(chs, pans) if v <= ANIMA_SPLIT_PAN_LO]
-        rightish = [c for c, v in zip(chs, pans) if v >= ANIMA_SPLIT_PAN_HI]
-        need_write = not leftish or not rightish
-        if need_write and len(chs) >= 2:
-            a, b = chs[0], chs[1]
-            if a not in self._anima_split_saved_pan:
-                self._anima_split_saved_pan[a] = self.pan[a] if self.pan[a] is not None else 64
-            if b not in self._anima_split_saved_pan:
-                self._anima_split_saved_pan[b] = self.pan[b] if self.pan[b] is not None else 64
-            self.pan[a] = 0
-            self.pan[b] = 127
-            self._anima_send_cc(ports, a, 10, 0)
-            self._anima_send_cc(ports, b, 10, 127)
         self._anima_split_on = True
         self._anima_efx_sent = (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
         self._anima_efx_key = "guitar_dist"
         self._anima_efx_label = ANIMA_SPLIT_LABEL
         self._anima_efx_switch_t = now
         hero = chs[0]
-        self._anima_efx_assign_family("guitar_dist", hero)
-        self._anima_efx_bind_and_seed(ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
+        for i in ports:
+            for c in chs:
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    i, self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x01])
+                )
+                if i < len(self._anima_efx_on):
+                    self._anima_efx_on[i][c] = True
+        self._anima_efx_bind_and_seed(ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB, ports=ports)
         pair = "+".join(f"ch{c+1}" for c in chs[:4])
         self._anima_feedback(
             "efx",
@@ -3635,6 +6262,9 @@ class Duality:
         )
 
     def _anima_maybe_guitar_split(self) -> None:
+        # Mid-phrase OD1/OD2 upgrades were dry-firing the other guitars
+        # on that box. Split is decided only at first commit.
+        return
         if self._anima_efx_key != "guitar_dist":
             return
         if self._anima_split_on:
@@ -3647,20 +6277,33 @@ class Duality:
         chs = self._anima_guitar_dist_chs()
         if len(chs) < 2:
             return
-        self._anima_apply_od_split(chs)
+        home = self._anima_gs_ports()
+        self._anima_apply_od_split(chs, ports=home[:1] if home else [])
 
 
-    def _anima_game_note_pc(self) -> None:
+    def _anima_game_note_pc(self, ch: int = -1) -> None:
         now = time.monotonic()
         self._anima_game_pc_t.append(now)
+        self._anima_game_pc_ch.append(ch)
         cut = now - ANIMA_GAME_PC_WINDOW
-        self._anima_game_pc_t = [x for x in self._anima_game_pc_t if x >= cut]
+        keep = [i for i, x in enumerate(self._anima_game_pc_t) if x >= cut]
+        self._anima_game_pc_t = [self._anima_game_pc_t[i] for i in keep]
+        self._anima_game_pc_ch = [self._anima_game_pc_ch[i] for i in keep]
+
+    def _anima_ch_live(self, c: int) -> bool:
+        """A channel the planner and seats count: used by the file and, in game
+        mode after a new cue, part of that cue (its PC burst or a note since)."""
+        if not self._file_used_ch[c]:
+            return False
+        cue = self._anima_cue_chs
+        return cue is None or c in cue
 
     def _anima_game_poll(self) -> None:
         """After a PC dump settles, reroll EFX if the 16-program map moved."""
         if not (self.anima and self.anima_game):
             return
-        if self.anima_efx_stable:
+        # Locked game mode still changes scenes; salt makes them repeatable.
+        if self.anima_efx_stable and not getattr(self, "_anima_seed_locked", False):
             return
         if len(self._anima_game_pc_t) < ANIMA_GAME_PC_BURST:
             return
@@ -3669,7 +6312,9 @@ class Duality:
             return
         snap = tuple(int(x) & 0x7F for x in self._anima_prog)
         prev = self._anima_game_snap
+        cue = {c for c in self._anima_game_pc_ch if 0 <= c < 16}
         self._anima_game_pc_t = []
+        self._anima_game_pc_ch = []
         if prev is None:
             self._anima_game_snap = snap
             return
@@ -3678,75 +6323,598 @@ class Duality:
         if diff < ANIMA_GAME_SNAP_DIFF:
             return
         self._anima_reset_efx_seed()
-        self._anima_feedback("game", f"new cue ({diff} PCs) — EFX reroll", status=True)
+        self._anima_tone_cc0 = [None] * 16
+        self._anima_tone_slot = [None] * 16
+        self._anima_cm64 = [False] * 16
+        # Unstick ports so the next family map can land on a fresh box.
+        home = self._anima_file_home_port()
+        keep_pins = {}
+        for p in self._anima_gs_ports():
+            if p == home:
+                continue
+            sl = self._anima_slots[p]
+            fam = sl.get("fam")
+            if not fam:
+                continue
+            chs = list(sl.get("chs") or [])
+            # Already placed for this cue and sounding (a drone that started
+            # before this poll): keep it; a retype there would break rule 1.
+            if (fam not in ("seat", "file_park") and chs and self._anima_port_players_sounding(p)
+                    and all(self._anima_efx_family(c) == fam for c in chs)):
+                for c in chs:
+                    if self._anima_ch_port.get(c) == p:
+                        keep_pins[c] = p
+                continue
+            self._anima_clear_slot(p)
+        self._anima_ch_port = keep_pins
+        self._anima_fam_was = [None] * 16
+        self._anima_efx_sound_t = {}
+        self._anima_fam_played = {}     # family -> last real note (not a PC)
+        self._anima_efx_seek_t = [0.0] * 16
+        # The new cue is its channels: earlier cues' parts stop counting for the
+        # planner and the seats until they play again (0.19.049).
+        self._anima_cue_chs = cue | {k[0] for k in self.active}
+        # Place the new cue once, now: the clear above left every unit quiet, and
+        # parts already sounding (a drone that started before this poll) count.
+        self._anima_efx_burst_dirty = True
+        self._anima_efx_burst_t = 0.0
+        self._anima_efx_burst_n = max(len(cue), ANIMA_EFX_BIG_BURST)
+        self._anima_feedback("game", f"new cue ({diff} PCs) — EFX/tone reroll", status=True)
+
+    def _anima_reroll_tones(self) -> None:
+        """Re-pick and send variation slots for programs we already learned."""
+        if not self.anima:
+            return
+        for ch in range(16):
+            if self._anima_is_rhythm(ch):
+                continue
+            if not (self._file_used_ch[ch] or int(self._anima_prog[ch]) != 0):
+                continue
+            pc = int(self._file_pc[ch] if self._file_used_ch[ch] else self._anima_prog[ch]) & 0x7F
+            slot = self._anima_tone_pick(ch, pc)
+            if not slot:
+                continue
+            for i in range(self.n_ports):
+                if not self._anima_port_8850(i):
+                    continue
+                adapted = self._anima_adapt_tone_slot(i, slot)
+                if not adapted:
+                    continue
+                cc0, cc32, pc_out = adapted
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                if cc0 in (126, 127):
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                self._send_routed(i, mido.Message("program_change", channel=ch, program=pc_out))
+            self._anima_feedback(
+                "tone",
+                f"reroll ch{ch + 1} GM{pc + 1} → CC00={cc0:03d} map{cc32} PC{pc_out + 1}",
+                status=True,
+            )
 
     def _anima_reset_efx_seed(self) -> None:
+        if getattr(self, "_anima_seed_locked", False):
+            # Keep the hex. Drop cached picks so the next cue/X can
+            # recompute from seed (+ scene salt in game mode).
+            self._anima_efx_pick = {}
+            self._anima_bass_sub_choice = None
+            return
         self._anima_efx_seed = None
         self._anima_efx_pick = {}
-        # New listen → new row, unless --anima-efx-stable asked for a fixed hash.
-        if not getattr(self, "anima_efx_stable", False):
-            self._anima_efx_launch = None
+        self._anima_bass_sub_choice = None
+        self._anima_efx_launch = None
+        if self.anima:
+            self._anima_ensure_efx_seed()
 
     def _anima_ensure_efx_seed(self) -> int:
-        if self._anima_efx_seed is None:
-            snap = tuple(int(x) & 0x7F for x in self._anima_prog)
-            # Per-launch salt so the same SMF can draw a different row next run,
-            # still stable for the whole song.
-            if self.anima_efx_stable:
-                # Same PC snapshot → same palette row, every launch.
-                self._anima_efx_seed = hash(snap) & 0xFFFF
-            else:
-                if not getattr(self, "_anima_efx_launch", None):
-                    self._anima_efx_launch = random.randrange(1, 0x10000)
-                self._anima_efx_seed = (hash(snap) ^ self._anima_efx_launch) & 0xFFFF
+        if self._anima_efx_seed is not None:
+            return int(self._anima_efx_seed) & 0xFFFF
+        if not getattr(self, "_anima_efx_launch", None):
+            self._anima_efx_launch = random.randrange(1, 0x10000)
+        snap = tuple(int(x) & 0x7F for x in self._anima_prog)
+        self._anima_efx_seed = (hash(snap) ^ self._anima_efx_launch) & 0xFFFF
+        self._log_line(f"ANIMA seed {self._anima_efx_seed:04X}")
         return self._anima_efx_seed
 
-    def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None):
-        """Keep a player's type when they relocate; new player in same fam gets another row."""
-        pal = ANIMA_EFX_GS.get(fam) or []
+    def _anima_scene_salt(self) -> int:
+        """Game mode: FNV-ish hash of the 16-PC snapshot.
+
+        Same cue + locked seed → same tones/inserts. A different snapshot
+        (new area) → different rolls. Normal Anima: 0 so only seed+ch+PC
+        matter.
+        """
+        if not getattr(self, "anima_game", False):
+            return 0
+        snap = getattr(self, "_anima_game_snap", None)
+        if not snap:
+            snap = tuple(int(x) & 0x7F for x in self._anima_prog)
+        h = 0x811C9DC5
+        for pc in snap:
+            h ^= (int(pc) + 1) * 0x01000193
+            h &= 0xFFFFFFFF
+        return h & 0xFFFF
+
+    def _anima_mix(self, *parts: int) -> int:
+        seed = self._anima_ensure_efx_seed()
+        acc = (seed + self._anima_scene_salt()) & 0xFFFF
+        for part in parts:
+            acc = (acc + int(part)) & 0xFFFF
+        return acc
+
+    def _anima_toggle_seed_lock(self) -> None:
+        if not self.anima:
+            self._set_status("Anima off — seed lock ignored", duration=2.0)
+            return
+        self._anima_ensure_efx_seed()
+        self._anima_seed_locked = not bool(self._anima_seed_locked)
+        seed = int(self._anima_efx_seed) & 0xFFFF
+        if self._anima_seed_locked:
+            self._log_line(f"ANIMA seed LOCK {seed:04X}")
+            extra = " + scene salt" if self.anima_game else ""
+            self._set_status(
+                f"Anima seed LOCK {seed:04X}{extra} — X keeps hex, cues stay repeatable",
+                duration=4.0,
+            )
+        else:
+            self._log_line(f"ANIMA seed unlock {seed:04X}")
+            self._set_status(f"Anima seed unlock {seed:04X} — X/idle will reroll", duration=3.0)
+
+    def _anima_ch_tone(self, ch: int):
+        """(GM program the pick was for, (cc00, cc32, pc) sounding) for a part, or (None, None)."""
+        ch = ch & 0x0F
+        if self._anima_is_rhythm(ch):
+            return None, None
+        gm = int(self._file_pc[ch] if self._file_used_ch[ch] else self._anima_prog[ch]) & 0x7F
+        slot = self._anima_tone_slot[ch]
+        if slot:
+            return gm, tuple(slot)
+        try:
+            c0 = int(self.bank_msb[ch]) & 0x7F
+            c32 = int(self.bank_lsb[ch]) & 0x7F
+        except Exception:
+            return gm, None
+        return gm, (c0, c32, int(self._anima_prog[ch]) & 0x7F)
+
+    def _anima_ch_traits(self, ch: int) -> frozenset:
+        _gm, key = self._anima_ch_tone(ch)
+        return anima_tone_traits(key) if key else frozenset()
+
+    def _anima_efx_nowah(self, ch: int) -> bool:
+        """A jazz box is played clean: no wah insert (ANIMA_EFX_NO_WAH_PROGS)."""
+        try:
+            msb = int(self.bank_msb[ch]) & 0x7F
+        except Exception:
+            msb = 0
+        return msb < 126 and (int(self._anima_prog[ch]) & 0x7F) in ANIMA_EFX_NO_WAH_PROGS
+
+    def _anima_ch_efx_level(self, ch: int) -> int:
+        gm, key = self._anima_ch_tone(ch)
+        if gm is None or not key:
+            return 0
+        return int(anima_tone_pref(gm, key).get("efx") or 0)
+
+    def _anima_efx_level_apply(self, port: int, typ=None, chs=None, fam=None, fresh: bool = False) -> None:
+        """Wet/dry Balance from the players' tones (Tone Palettes EFX level). The driest
+        level on the unit wins; a parameter write, never a type change. fresh: the type
+        was just written, so the unit sits at the type's default."""
+        if not (0 <= port < len(self._anima_slots)):
+            return
+        sl = self._anima_slots[port] or {}
+        typ = tuple(typ or sl.get("typ") or ())[:2]
+        fam = fam or sl.get("fam")
+        chs = list(sl.get("chs") or []) if chs is None else list(chs)
+        bal = getattr(self, "_anima_efx_bal", None)
+        if bal is None:
+            bal = self._anima_efx_bal = {}
+        default = ANIMA_EFX_BALANCE_TYPES.get(typ)
+        if fresh:
+            bal[port] = default
+        if default is None or fam in ("seat", "file_park"):
+            return
+        levels = [self._anima_ch_efx_level(c) for c in chs]
+        levels = [v for v in levels if v]
+        lvl = min(levels) if levels and min(levels) < 0 else (max(levels) if levels else 0)
+        if lvl < 0:
+            val = int(round(default * ANIMA_EFX_LEVEL_DRY.get(max(-2, lvl), 0.35)))
+        elif lvl > 0:
+            val = int(round(default + (127 - default) * ANIMA_EFX_LEVEL_WET.get(min(2, lvl), 0.65)))
+        else:
+            val = default
+        val = max(0, min(127, val))
+        if bal.get(port, default) == val:
+            return
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, ANIMA_EFX_BALANCE_ADDR], [val]))
+        bal[port] = val
+        self._anima_feedback("efx-param", f"P{port + 1} balance {val} (tone EFX level {lvl:+d})", status=False)
+
+    def _anima_palette_pick(self, fam: str, port: int | None = None, chs=None, avoid=None):
+        """Keep a player's type when they relocate; new player in same fam gets another row.
+        avoid: types to skip when the palette has others (a hero unit differs from its family's)."""
+        # Rows are (msb, lsb, name, weight); callers get (msb, lsb, name).
+        pal = [
+            (r[0], r[1], r[2], float(r[3]) if len(r) > 3 else 2)
+            for r in (ANIMA_EFX_GS.get(fam) or [])
+        ]
+        if avoid:
+            rest = [row for row in pal if (row[0], row[1]) not in avoid]
+            if rest:
+                pal = rest
+                if port is not None and tuple((self._anima_efx_pick.get((fam, port)) or ())[:2]) in avoid:
+                    self._anima_efx_pick.pop((fam, port), None)
+        if port is not None:
+            tags = self.out_formats[port] if port < len(self.out_formats) else set()
+            cls = self._gs_canvas_class(tags)
+            # 88Pro/880 and 8820/8850 share the same 64 insertion types.
+            if cls not in ("88pro", "8850"):
+                return None
         if not pal:
             return None
         chs_set = set(chs or [])
+        # OD1/OD2 is a two-player insert. Never seed it for a lone guitar.
+        if fam == "guitar_dist" and len(chs_set) < 2:
+            pal = [row for row in pal if (row[0], row[1]) != (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)]
+            if not pal:
+                return None
+        # A panned lone guitar keeps its side: GTR Multi has no Output Pan
+        # here, so it collapsed hard-panned guitars to the middle.
+        want_pan = False
+        if fam == "guitar_dist" and len(chs_set) < 2 and chs_set:
+            want_pan = any(
+                abs(int(self.pan[c] if self.pan[c] is not None else 64) - 64) > ANIMA_EFX_PAN_OFF
+                for c in chs_set
+            )
+            if want_pan:
+                panned = [row for row in pal if (row[0], row[1]) in ANIMA_EFX_PAN_SLOT]
+                if panned:
+                    pal = panned
+                else:
+                    want_pan = False
+        # Tone traits: a sample that already moves gets no LFO insert, a built-in rotary
+        # no rotary, "echo" no delays, extra pitches no pitch shifter (Tone Palettes notes).
+        traits = set()
+        for c in chs_set:
+            traits |= self._anima_ch_traits(c)
+        if traits:
+            def _keep(row):
+                typ = (row[0], row[1])
+                if "lfo" in traits and typ in ANIMA_EFX_LFO_TYPES:
+                    return False
+                if "rotary" in traits and typ in ANIMA_EFX_ROTARY_TYPES:
+                    return False
+                if "interval" in traits and typ in ANIMA_EFX_PITCH_TYPES:
+                    return False
+                if "echo" in traits and ("delay" in str(row[2]).lower() or "echo" in str(row[2]).lower()):
+                    return False
+                return True
+            pal = [row for row in pal if _keep(row)] or [(0x01, 0x02, "Enhancer", 2)]
+        nowah = any(self._anima_efx_nowah(c) for c in chs_set)
+        if nowah:
+            pal = [row for row in pal if (row[0], row[1]) not in ANIMA_EFX_WAH] or pal
 
         def _from_typ(typ):
             if not typ:
                 return None
+            if nowah and tuple(typ)[:2] in ANIMA_EFX_WAH:
+                return None
+            if avoid and tuple(typ)[:2] in avoid:
+                return None   # a hero unit takes a different type, not the family's
+            if want_pan and tuple(typ)[:2] not in ANIMA_EFX_PAN_SLOT:
+                return None
             for row in pal:
                 if (row[0], row[1]) == tuple(typ)[:2]:
-                    return row
+                    return tuple(row[:3])
             return (typ[0], typ[1], fam)
 
         # Same channels already on a slot → keep that insert (relocation).
-        for slot in self._anima_slots:
-            if slot.get("fam") != fam:
-                continue
+        same = [s for s in self._anima_slots if s.get("fam") == fam and s.get("typ")]
+        for slot in same:
             old_chs = set(slot.get("chs") or [])
-            if chs_set and (chs_set & old_chs) and slot.get("typ"):
+            if chs_set and (chs_set & old_chs):
                 kept = _from_typ(slot.get("typ"))
                 if kept:
                     return kept
+        # Family moving to another unit: take the insert with you.
+        if len(same) == 1:
+            kept = _from_typ(same[0].get("typ"))
+            if kept:
+                return kept
+        live = set()
+        ft = self._anima_file_efx_type
+        if ft:
+            live.add(tuple(ft)[:2])
+        for i, slot in enumerate(self._anima_slots):
+            if slot.get("typ") and i != port:
+                live.add(tuple(slot["typ"])[:2])
+        exclusive_live = live & ANIMA_EFX_EXCLUSIVE
+
         key = (fam, port)
-        if key in self._anima_efx_pick:
-            return self._anima_efx_pick[key]
-        seed = self._anima_ensure_efx_seed()
-        mix = seed + (sum(ord(c) for c in fam) * 31) + (0 if port is None else (port + 1) * 97)
-        pick = pal[mix % len(pal)]
+        # A jazz box picks from its own (wah-free) list and leaves the family's cached pick alone.
+        cached = None if nowah else self._anima_efx_pick.get(key)
+        if cached and (cached[0], cached[1]) not in exclusive_live:
+            return cached
+        mix = self._anima_mix(sum(ord(c) for c in fam) * 31, 0 if port is None else (port + 1) * 97)
+        # Weighted by the picker: favoured x2, x3 ..., less often x1/2, x1/3 ...
+        pick = self._anima_weighted_pick(pal, [row[3] for row in pal], mix)
         used = {
             (v[0], v[1])
             for k, v in self._anima_efx_pick.items()
             if isinstance(k, tuple) and k[0] == fam and v
         }
-        for slot in self._anima_slots:
-            if slot.get("fam") == fam and slot.get("typ"):
-                used.add(tuple(slot["typ"])[:2])
-        if (pick[0], pick[1]) in used and len(pal) > 1:
+        used |= live
+        def _blocked(row):
+            typ = (row[0], row[1])
+            return typ in exclusive_live or (typ in used and typ in ANIMA_EFX_EXCLUSIVE)
+        if _blocked(pick) and len(pal) > 1:
             for alt in pal:
-                if (alt[0], alt[1]) not in used:
+                if not _blocked(alt):
                     pick = alt
                     break
-        self._anima_efx_pick[key] = pick
+        pick = tuple(pick[:3])
+        if not nowah:
+            self._anima_efx_pick[key] = pick
         return pick
 
+
+
+    def _anima_organ_vol_gain(self, raw: int) -> int:
+        """75 and below → ×1.4; 127 → ×1.0; linear in between."""
+        raw = max(0, min(127, int(raw)))
+        if raw >= ANIMA_ORGAN_VOL_HI:
+            return raw
+        if raw <= ANIMA_ORGAN_VOL_LO:
+            gain = ANIMA_ORGAN_VOL_GAIN_LO
+        else:
+            span = float(ANIMA_ORGAN_VOL_HI - ANIMA_ORGAN_VOL_LO)
+            u = (raw - ANIMA_ORGAN_VOL_LO) / span
+            gain = ANIMA_ORGAN_VOL_GAIN_LO + u * (
+                ANIMA_ORGAN_VOL_GAIN_HI - ANIMA_ORGAN_VOL_GAIN_LO
+            )
+        return min(127, int(round(raw * gain)))
+
+    def _anima_wah_gtr_ch(self, ch: int) -> bool:
+        """True while this channel plays through Anima's own GTR Multi 3."""
+        if not self.anima:
+            return False
+        for slot in self._anima_slots:
+            if ch in (slot.get("chs") or []) and slot.get("fam") != "file_park" \
+                    and tuple(slot.get("typ") or ())[:2] == (0x04, 0x02):
+                return True
+        return False
+
+    def _anima_wah_gtr_vol_gain(self, raw: int) -> int:
+        return min(127, int(round(max(0, min(127, int(raw))) * ANIMA_WAH_GTR_VOL_GAIN)))
+
+    def _anima_wah_gtr_vol_lift(self, port: int, typ: tuple, chs: list) -> None:
+        """GTR Multi 3 is quieter than the other dirt inserts: lift its players' CC7."""
+        if tuple(typ or ())[:2] != (0x04, 0x02):
+            return
+        targets = self._anima_gs_ports() or [port]
+        for ch in chs or []:
+            cur = self._file_vol[ch]
+            if cur is None:
+                cur = 100
+            new = self._anima_wah_gtr_vol_gain(cur)
+            if new <= cur:
+                continue
+            msg = mido.Message("control_change", channel=ch, control=7, value=new)
+            for i in targets:
+                self._send_routed(i, msg)
+            self.vol[ch] = new
+            self.vol_time[ch] = time.monotonic()
+            self._anima_feedback("efx", f"ch{ch + 1} wah guitar CC7 {cur}→{new}", status=True)
+
+    def _anima_organ_rotary_ch(self, ch: int) -> bool:
+        if not self.anima:
+            return False
+        for slot in self._anima_slots:
+            if ch not in (slot.get("chs") or []):
+                continue
+            typ = slot.get("typ") or ()
+            lab = (self._anima_efx_label or "").lower() if typ else ""
+            # Prefer the type tuple; fall back to last label on that slot
+            if typ[:2] in ANIMA_EFX_ROTARY:
+                return True
+            fam = slot.get("fam") or ""
+            if fam in ("organ_rotary", "organ") and typ:
+                return True
+        return False
+
+    def _anima_organ_vol_lift(self, port: int, chs: list, label: str) -> None:
+        """Rotary / Organ Multi eats level — lift file CC7 on every GS port."""
+        lab = (label or "").lower()
+        if "rotary" not in lab and "organ multi" not in lab:
+            return
+        targets = self._anima_gs_ports() or [port]
+        for ch in chs or []:
+            cur = self._file_vol[ch]
+            if cur is None:
+                cur = self.vol[ch]
+            if cur is None:
+                cur = 100
+            new = self._anima_organ_vol_gain(cur)
+            if new <= cur:
+                continue
+            msg = mido.Message("control_change", channel=ch, control=7, value=new)
+            for i in targets:
+                self._send_routed(i, msg)
+            self.vol[ch] = new
+            self.vol_time[ch] = time.monotonic()
+            self._anima_feedback(
+                "efx",
+                f"ch{ch + 1} organ CC7 {cur}→{new} ({len(targets)} ports)",
+                status=True,
+            )
+
+    # ------------------------------------------------------------------
+    # Beat tracking (for delay-time inserts)
+    # ------------------------------------------------------------------
+    def _tempo_feed(self, msg, now: float) -> None:
+        if msg.type == "clock":
+            if self._tempo_clock_t and 0.004 < now - self._tempo_clock_t < 0.2:
+                iv = now - self._tempo_clock_t
+                self._tempo_clock_iv = iv if not self._tempo_clock_iv else self._tempo_clock_iv * 0.9 + iv * 0.1
+            self._tempo_clock_t = now
+            return
+        ons = self._tempo_onsets
+        if ons and now - ons[-1] < 0.04:
+            return  # same chord / strum
+        ons.append(now)
+        cut = now - 12.0
+        if len(ons) > 256 or (ons and ons[0] < cut):
+            self._tempo_onsets = [t for t in ons[-256:] if t >= cut]
+
+    def _anima_beat_sec(self) -> float:
+        """Beat length in seconds, or 0.0 when there is not enough to go on."""
+        now = time.monotonic()
+        if self._tempo_clock_iv and now - self._tempo_clock_t < 1.0:
+            return self._tempo_clock_iv * 24.0
+        if self._tempo_beat_t and now - self._tempo_beat_t < 2.0:
+            return self._tempo_beat
+        self._tempo_beat_t = now
+        ons = [t for t in self._tempo_onsets if t >= now - 12.0]
+        if len(ons) < 12:
+            self._tempo_beat = 0.0
+            return 0.0
+        # Histogram of onset-to-onset gaps (10 ms bins, up to 2.2 s).
+        hist = [0.0] * 221
+        for i, a in enumerate(ons):
+            for b in ons[i + 1:]:
+                gap = b - a
+                if gap > 2.2:
+                    break
+                if gap >= 0.1:
+                    hist[int(gap * 100 + 0.5)] += 1.0
+
+        def h(sec: float) -> float:
+            k = int(sec * 100 + 0.5)
+            if k < 1 or k > 219:
+                return 0.0
+            return hist[k] + 0.5 * (hist[k - 1] + hist[k + 1])
+
+        best, best_t = 0.0, 0.0
+        for ms in range(250, 1251, 5):
+            t = ms / 1000.0
+            s = h(t) + 0.5 * h(t / 2) + 0.5 * h(2 * t) + 0.33 * h(3 * t)
+            if s > best:
+                best, best_t = s, t
+        while best_t and best_t < 0.4:
+            best_t *= 2
+        while best_t > 0.8:
+            best_t /= 2
+        self._tempo_beat = best_t
+        return best_t
+
+    # ------------------------------------------------------------------
+    # Insert shaping: delay times / feedback, pitch intervals, gate type
+    # ------------------------------------------------------------------
+    def _anima_efx_dly_upkeep(self) -> None:
+        """Set delay times once the beat (or a mallet owner's pulse) is known or has
+        moved, box quiet only."""
+        now = time.monotonic()
+        if now - getattr(self, "_anima_dly_check_t", 0.0) < 1.0:
+            return
+        self._anima_dly_check_t = now
+        for port, sl in enumerate(self._anima_slots):
+            typ = tuple(sl.get("typ") or ())[:2]
+            dly = ANIMA_EFX_DELAY.get(typ)
+            if not dly or not dly["times"]:
+                continue
+            beat, _mallet = self._anima_efx_dly_pulse(sl.get("chs") or [])
+            if not beat:
+                continue
+            old = float(sl.get("dly_beat") or 0.0)
+            if old and abs(beat - old) / old < 0.12:
+                continue
+            chs = list(sl.get("chs") or [])
+            if self._anima_port_players_sounding(port):
+                continue
+            if now - float(sl.get("heard_t") or 0.0) < 1.5:
+                continue  # let the echo tail die before moving the time
+            self._anima_efx_shape(port, typ, chs, sl.get("fam"))
+
+    @staticmethod
+    def _gs_dly_index(scale: int, ms: float) -> int:
+        tab = GS_DLY_MS[scale]
+        return min(range(128), key=lambda i: abs(tab[i] - ms))
+
+    def _anima_efx_shape(self, port: int, typ: tuple, chs: list, fam: str | None) -> None:
+        typ = tuple(typ or ())[:2]
+        msgs = []
+        notes = []
+        seed = self._anima_ensure_efx_seed()
+        dly = ANIMA_EFX_DELAY.get(typ)
+        if dly:
+            pulse, mallet = self._anima_efx_dly_pulse(chs)
+            beat = pulse
+            if beat and dly["times"]:
+                # One factor (halve/double) for every tap, so the taps keep
+                # their rhythm instead of folding onto the same echo.
+                scale = dly["times"][0][1]
+                tab = GS_DLY_MS[scale]
+                lo, hi = max(tab[1], 5.0), tab[-1]
+                top = max(b for _a, _s, b in dly["times"])
+                low = min(b for _a, _s, b in dly["times"])
+                if mallet:
+                    # The longest tap lands on the part's next note (this type's
+                    # range allowing; 500 ms or 1 s on the SC-8850), shorter taps
+                    # subdivide the gap.
+                    beat = pulse / top
+                k = 1.0
+                while beat * 1000.0 * top * k > hi:
+                    k /= 2
+                while beat * 1000.0 * low * k < lo and beat * 1000.0 * top * k * 2 <= hi:
+                    k *= 2
+                for addr, sc, beats in dly["times"]:
+                    ms = min(hi, max(lo, beat * 1000.0 * beats * k))
+                    msgs.append(self._gs_dt1([0x40, 0x03, addr], [self._gs_dly_index(sc, ms)]))
+                sl = self._anima_slots[port] if 0 <= port < len(self._anima_slots) else None
+                if sl is not None:
+                    sl["dly_beat"] = pulse
+                notes.append(f"{'mallet spacing' if mallet else 'beat'} {pulse * 1000:.0f}ms")
+            addr, kind = dly["fb"]
+            pct = ANIMA_EFX_FB_PCT_HELD if fam in ANIMA_EFX_FB_HELD_FAMS else ANIMA_EFX_FB_PCT
+            if mallet:
+                pct = ANIMA_MALLET_DLY_FB_PCT
+            pct = min(pct, ANIMA_EFX_FB_CAP_PCT)
+            if kind == "pct":
+                val = 0x40 + int(round(pct / 2.0))
+            else:
+                val = int(round(127 * pct / 100.0))
+            msgs.append(self._gs_dt1([0x40, 0x03, addr], [val & 0x7F]))
+            notes.append(f"fb {pct}%")
+        voices = ANIMA_EFX_PITCH.get(typ)
+        if voices:
+            modes = ANIMA_EFX_PITCH_FAM_MODES.get(fam or "", ANIMA_EFX_PITCH_DEFAULT_MODES)
+            mode = modes[self._anima_mix(seed, (port + 1) * 131 + len(fam or "")) % len(modes)]
+            for (c_addr, f_addr), (semi, cents) in zip(voices, ANIMA_EFX_PITCH_MODES[mode]):
+                msgs.append(self._gs_dt1([0x40, 0x03, c_addr], [max(0x28, min(0x4C, 0x40 + semi))]))
+                msgs.append(self._gs_dt1([0x40, 0x03, f_addr], [max(0x0E, min(0x72, 0x40 + int(cents / 2)))]))
+            if typ == (0x01, 0x61) and fam != "fx":
+                msgs.append(self._gs_dt1([0x40, 0x03, 0x05], [0x40]))  # no feedback cascade
+            sl = self._anima_slots[port] if 0 <= port < len(self._anima_slots) else None
+            if sl is not None:
+                sl["pitch_mode"] = mode
+            notes.append(f"pitch {mode}")
+        bal = ANIMA_SEAT_BALANCE.get(typ)
+        if bal and fam == "seat":
+            msgs.append(self._gs_dt1([0x40, 0x03, bal[0]], [bal[1]]))
+            notes.append(f"balance D>{bal[1]}E")
+        gate = ANIMA_EFX_GATE_TYPE.get(typ)
+        if gate:
+            addr, vals = gate
+            # _anima_mix already adds the seed once; adding it again made the roll
+            # even-only per port (two of the four types could never come up).
+            v = vals[self._anima_mix(0x4A7 + port * 131) % len(vals)]
+            msgs.append(self._gs_dt1([0x40, 0x03, addr], [v]))
+            notes.append("gate " + ("normal", "reverse", "sweep 1", "sweep 2")[v & 3])
+        if msgs:
+            self._anima_efx_ours = True
+            for m in msgs:
+                self._safe_out_send(port, m)
+            self._anima_feedback("efx-param", f"P{port + 1} {' · '.join(notes)}", status=False)
+        self._anima_efx_level_apply(port, typ, chs, fam)
 
     def _anima_efx_bind_and_seed(self, msb: int, lsb: int, ports=None) -> None:
         """One-shot: bind CC16 to EFX Ctrl1, seed drive, set rotary/wah base."""
@@ -3754,80 +6922,263 @@ class Duality:
         if not ports:
             return
         seed = self._anima_ensure_efx_seed()
-        msgs = [
-            self._gs_dt1([0x40, 0x03, 0x1B], [ANIMA_EFX_CTRL_CC]),  # C.Src1 = CC16
-            self._gs_dt1([0x40, 0x03, 0x1C], [0x7F]),               # C.Dep1 = +100%
-        ]
         key = (msb, lsb)
+        # CC16 drives whichever EFX Control carries the wah / rotary speed
+        # knob; the other depth sits at 0% (0x40) so CC16 moves nothing else.
+        # Only wah and rotary types are driven by CC16. Everything else gets
+        # 0 % on both, so a CC16 left over from a wah cannot push, say,
+        # Stereo Delay's feedback (its Control 1 knob).
+        live = key in ANIMA_EFX_WAH or key in ANIMA_EFX_ROTARY
+        on2 = key in ANIMA_EFX_CTRL2
+        msgs = [
+            self._gs_dt1([0x40, 0x03, 0x1B], [ANIMA_EFX_CTRL_CC]),                  # C.Src1 = CC16
+            self._gs_dt1([0x40, 0x03, 0x1C], [0x7F if live and not on2 else 0x40]),  # C.Dep1
+            self._gs_dt1([0x40, 0x03, 0x1D], [ANIMA_EFX_CTRL_CC]),                  # C.Src2 = CC16
+            self._gs_dt1([0x40, 0x03, 0x1E], [0x7F if live and on2 else 0x40]),      # C.Dep2
+        ]
         if key in ANIMA_EFX_DRIVE_03:
             drive = 40 + (seed % 51)  # 40–90
             msgs.append(self._gs_dt1([0x40, 0x03, 0x03], [drive]))
-        if key in ANIMA_EFX_WAH:
-            msgs.append(self._gs_dt1([0x40, 0x03, 0x04], [0x40]))  # Wah Man center
+        man = ANIMA_EFX_WAH_MAN.get(key)
+        if man is not None:
+            # CC16 adds to Manual (Control Depth +100%): a low base leaves it room.
+            msgs.append(self._gs_dt1([0x40, 0x03, man], [ANIMA_WAH_MAN_BASE]))
+        peak = ANIMA_EFX_WAH_PEAK.get(key)
+        if peak is not None:
+            msgs.append(self._gs_dt1([0x40, 0x03, peak[0]], [peak[1]]))
+        for addr, val in ANIMA_EFX_TYPE_SET.get(key, ()):
+            msgs.append(self._gs_dt1([0x40, 0x03, addr], [val & 0x7F]))
         self._anima_efx_ours = True
         for i in ports:
             for m in msgs:
                 self._safe_out_send(i, m)
-        self._anima_efx_lfo_ph = 0.0
         self._anima_efx_cc16 = -1
-        self._anima_rot_flipped = False
-        self._anima_rot_fast = bool(seed & 1)
-        if key in ANIMA_EFX_ROTARY:
-            hero = self._anima_efx_hero if self._anima_efx_hero is not None else 0
-            self._anima_send_cc(ports, hero, ANIMA_EFX_CTRL_CC, 127 if self._anima_rot_fast else 0)
+        for i in ports:   # the per-unit CC16 tick re-reads this unit's type and speed
+            (getattr(self, "_anima_cc16_state", None) or {}).pop(i, None)
 
     def _anima_efx_param_tick(self, dt: float) -> None:
-        """CC16 wah LFO / rotary slow-fast while the insertion type supports it."""
-        sent = self._anima_efx_sent
-        if not sent or not self.anima:
-            return
-        ports = [
-            i for i, sl in enumerate(self._anima_slots)
-            if sl.get("typ") == sent
-        ] or self._anima_gs_ports()
-        if not ports:
-            return
-        hero = self._anima_efx_hero if self._anima_efx_hero is not None else 0
-        now = time.monotonic()
-        if sent in ANIMA_EFX_WAH:
-            live = any(
-                k[0] != 9 and self._anima_efx_family(k[0]) == self._anima_efx_key
-                for k in self.active
-            )
-            if not live:
-                return
-            self._anima_efx_lfo_ph += dt * ANIMA_WAH_LFO_HZ * 6.28318530718
-            val = int(64 + 48 * math.sin(self._anima_efx_lfo_ph))
-            val = max(0, min(127, val))
-            self._anima_send_cc(ports, hero, ANIMA_EFX_CTRL_CC, val)
-            return
-        if sent in ANIMA_EFX_ROTARY:
-            longest = 0.0
-            for key, info in self.active.items():
-                ch = key[0]
-                if ch == 9:
-                    continue
-                if self._anima_efx_family(ch) not in ("organ",):
-                    # still allow rotary types on whatever family owns the slot
-                    if self._anima_efx_family(ch) != self._anima_efx_key:
-                        continue
-                t0 = info.get("time") or 0.0
-                if t0:
-                    longest = max(longest, now - t0)
-            want_flip = longest >= ANIMA_ROTARY_HOLD_SEC
-            if want_flip and not self._anima_rot_flipped:
-                self._anima_rot_flipped = True
-                self._anima_send_cc(
-                    ports, hero, ANIMA_EFX_CTRL_CC,
-                    0 if self._anima_rot_fast else 127,
-                )
-            elif not want_flip and self._anima_rot_flipped:
-                self._anima_rot_flipped = False
-                self._anima_send_cc(
-                    ports, hero, ANIMA_EFX_CTRL_CC,
-                    127 if self._anima_rot_fast else 0,
-                )
+        """CC16 per unit: wah LFO / rotary slow-fast wherever a unit's insert has one.
 
+        Each GS unit is driven on its own from its slot (type, owner channels),
+        with its own LFO phase and rotary state. CC16 goes to that unit only, on
+        its owner channels (the parts wired into its insert). The file's own
+        insert (file_park) is left to the file.
+        """
+        if not self.anima:
+            return
+        states = getattr(self, "_anima_cc16_state", None)
+        if states is None:
+            states = self._anima_cc16_state = {}
+        now = time.monotonic()
+        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        self._anima_file_wah_tick(dt, now)
+        for port, sl in enumerate(self._anima_slots):
+            typ = tuple((sl or {}).get("typ") or ())[:2]
+            wah, rot = typ in ANIMA_EFX_WAH, typ in ANIMA_EFX_ROTARY
+            if not (wah or rot) or sl.get("fam") in ("file_park", "seat"):
+                states.pop(port, None)
+                continue
+            owners = [c for c in (sl.get("chs") or []) if not self._anima_is_rhythm(c)
+                      and not (rot and "rotary" in self._anima_ch_traits(c))]
+            if not owners:
+                continue
+            st = states.get(port)
+            if st is None or st["typ"] != typ:
+                st = states[port] = {
+                    "typ": typ, "ph": 0.0, "flipped": False, "sent": {},
+                    "fast": bool(self._anima_mix(seed, 31 + port) & 1),
+                }
+                if rot:
+                    self._anima_cc16_send(port, owners, 127 if st["fast"] else 0, st)
+            playing = [
+                info for (c, _n), info in self.active.items()
+                if c in owners and port in (info.get("ports") or [info.get("port")])
+            ]
+            if wah:
+                self._anima_wah_follow(port, typ, owners, st, dt, now)
+                continue
+            longest = max((now - float(i.get("time") or now) for i in playing), default=0.0)
+            want = longest >= ANIMA_ROTARY_HOLD_SEC
+            if want != st["flipped"]:
+                st["flipped"] = want
+                fast = st["fast"] != want      # a held chord flips the speed
+                self._anima_cc16_send(port, owners, 127 if fast else 0, st)
+
+    def _anima_wah_follow(self, port: int, typ: tuple, owners, st: dict, dt: float, now: float) -> None:
+        # (st["file"]: the file's own wah - rest at the file's Manual, its Peak kept, no screamer)
+        """Wah pedal that follows the player (CC16 on top of the Manual base).
+
+        Each pick quacks (by velocity); a held note sweeps from heel to toe and
+        then rocks, like a crying note; a bend up opens it further and high notes
+        sit a little more open; fast runs stay narrower; silence falls back to
+        the heel. A hard-played high note held a moment raises the Manual base
+        itself by SysEx (the whole wah drives higher), then it comes back down.
+        """
+        notes = {}
+        for (c, n), info in self.active.items():
+            if c in owners and port in (info.get("ports") or [info.get("port")]):
+                notes[(c, n)] = (float(info.get("time") or now), int(info.get("velocity") or 90))
+        seen = st.get("seen") or {}
+        ons = [t for t in (st.get("ons") or []) if now - t <= 1.0]
+        env = float(st.get("env") or 0.0) * math.exp(-dt / ANIMA_WAH_QUACK_SEC)
+        for k, (t0, v) in notes.items():
+            if seen.get(k) != t0:
+                ons.append(t0)
+                env = max(env, v / 127.0)
+        st["seen"] = {k: tv[0] for k, tv in notes.items()}
+        st["ons"] = ons
+        st["env"] = env
+        # Role: chords / low notes = rhythm (0), single high notes = lead (1).
+        if notes:
+            lo_n, hi_n = ANIMA_WAH_LEAD_NOTES
+            top_now = max(n for (_c, n) in notes)
+            if len(notes) >= 2:
+                ev = 0.0
+            else:
+                ev = min(1.0, max(0.0, (top_now - lo_n) / max(1, hi_n - lo_n)))
+            role = float(st.get("role", ev if "role" not in st else st["role"]))
+            tau = ANIMA_WAH_ROLE_LEAD_SEC if ev > role else ANIMA_WAH_ROLE_SEC
+            role += (ev - role) * min(1.0, dt / tau)
+            st["role"] = role
+        role = float(st.get("role", 1.0))
+        amount = ANIMA_WAH_RHYTHM_AMOUNT + (1.0 - ANIMA_WAH_RHYTHM_AMOUNT) * role
+        if notes:
+            newest = max(t0 for t0, _v in notes.values())
+            age = now - newest
+            top = max(n for (_c, n) in notes)
+            vel = max(v for _t, v in notes.values())
+            lo, hi = ANIMA_WAH_HOLD_SEC
+            hold = min(1.0, max(0.0, (age - lo) / max(0.01, hi - lo)))
+            rock = self._anima_wah_gesture(port, owners, st, newest, age, hold, dt)
+            reg = min(1.0, max(0.0, (top - 64) / 29.0))
+            bend = max((self.pitch[c] or 0) for c in owners if self.pitch[c] is not None) \
+                if any(self.pitch[c] is not None for c in owners) else 0
+            bend_up = max(0.0, bend / 63.0)
+            f0, f1 = ANIMA_WAH_FAST_RATE
+            fast = min(1.0, max(0.0, (len(ons) - f0) / max(0.1, f1 - f0)))
+            x = (0.20 + ANIMA_WAH_PICK * env * (1.0 - 0.5 * fast) + ANIMA_WAH_HOLD_OPEN * hold
+                 + ANIMA_WAH_REGISTER * reg + ANIMA_WAH_BEND_OPEN * bend_up + rock)
+            rest = ANIMA_WAH_REST / 127.0
+            x = rest + (x - rest) * amount
+            target = max(0.0, min(1.0, x)) * 127.0
+            scream = (top >= ANIMA_WAH_SCREAM_NOTE and vel >= ANIMA_WAH_SCREAM_VEL
+                      and age >= ANIMA_WAH_SCREAM_HELD and role >= 0.5)
+        else:
+            target = float(ANIMA_WAH_REST)
+            scream = False
+        if st.get("file"):
+            # The file's Manual is the centre: silence and the usual playing
+            # position both land on it; the phrasing swings around it.
+            if notes:
+                target = st["rest"] + (target - ANIMA_FILE_WAH_MID) * ANIMA_FILE_WAH_SWING
+            else:
+                target = float(st["rest"])
+            target = max(0.0, min(127.0, target))
+            scream = False
+        # A scream is an event, not a habit: after one ends the next waits a while.
+        if scream and not st.get("scream_on") \
+                and now - float(st.get("scream_end", -1e9)) < ANIMA_WAH_SCREAM_REST:
+            scream = False
+        if st.get("scream_on") and not scream:
+            st["scream_end"] = now
+        st["scream_on"] = scream
+        cur = float(st.get("cur", ANIMA_WAH_REST))
+        tau = ANIMA_WAH_ATTACK_SEC if target > cur else ANIMA_WAH_RELEASE_SEC
+        cur += (target - cur) * min(1.0, dt / max(0.005, tau))
+        st["cur"] = cur
+        val = int(round(cur))
+        last = st.get("last_val")
+        if last is None or abs(val - last) >= 2 or (val in (0, 127) and val != last):
+            st["last_val"] = val
+            self._anima_cc16_send(port, owners, val, st)
+        # Peak follows the role (a screaming Peak belongs to a lead line).
+        peak = None if st.get("file") else ANIMA_EFX_WAH_PEAK.get(typ)
+        if peak is not None:
+            want_pk = peak[1] if role >= 0.5 else ANIMA_WAH_PEAK_RHYTHM
+            # Opening up for a lead is never held back by the write gap; only
+            # dropping back to rhythm is rate-limited.
+            gap = 0.0 if want_pk == peak[1] else ANIMA_WAH_PEAK_GAP
+            if st.get("peak", peak[1]) != want_pk and now - float(st.get("peak_t") or 0.0) >= gap:
+                st["peak"], st["peak_t"] = want_pk, now
+                self._anima_efx_ours = True
+                self._safe_out_send(port, self._gs_dt1([0x40, 0x03, peak[0]], [want_pk]))
+                self._anima_feedback("efx-param", f"P{port + 1} wah {'lead' if role >= 0.5 else 'rhythm'} Peak {want_pk}")
+        # Screamer: the Manual base itself (SysEx), rate-limited.
+        man = None if st.get("file") else ANIMA_EFX_WAH_MAN.get(typ)
+        want = ANIMA_WAH_MAN_SCREAM if scream else ANIMA_WAH_MAN_BASE
+        if man is not None and want != st.get("base", ANIMA_WAH_MAN_BASE) \
+                and now - float(st.get("base_t") or 0.0) >= ANIMA_WAH_BASE_GAP:
+            st["base"], st["base_t"] = want, now
+            self._anima_efx_ours = True
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, man], [want]))
+            self._anima_feedback("efx-param", f"P{port + 1} wah {'scream' if scream else 'base'} Manual {want}")
+
+    def _anima_wah_gesture(self, port: int, owners, st: dict, newest: float, age: float,
+                           hold: float, dt: float) -> float:
+        """What the foot does once a held note is fully open: one seeded gesture per note.
+
+        rock (tempo-tied rate, varied depth and phase, speeding up a little), hold (stays
+        open), close (eases back), follow (moves with the player's vibrato). Was a fixed
+        1.6 Hz rock on every held note until 0.19.051.
+        """
+        g = st.get("gest")
+        if g is None or g.get("t0") != newest:
+            n = int(st.get("gest_n") or 0) + 1
+            st["gest_n"] = n
+            r = self._anima_mix(port * 131 + 7, n * 37)
+            vals = []
+            for _ in range(5):                       # small LCG off the seeded mix
+                r = (r * 1103 + 12345) & 0xFFFF
+                vals.append(r / 65535.0)
+            tot = sum(w for _k, w in ANIMA_WAH_GESTURES)
+            x, kind = vals[0] * tot, ANIMA_WAH_GESTURES[-1][0]
+            for k, w in ANIMA_WAH_GESTURES:
+                if x < w:
+                    kind = k
+                    break
+                x -= w
+            beat = self._anima_beat_sec()
+            if beat > 0:
+                m = ANIMA_WAH_ROCK_BEATS[int(vals[1] * len(ANIMA_WAH_ROCK_BEATS)) % len(ANIMA_WAH_ROCK_BEATS)]
+                hz = min(2.6, max(0.5, 1.0 / (beat * m)))
+            else:
+                hz = 0.7 + 1.6 * vals[1]
+            lo, hi = ANIMA_WAH_ROCK_DEPTH
+            g = st["gest"] = {"t0": newest, "kind": kind, "hz": hz, "depth": lo + (hi - lo) * vals[2],
+                              "ph": vals[3] * 6.28318530718, "drift": ANIMA_WAH_ROCK_DRIFT * vals[4],
+                              "avg": None}
+        if hold < 1.0:
+            return 0.0
+        t_open = max(0.0, age - ANIMA_WAH_HOLD_SEC[1])
+        kind = g["kind"]
+        if kind == "follow":
+            pb = [self.pitch[c] for c in owners if self.pitch[c] is not None]
+            cur = float(max(pb, key=abs)) if pb else 0.0
+            avg = cur if g["avg"] is None else g["avg"] + (cur - g["avg"]) * min(1.0, dt / 0.4)
+            g["avg"] = avg
+            if abs(cur - avg) > 0.4 or g.get("moving"):
+                g["moving"] = True
+                return max(-0.15, min(0.15, 0.06 * (cur - avg)))
+            kind = "rock" if t_open > 0.5 else "hold"    # no vibrato to follow: rock after a beat
+        if kind == "rock":
+            speed = 1.0 + g["drift"] * min(1.0, t_open / 2.0)
+            g["ph"] += dt * g["hz"] * speed * 6.28318530718
+            return g["depth"] * math.sin(g["ph"])
+        if kind == "close":
+            rate, most = ANIMA_WAH_CLOSE
+            return -min(most, rate * t_open)
+        return 0.02 * math.sin(t_open * 1.9)           # hold: open, barely moving
+
+    def _anima_cc16_send(self, port: int, owners, value: int, st: dict) -> None:
+        """CC16 to one unit on its owner channels; skip only an unchanged value."""
+        for c in owners:
+            if st["sent"].get(c) == value:
+                continue
+            st["sent"][c] = value
+            self._safe_out_send(
+                port, mido.Message("control_change", channel=c, control=ANIMA_EFX_CTRL_CC, value=value)
+            )
+        self._anima_efx_cc16 = value
 
     def _anima_chs_conflict(self, chs: list) -> bool:
         sets = [self._anima_channel_pcs(c) for c in chs]
@@ -3839,10 +7190,120 @@ class Duality:
         union = set().union(*sets)
         return not self._anima_pcs_compatible(union)
 
+    def _anima_ch_pan(self, ch: int) -> int:
+        v = self.pan[ch & 0x0F] if ch < 16 else None
+        return 64 if v is None else int(v) & 0x7F
+
+    def _anima_chs_spread(self, chs: list) -> bool:
+        """Two players hard-panned apart — they should not share a mono insert."""
+        if len(chs) < 2:
+            return False
+        pans = [self._anima_ch_pan(c) for c in chs[:4]]
+        if max(pans) - min(pans) >= 28:
+            return True
+        left = any(p <= ANIMA_SPLIT_PAN_LO for p in pans)
+        right = any(p >= ANIMA_SPLIT_PAN_HI for p in pans)
+        return left and right
+
+    def _anima_chs_want_split(self, chs: list) -> bool:
+        """OD1/OD2 (or separate boxes) when they clash in pitch *or* in the stereo field."""
+        return self._anima_chs_conflict(chs) or self._anima_chs_spread(chs)
+
+    def _anima_file_efx_note(self, addr: int, val) -> None:
+        """Remember the file's insert values; a write after its setup burst means
+        the file plays its own EFX (hands off for the song)."""
+        now = time.monotonic()
+        if not self._anima_file_efx_first_t:
+            self._anima_file_efx_first_t = now
+        elif now - self._anima_file_efx_first_t > ANIMA_FILE_EFX_SETUP_SEC and not self._anima_file_efx_live:
+            self._anima_file_efx_live = True
+            self._anima_file_wah_release("the file writes its EFX during the song")
+        vals = self._anima_file_efx_vals
+        if addr == 0x00:
+            vals.clear()                      # a type write resets the parameters
+            if len(val) >= 2:
+                vals[0x00] = (int(val[0]) & 0x7F, int(val[1]) & 0x7F)
+        elif val:
+            vals[addr] = int(val[0]) & 0x7F
+        st = self._anima_file_wah
+        if st and st.get("on") and not self._anima_file_efx_live:
+            if addr in (0x00, st["man"], st["src"], st["src"] + 1, ANIMA_EFX_WAH_SWITCH.get(st["typ"])):
+                # still inside its setup: give it back as now set; the tick re-reads and re-adopts
+                self._anima_file_wah_release("the file changed its wah setup")
+
+    def _anima_file_wah_release(self, why: str) -> None:
+        """Give an adopted file wah back exactly as the file set it."""
+        st = self._anima_file_wah
+        self._anima_file_wah = None
+        if not st or not st.get("on"):
+            return
+        port = st["port"]
+        vals = self._anima_file_efx_vals
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, st["man"]], [st["file_man"]]))
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, st["src"]], [vals.get(st["src"], 0x00)]))
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, st["src"] + 1], [vals.get(st["src"] + 1, 0x40)]))
+        self._anima_feedback("efx", f"P{port + 1} file wah handed back ({why})", status=True)
+
+    def _anima_file_wah_tick(self, dt: float, now: float) -> None:
+        """Play the file's own wah when the file set it and left it (see ANIMA_FILE_*)."""
+        home = self._anima_file_home_port()
+        typ = tuple(self._anima_file_efx_type or ())[:2]
+        vals = self._anima_file_efx_vals
+        owners = sorted(c for c in self._anima_file_efx_parts if not self._anima_is_rhythm(c))
+        st = self._anima_file_wah
+        ok = (
+            home is not None and typ in ANIMA_EFX_WAH and owners and not self._anima_file_efx_live
+            and now - float(self._anima_file_efx_first_t or now) > 0.5
+            and not (set(owners) & self._anima_file_cc16)
+        )
+        if ok:
+            src = 0x1D if typ in ANIMA_EFX_CTRL2 else 0x1B
+            sw = ANIMA_EFX_WAH_SWITCH.get(typ)
+            if vals.get(src, 0x00) != 0x00:
+                ok = False                    # the file routes the knob itself
+            elif sw is not None and vals.get(sw) != 0x01:
+                ok = False                    # the file's wah is switched off (or unknown)
+        if not ok:
+            if st and st.get("on"):
+                self._anima_file_wah_release("no longer set-and-left")
+            return
+        if st is None or st.get("typ") != typ or st.get("port") != home:
+            man = ANIMA_EFX_WAH_MAN[typ]
+            file_man = int(vals.get(man, ANIMA_EFX_WAH_MAN_DEFAULT.get(typ, 64)))
+            rest = min(file_man, ANIMA_FILE_WAH_REST)
+            st = self._anima_file_wah = {
+                "on": True, "typ": typ, "port": home, "man": man, "src": src,
+                "file_man": file_man, "rest": rest, "sent": {}, "cur": float(rest), "file": True,
+            }
+            self._anima_efx_ours = True
+            self._safe_out_send(home, self._gs_dt1([0x40, 0x03, man], [file_man - rest]))
+            self._safe_out_send(home, self._gs_dt1([0x40, 0x03, src], [ANIMA_EFX_CTRL_CC]))
+            self._safe_out_send(home, self._gs_dt1([0x40, 0x03, src + 1], [0x7F]))
+            self._anima_cc16_send(home, owners, rest, st)
+            self._anima_feedback(
+                "efx", f"P{home + 1} file wah played (Manual {file_man} kept as the pedal's rest; "
+                       f"ch{','.join(str(c + 1) for c in owners)})", status=True,
+            )
+        self._anima_wah_follow(home, typ, owners, st, dt, now)
+
+    def _anima_file_home_port(self) -> int | None:
+        """Reserve P1 only while the file actually owns an insert."""
+        if not self._anima_file_efx_t:
+            return None
+        gs = self._anima_gs_ports()
+        if self._anima_file_efx_home is not None:
+            return self._anima_file_efx_home
+        return gs[0] if gs else None
+
     def _anima_build_plan(self, extra_ch: int | None = None) -> list:
-        """One insertion slot per GS port. Guitars pack 2-per-unit (OD1/OD2 if they clash)."""
+        """Global plan for the settled PC dump: one insert per GS unit by priority.
+
+        Used by the burst settle only; a single note places its own channel
+        with _anima_efx_place. Guitars pack 2-per-unit (OD1/OD2 if they clash).
+        """
         gs_all = self._anima_gs_ports()
-        home = self._anima_file_efx_home if self._anima_file_efx_t else None
+        home = self._anima_file_home_port()
         reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
         gs = [p for p in gs_all if p != home]
         if not gs:
@@ -3865,12 +7326,21 @@ class Duality:
             _add(key[0])
         if extra_ch is not None:
             _add(extra_ch)
+        # PC already told us the family — pack it now, not at the first note.
+        # Current tables (chromatic, fx, wider wind/strings) join this same pass.
+        for c in range(16):
+            if self._anima_ch_live(c):
+                _add(c)
         # While a family is inside HOLD, keep every channel that still
         # classifies as that family — not only when the family is absent.
         for fam, ts in list(self._anima_efx_sound_t.items()):
             if now - ts >= ANIMA_EFX_HOLD_SEC:
                 continue
             for c in range(16):
+                if not (self._anima_ch_live(c) or self._anima_ch_has_notes(c)):
+                    continue
+                if c in reserved:
+                    continue
                 if self._anima_efx_family(c) == fam:
                     fam_chs.setdefault(fam, [])
                     if c not in fam_chs[fam]:
@@ -3881,6 +7351,8 @@ class Duality:
             if not fam:
                 continue
             for c in slot.get("chs") or []:
+                if c in reserved:
+                    continue
                 if self._anima_efx_family(c) == fam:
                     fam_chs.setdefault(fam, [])
                     if c not in fam_chs[fam]:
@@ -3897,47 +7369,129 @@ class Duality:
                 continue
             keep = [
                 c for c in (slot.get("chs") or [])
-                if self._anima_efx_family(c) == fam and c not in used
+                if c not in reserved and self._anima_efx_family(c) == fam and c not in used
             ]
             if keep:
                 fam_chs[fam] = keep
                 used.update(keep)
 
         plan = []
-        gi = 0
-
-        def _take():
-            nonlocal gi
-            if gi >= len(gs):
-                return None
-            p = gs[gi]
-            gi += 1
-            return p
-
-        for fam in ANIMA_EFX_PRIORITY:
-            if fam not in fam_chs:
+        used_ports = set()
+        used_chs = set(reserved)
+        for park in list(self._anima_file_park):
+            pp = park.get("port")
+            if pp is None or pp == home or pp not in gs:
                 continue
-            chs = sorted(fam_chs[fam])
+            pch = [c for c in (park.get("chs") or []) if c not in reserved]
+            plan.append({
+                "port": pp, "fam": "file_park", "chs": pch,
+                "split": False, "typ": park.get("typ"),
+            })
+            used_ports.add(pp)
+            used_chs.update(pch)
+        pri = {f: i for i, f in enumerate(ANIMA_EFX_PRIORITY)}
+
+        def _rank(fam: str) -> int:
+            return pri.get(fam, 99)
+
+        def _take(for_fam: str):
+            # 1) this family already lives here (its main unit, not a hero's)
+            for p in gs:
+                if p in used_ports:
+                    continue
+                sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
+                if sl.get("fam") == for_fam and not sl.get("hero"):
+                    used_ports.add(p)
+                    return p
+            # 2) empty box
+            for p in gs:
+                if p not in used_ports:
+                    sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
+                    if not sl.get("fam"):
+                        used_ports.add(p)
+                        return p
+            # 3) steal the lowest-priority occupant, only if that box is
+            #    evictable (quiet players, and owner unheard or silent IDLE_SEC)
+            steal = None
+            steal_rank = -1
+            for p in gs:
+                if p in used_ports:
+                    continue
+                sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
+                fam = sl.get("fam")
+                if not fam or fam == "file_park":
+                    continue
+                if not self._anima_slot_evictable(p, now):
+                    if fam == "seat":
+                        sl["yield"] = True   # stop new harmony there; it quiets
+                    continue
+                r = 98 if sl.get("hero") else _rank(fam)   # a hero unit yields to any family
+                if sl.get("heard_t") and r <= _rank(for_fam) and not sl.get("hero"):
+                    continue
+                if r > steal_rank:
+                    steal, steal_rank = p, r
+            if steal is not None:
+                used_ports.add(steal)
+                return steal
+            return None
+
+        # Hero-split units keep their hero across later bursts; the family plans
+        # without it, and any family that needs the unit may still take it.
+        heroes = {}
+        for p in gs:
+            sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
+            hf = sl.get("fam")
+            if sl.get("hero") and hf in fam_chs:
+                hc = [c for c in (sl.get("chs") or []) if c in fam_chs[hf]]
+                if hc:
+                    heroes[p] = (hf, hc)
+        hero_chs = {c for _f, hc in heroes.values() for c in hc}
+        for fam in ANIMA_EFX_PRIORITY:
+            chs = [c for c in fam_chs.get(fam, []) if c not in used_chs and c not in hero_chs]
+            if not chs:
+                continue
             if fam == "guitar_dist":
                 rest = list(chs)
+                n_other = sum(
+                    1 for f in ANIMA_EFX_PRIORITY
+                    if f != "guitar_dist" and any(
+                        c not in used_chs for c in fam_chs.get(f, [])
+                    )
+                )
+                n_free0 = sum(1 for p in gs if p not in used_ports)
+                can_solo = n_free0 >= len(rest) + n_other
                 while rest:
-                    port = _take()
+                    port = _take(fam)
                     if port is None:
                         break
-                    prev = self._anima_slots[port] if port < len(self._anima_slots) else {}
-                    if prev.get("split") and prev.get("fam") == fam:
-                        # Stay OD1/OD2 on this unit until PCs leave dist.
-                        chs = sorted(set(prev.get("chs") or []) | set(rest[:2]))
+                    sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
+                    old_chs = [
+                        c for c in (sl.get("chs") or [])
+                        if c in rest
+                    ] if sl.get("fam") == fam and sl.get("typ") else []
+                    # Already committed on this box — do not restack mid-phrase.
+                    if old_chs:
+                        take = old_chs[:2] if len(old_chs) >= 2 else old_chs[:1]
+                        rest = [c for c in rest if c not in take]
                         plan.append({
-                            "port": port, "fam": fam, "chs": chs[:2] or list(rest[:1]),
-                            "split": True,
+                            "port": port, "fam": fam, "chs": take,
+                            "split": bool(sl.get("split")),
                         })
-                        rest = rest[2:] if len(rest) >= 2 else []
+                    # Spare boxes: one guitar per unit so each keeps its pan.
+                    elif can_solo:
+                        one = [rest.pop(0)]
+                        plan.append({
+                            "port": port, "fam": fam, "chs": one,
+                            "split": False,
+                        })
                     elif len(rest) >= 2:
                         pair, rest = rest[:2], rest[2:]
+                        split = bool(sl.get("split"))
+                        if not sl.get("typ") and self._anima_chs_want_split(pair):
+                            split = True
                         plan.append({
                             "port": port, "fam": fam, "chs": pair,
-                            "split": self._anima_chs_conflict(pair),
+                            "split": split,
                         })
                     else:
                         plan.append({
@@ -3945,14 +7499,50 @@ class Duality:
                             "split": False,
                         })
                         rest = []
+                    used_chs.update(plan[-1]["chs"])
             else:
-                port = _take()
+                port = _take(fam)
                 if port is None:
-                    break
+                    # Lower families may still own their boxes.
+                    continue
+                sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
                 plan.append({
-                    "port": port, "fam": fam, "chs": chs, "split": False,
+                    "port": port, "fam": fam, "chs": chs,
+                    "split": bool(sl.get("split")) if sl.get("fam") == fam else False,
                 })
+                used_chs.update(chs)
+        for p, (hf, hc) in heroes.items():
+            if p not in used_ports:
+                used_ports.add(p)
+                plan.append({"port": p, "fam": hf, "chs": hc, "split": False, "hero": True})
+            else:
+                # Another family took the unit: the hero rejoins its family's unit.
+                for item in plan:
+                    if item["fam"] == hf and item["port"] not in heroes:
+                        item["chs"] = list(item["chs"]) + [c for c in hc if c not in item["chs"]]
+                        break
+            used_chs.update(hc)
         return plan
+
+    def _anima_ch_has_notes(self, ch: int) -> bool:
+        ch = ch & 0x0F
+        return any(k[0] == ch for k in self.active)
+
+    def _anima_efx_part_release(self, ch: int) -> None:
+        """EFX Off on a part that is no longer sounding. Type stays reserved."""
+        ch = ch & 0x0F
+        if self._anima_ch_has_notes(ch):
+            return
+        for port in range(self.n_ports):
+            ons = self._anima_efx_on[port] if port < len(self._anima_efx_on) else None
+            if not ons or not ons[ch]:
+                continue
+            self._anima_efx_ours = True
+            self._safe_out_send(
+                port,
+                self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x00]),
+            )
+            ons[ch] = False
 
     def _anima_clear_slot(self, port: int) -> None:
         ports = [port]
@@ -3963,23 +7553,69 @@ class Duality:
             self._anima_efx_ours = True
             self._safe_out_send(port, off)
             self._anima_efx_on[port][c] = False
+        for c, p in list((self._anima_ch_port or {}).items()):
+            if p == port:
+                self._anima_ch_port.pop(c, None)
         self._anima_slots[port] = {}
 
     def _anima_commit_plan(self, plan: list) -> None:
         gs = self._anima_gs_ports()
-        home = self._anima_file_efx_home if self._anima_file_efx_t else None
+        home = self._anima_file_home_port()
         reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
         keep = {item["port"] for item in plan}
+        # Sticky pin: a sounding part stays on the box that already has
+        # its insert. Wiping ch_port every note was load-balancing guitars
+        # onto dry ports.
+        sticky = {
+            c: p for c, p in (self._anima_ch_port or {}).items()
+            if self._anima_ch_has_notes(c)
+        }
+        for item in plan:
+            stay = []
+            move = []
+            for c in item["chs"]:
+                prev = sticky.get(c)
+                if prev is not None and prev != item["port"]:
+                    stay.append(c)
+                else:
+                    move.append(c)
+            if stay and not move:
+                continue
+            if stay:
+                item = dict(item)
+                item["chs"] = move
+            if not item["chs"]:
+                continue
+            self._anima_commit_slot(item)
+            sl = self._anima_slots[item["port"]] if item["port"] < len(self._anima_slots) else {}
+            # Busy non-dirt commit leaves the sounding family in place.
+            # Pinning the rejected family anyway was the dry-part bug:
+            # notes stayed on the box after Part EFX had been turned off.
+            if sl.get("fam") != item["fam"] and sl.get("pending_fam") != item["fam"]:
+                continue
+            for c in item["chs"]:
+                if c in reserved and home is not None:
+                    self._anima_ch_port[c] = home
+                else:
+                    self._anima_ch_port[c] = item["port"]
+                    sticky[c] = item["port"]
+        for c, p in sticky.items():
+            sl = self._anima_slots[p] if isinstance(p, int) and 0 <= p < len(self._anima_slots) else {}
+            try:
+                same = self._anima_efx_family(c) == sl.get("fam")
+            except Exception:
+                same = False
+            if c in (sl.get("chs") or []) or same:
+                self._anima_ch_port.setdefault(c, p)
         for p in gs:
             if p == home:
                 continue
             if p not in keep and self._anima_slots[p].get("fam"):
+                # A heard owner keeps its box; never pull Part EFX out from
+                # under a sounding player.
+                if not self._anima_slot_evictable(p):
+                    continue
                 self._anima_clear_slot(p)
-        self._anima_ch_port = {}
-        for item in plan:
-            self._anima_commit_slot(item)
-            for c in item["chs"]:
-                self._anima_ch_port[c] = item["port"]
         # Secondaries: EFX Off on parts the FILE turned on (home keeps them).
         # Once per port — commit_plan runs on every note and was flooding Offs.
         if home is not None and reserved:
@@ -4004,18 +7640,83 @@ class Duality:
             self._anima_efx_key = None
             self._anima_efx_hero = None
 
+    def _anima_efx_set_param(self, port: int, typ: tuple, name: str, val: int) -> None:
+        params = GS_EFX_PARAMS.get(tuple(typ) if typ else None) or {}
+        slot = params.get(name)
+        if not slot:
+            return
+        addr = 0x03 + (int(slot) - 1)
+        self._anima_efx_ours = True
+        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [int(val) & 0x7F]))
+        self._anima_feedback(
+            "efx-param",
+            f"P{port + 1} {name} → {int(val) & 0x7F}",
+            status=False,
+        )
 
     def _anima_efx_apply_pan(self, port: int, typ: tuple, chs: list) -> None:
-        """For mono inserts that expose Pan, copy the hero channel's CC10."""
-        slot = ANIMA_EFX_PAN_SLOT.get(tuple(typ) if typ else None)
-        if not slot or not chs:
-            return
-        ch = chs[0]
-        pan = self.pan[ch] if self.pan[ch] is not None else 64
-        addr = 0x03 + (int(slot) - 1)  # P1 = 40 03 03
-        self._anima_efx_ours = True
-        self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [int(pan) & 0x7F]))
+        """Inserts with a Pan knob follow the player's file pan (CC10).
 
+        One pan address: the output sits where the player is panned.
+        Two (parallel pairs, the two pitch voices): spread around it.
+        A centred player keeps the type's own default, except the extra
+        dirt box, which still leans L/R by port.
+        """
+        key = tuple(typ)[:2] if typ else None
+        addrs = ANIMA_EFX_PAN_PARAMS.get(key)
+        if not addrs or not chs:
+            return
+        pans = [int(self.pan[c]) if self.pan[c] is not None else 64 for c in chs]
+        pan = pans[0]
+        why = ""
+        if len(pans) >= 2 and min(pans) < 64 - ANIMA_EFX_PAN_OFF and max(pans) > 64 + ANIMA_EFX_PAN_OFF:
+            # Opposite-side players sharing one insert (ONESTOP intro guitars):
+            # centre it; the OD1/OD2 split latches in a quiet gap.
+            pan, why = 64, " (split pending)"
+        elif abs(pan - 64) <= 4:
+            if key in ANIMA_EFX_PAN_SLOT:
+                # Centred part on an extra dirt box: lean L/R by port.
+                pan, why = (32 if port % 2 == 0 else 96), " (dirt lean)"
+            else:
+                pan = 64
+        if len(addrs) == 1:
+            vals = [pan]
+        elif pan == 64 and not why:
+            vals = [0x01, 0x7F]  # the pair's own hard L/R default
+        else:
+            sp = ANIMA_EFX_PAN_PAIR_SPREAD
+            vals = [max(1, min(127, pan - sp)), max(1, min(127, pan + sp))]
+        self._anima_efx_ours = True
+        for addr, v in zip(addrs, vals):
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, addr], [int(v) & 0x7F]))
+        self._anima_feedback(
+            "efx-pan",
+            f"P{port + 1} EFX pan → {'/'.join(str(v) for v in vals)}{why}",
+            status=False,
+        )
+
+
+    def _anima_bass_harm_drive(self, port: int, typ: tuple, chs: list) -> None:
+        """F.Bass / Harm. (CC00=16 on finger/pick bass) through Bass Multi: Drive 16 not 48."""
+        if tuple(typ)[:2] != (0x04, 0x05):
+            return
+        hit = False
+        for c in chs:
+            pc = int(self._anima_prog[c]) & 0x7F
+            msb = int(self.bank_msb[c]) & 0x7F
+            if msb == 16 and pc in (32, 33, 34):
+                hit = True
+                break
+        if hit:
+            self._anima_efx_set_param(port, typ, "OD Drive", 16)
+
+    def _anima_lead_dirt_drive(self, port: int, typ: tuple, chs: list) -> None:
+        """Lead + Overdrive/Distortion: default Drive 48 is too hot. Match bass-harm idea."""
+        if tuple(typ)[:2] not in ((0x01, 0x10), (0x01, 0x11)):
+            return
+        if not any((self._anima_efx_family(c) or "") == "lead" for c in chs):
+            return
+        self._anima_efx_set_param(port, typ, "Drive", 24)
 
     def _anima_efx_follow_pan(self, ch: int) -> None:
         port = self._anima_ch_port.get(ch)
@@ -4025,6 +7726,165 @@ class Duality:
         if ch not in (slot.get("chs") or []):
             return
         self._anima_efx_apply_pan(port, slot.get("typ"), slot.get("chs") or [ch])
+        self._anima_efx_guitar_upkeep(ch)
+
+    def _anima_efx_guitar_upkeep(self, ch: int) -> None:
+        """Fix a dirt box's stereo placement once it is quiet.
+
+        Two opposite-side guitars merged under a riff → latch OD1/OD2.
+        A lone panned guitar left on GTR Multi (CC10 came after the PC)
+        → move it to Overdrive/Distortion so it keeps its side.
+        Same rules as every other type change: quiet players, one type
+        write per box per switch window, no hold/retrigger.
+        """
+        port = self._anima_ch_port.get(ch & 0x0F)
+        if port is None or not (0 <= port < len(self._anima_slots)):
+            return
+        sl = self._anima_slots[port]
+        if sl.get("fam") != "guitar_dist" or not sl.get("typ"):
+            return
+        chs = list(sl.get("chs") or [])
+        if not chs or self._anima_port_players_sounding(port):
+            return
+        if time.monotonic() - float(sl.get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
+            return
+        if len(chs) >= 2:
+            pair = chs[:2]
+            if sl.get("split") or not self._anima_chs_want_split(pair):
+                return
+            self._anima_commit_slot({"port": port, "fam": "guitar_dist", "chs": pair, "split": True})
+            return
+        if tuple(sl["typ"])[:2] in ANIMA_EFX_PAN_SLOT:
+            return
+        c = chs[0]
+        pan = int(self.pan[c]) if self.pan[c] is not None else 64
+        if abs(pan - 64) <= ANIMA_EFX_PAN_OFF:
+            return
+        self._anima_commit_slot({
+            "port": port, "fam": "guitar_dist", "chs": chs, "split": False, "retype": True,
+        })
+
+    def _anima_port_has_notes(self, port: int) -> bool:
+        for info in self.active.values():
+            ports = info.get("ports") or [info.get("port")]
+            if port in ports:
+                return True
+        return False
+
+    def _anima_efx_wet_mark(self, port: int, ch: int) -> None:
+        """Part just went wet / type just changed: keep its next notes off this box briefly."""
+        wet = getattr(self, "_anima_efx_wet", None)
+        if wet is None:
+            wet = self._anima_efx_wet = {}
+        wet[(port, ch & 0x0F)] = time.monotonic() + ANIMA_EFX_WET_SEC
+
+    def _anima_efx_wet_blocked(self, port: int, ch: int) -> bool:
+        wet = getattr(self, "_anima_efx_wet", None) or {}
+        return time.monotonic() < float(wet.get((port, ch & 0x0F), 0.0))
+
+    def _anima_port_players(self, port: int, extra_chs=None) -> set:
+        """Channels wired into this box's insert: Part EFX On here, slot owners, newcomers."""
+        sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
+        ons = self._anima_efx_on[port] if port < len(self._anima_efx_on) else [False] * 16
+        players = {c for c in range(16) if ons[c]}
+        players.update(sl.get("chs") or [])
+        players.update(extra_chs or [])
+        return players
+
+    def _anima_port_players_sounding(self, port: int, extra_chs=None) -> bool:
+        """Any EFX player of this box sounding on it (notes, ghosts, queued strums).
+
+        Dry parts load-balanced onto the unit do not count: their Part EFX is
+        Off, so an insert type change never reaches them.
+        """
+        players = self._anima_port_players(port, extra_chs)
+        if not players:
+            return False
+        for key, info in self.active.items():
+            if key[0] in players and port in (info.get("ports") or [info.get("port")]):
+                return True
+        for ghosts in (getattr(self, "_anima_ghosts", None) or {}).values():
+            for g in ghosts or []:
+                if g and g[0] == port and (g[1] & 0x0F) in players:
+                    return True
+        for _when, p, msg in getattr(self, "_anima_strum_q", None) or []:
+            if (
+                p == port
+                and getattr(msg, "type", "") == "note_on"
+                and msg.velocity > 0
+                and (msg.channel & 0x0F) in players
+            ):
+                return True
+        return False
+
+    def _anima_slot_evictable(self, port: int, now: float | None = None) -> bool:
+        """A box may change owner: empty, or unheard past the dump, or silent IDLE_SEC.
+
+        Once a family has actually played on a box it keeps it while it plays.
+        "Unheard" alone was the 0.19.002 ping-pong (lead ↔ pad on every gap).
+        """
+        now = time.monotonic() if now is None else now
+        sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
+        fam = sl.get("fam")
+        if not fam:
+            return True
+        if fam == "file_park":
+            return False
+        if self._anima_port_players_sounding(port):
+            return False
+        if now - float(sl.get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
+            return False
+        return self._anima_slot_stale(port, now)
+
+    def _anima_slot_stale(self, port: int, now: float | None = None) -> bool:
+        """Owner no longer has a claim a LOWER family must respect.
+
+        Heard owners: silent ANIMA_EFX_IDLE_SEC. Unheard owners: past their
+        grace (short for the song-setup dump, longer for a mid-song PC,
+        which says that part is about to play).
+        """
+        now = time.monotonic() if now is None else now
+        sl = self._anima_slots[port] if port < len(self._anima_slots) else {}
+        fam = sl.get("fam")
+        if not fam:
+            return True
+        if fam == "file_park":
+            return False
+        if fam == "seat" or sl.get("hero"):
+            return True   # a seat or hero-split unit never holds a unit against a real family
+        heard = float(sl.get("heard_t") or 0)
+        if heard:
+            return (now - heard) >= ANIMA_EFX_IDLE_SEC
+        claimed = float(sl.get("t") or 0)
+        grace = float(sl.get("grace") or ANIMA_EFX_DUMP_SEC)
+        return (now - claimed) >= grace
+
+    def _anima_unpin_others(self, port: int, fam: str, chs: list, old_chs: list) -> None:
+        """Channels this box no longer owns must re-home. Same family stays.
+
+        Unpin and Part EFX Off are one action: pinned-but-Off played dry
+        forever (0.19.001).
+        """
+        victims = set(old_chs or [])
+        for c, p in list((self._anima_ch_port or {}).items()):
+            if p == port:
+                victims.add(c)
+        for c in victims:
+            if c in chs or self._anima_ch_port.get(c) != port:
+                continue
+            try:
+                if self._anima_efx_family(c) == fam:
+                    continue
+            except Exception:
+                pass
+            self._anima_ch_port.pop(c, None)
+            if self._anima_efx_on[port][c]:
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    port,
+                    self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x00]),
+                )
+                self._anima_efx_on[port][c] = False
 
     def _anima_commit_slot(self, item: dict) -> None:
         port = item["port"]
@@ -4032,11 +7892,63 @@ class Duality:
         chs = list(item["chs"])
         split = bool(item.get("split"))
         old = self._anima_slots[port]
+        if fam == "file_park" and item.get("typ"):
+            typ = tuple(item["typ"])[:2]
+            if old.get("typ") != typ:
+                self._anima_efx_ours = True
+                self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [typ[0], typ[1]]))
+            self._anima_slots[port] = {
+                "fam": "file_park", "chs": chs, "split": False, "typ": typ, "t": time.monotonic(),
+            }
+            for c in range(16):
+                want = c in chs
+                if want == self._anima_efx_on[port][c]:
+                    continue
+                val = 0x01 if want else 0x00
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    port,
+                    self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
+                )
+                self._anima_efx_on[port][c] = want
+            self._anima_unpin_others(port, "file_park", chs, list(old.get("chs") or []))
+            return
+        # Invariant: never change type or owner under a sounding EFX player
+        # (dirt, OD1/OD2 and GTR Multi included). Dry parts do not count.
+        busy = self._anima_port_players_sounding(port, chs)
+        # One type write per box per switch window (the 196 s GTR Multi →
+        # OD1/OD2 double write). An empty box is never "recent".
+        if old.get("typ") and time.monotonic() - float(old.get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
+            busy = True
+        # Same family + type already on this box: keep it. Channel list
+        # may grow/shrink; that must not re-roll GTR Multi 1↔3.
+        # Split may still latch ON below, but only on a quiet box.
         if (
             old.get("fam") == fam
-            and set(old.get("chs") or []) == set(chs)
-            and old.get("split") == split
+            and old.get("typ")
+            and (not (split and not old.get("split")) or busy)
+            and not (item.get("retype") and not busy)
         ):
+            before = set(old.get("chs") or [])   # old IS the live slot dict
+            self._anima_slots[port]["chs"] = list(set(chs) | before)
+            self._anima_slots[port]["split"] = bool(old.get("split"))
+            if item.get("hero"):
+                self._anima_slots[port]["hero"] = True
+            for c in chs:
+                if self._anima_efx_on[port][c]:
+                    continue
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    port,
+                    self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [0x01]),
+                )
+                self._anima_efx_on[port][c] = True
+                self._anima_efx_wet_mark(port, c)
+            merged = list(self._anima_slots[port].get("chs") or [])
+            self._anima_unpin_others(port, fam, merged, list(old.get("chs") or []))
+            if set(merged) != before:
+                self._anima_efx_apply_pan(port, old.get("typ"), merged)
+                self._anima_efx_level_apply(port)
             return
         # Same family, type already sent — do not flap GTR Multi ↔ OD1/OD2
         # inside the switch window unless we are latching split ON.
@@ -4057,18 +7969,18 @@ class Duality:
                 and old.get("typ") == (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
             )
             if not already:
-                held = self._anima_hold_retrigger(port, chs)
-                saved_gs = self._anima_gs_ports
-                self._anima_gs_ports = lambda: [port]  # type: ignore
-                try:
-                    self._anima_apply_od_split(chs)
-                finally:
-                    self._anima_gs_ports = saved_gs
-                self._anima_hold_resume(port, held)
+                if busy:
+                    # No hold/retrigger under a riff (ONESTOP hitch).
+                    return
+                self._anima_apply_od_split(chs, ports=[port])
             self._anima_slots[port] = {
                 "fam": fam, "chs": chs, "split": True,
                 "typ": (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB), "t": time.monotonic(),
+                "heard_t": float(old.get("heard_t") or 0) if old.get("fam") == fam else 0.0,
+                "grace": float(getattr(self, "_anima_efx_grace", ANIMA_EFX_DUMP_SEC)),
             }
+            if not already:
+                self._anima_dirt_level(port, force=True)
             for c in range(16):
                 want = c in chs
                 if want == self._anima_efx_on[port][c]:
@@ -4080,25 +7992,63 @@ class Duality:
                     self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
                 )
                 self._anima_efx_on[port][c] = want
+                if want:
+                    self._anima_efx_wet_mark(port, c)
+            self._anima_unpin_others(port, fam, chs, list(old.get("chs") or []))
             return
-        pick = self._anima_palette_pick(fam, port, chs)
+        pick = self._anima_palette_pick(fam, port, chs, avoid=item.get("avoid"))
         if not pick:
             return
         msb, lsb, label = pick
         typ = (msb, lsb)
+        if typ == (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB) and fam == "guitar_dist":
+            if len(chs) < 2:
+                pal = [
+                    row for row in (ANIMA_EFX_GS.get(fam) or [])
+                    if (row[0], row[1]) != (ANIMA_SPLIT_MSB, ANIMA_SPLIT_LSB)
+                ]
+                if not pal:
+                    return
+                pick = tuple(pal[0][:3])
+                msb, lsb, label = pick
+                typ = (msb, lsb)
+            else:
+                item["split"] = True
+                return self._anima_commit_slot(item)
+        if busy and (old.get("typ") != typ or (old.get("fam") and old.get("fam") != fam)):
+            # A player is sounding: leave type, owner and part toggles alone.
+            # The new family stays unpinned (dry) and retries when this box
+            # or another one is quiet. No defer, no flush, no hold/retrigger.
+            return
         if old.get("typ") != typ:
-            held = self._anima_hold_retrigger(port, chs)
             self._anima_efx_ours = True
             self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb]))
-            self._anima_hold_resume(port, held)
             self._anima_efx_sent = typ
+            for c in chs:
+                self._anima_efx_wet_mark(port, c)
             self._anima_efx_label = label
             self._anima_efx_hero = chs[0] if chs else None
             self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_efx_level_apply(port, typ, [], "seat", fresh=True)   # type write reset Balance
+            self._anima_efx_shape(port, typ, chs, fam)
             self._anima_efx_apply_pan(port, typ, chs)
+            self._anima_organ_vol_lift(port, chs, label)
+            self._anima_bass_harm_drive(port, typ, chs)
+            self._anima_lead_dirt_drive(port, typ, chs)
+            self._anima_wah_gtr_vol_lift(port, typ, chs)
             self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} → GS {label}", status=True)
+        elif old.get("fam") != fam:
+            self._anima_feedback("efx", f"P{port + 1} ch{',' .join(str(c+1) for c in chs)} {fam} keeps GS {label}", status=True)
+            bal = ANIMA_SEAT_BALANCE.get(typ)
+            if bal and "seat" in (fam, old.get("fam")):
+                # No type write, so no parameter reset: move Balance between the
+                # seat's setting and the type's default ourselves.
+                val = bal[1] if fam == "seat" else ANIMA_EFX_BALANCE_DEFAULT
+                self._anima_efx_ours = True
+                self._safe_out_send(port, self._gs_dt1([0x40, 0x03, bal[0]], [val]))
+        # Type and part toggles change together; only this box's owners are On.
         for c in range(16):
-            want = c in chs
+            want = c in chs and not self._anima_is_rhythm(c)
             if want == self._anima_efx_on[port][c]:
                 continue
             val = 0x01 if want else 0x00
@@ -4108,12 +8058,1393 @@ class Duality:
                 self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
             )
             self._anima_efx_on[port][c] = want
+            if want:
+                self._anima_efx_wet_mark(port, c)
+        self._anima_unpin_others(port, fam, chs, list(old.get("chs") or []))
         if old.get("split") and not split:
             self._anima_split_restore()
-        self._anima_slots[port] = {"fam": fam, "chs": chs, "split": False, "typ": typ, "t": time.monotonic()}
+        self._anima_slots[port] = {
+            "fam": fam, "chs": chs, "split": False, "typ": typ, "t": time.monotonic(),
+            "heard_t": float(old.get("heard_t") or 0) if old.get("fam") == fam else 0.0,
+            "grace": float(getattr(self, "_anima_efx_grace", ANIMA_EFX_DUMP_SEC)),
+        }
+        if item.get("hero"):
+            self._anima_slots[port]["hero"] = True
+        if old.get("typ") != typ:
+            # Type write reset Level to default: re-apply a fade in progress.
+            self._anima_dirt_level(port, force=True)
 
+    def _anima_efx_flush_pending(self, ch: int) -> None:
+        """Legacy deferred-type flush. The 0.19 planner never sets ``pending``
+        (a busy unit is simply left alone), so this is a no-op guard kept for
+        slots restored from older state."""
+        if any(k[0] == ch for k in self.active):
+            return
+        now = time.monotonic()
+        for port, slot in enumerate(self._anima_slots):
+            pend = slot.get("pending")
+            if not pend or ch not in (slot.get("chs") or []):
+                continue
+            if any(
+                port in info.get("ports", [info["port"]])
+                for info in self.active.values()
+            ):
+                # Stale defer: drop rather than apply minutes later onto a new family.
+                age = now - float(slot.get("t") or now)
+                if age > 8.0:
+                    slot["pending"] = None
+                    slot.pop("pending_fam", None)
+                    self._anima_feedback(
+                        "efx",
+                        f"P{port + 1} drop stale defer {pend[2] if len(pend) > 2 else pend}",
+                        status=False,
+                    )
+                continue
+            msb, lsb, label = pend
+            want_fam = slot.get("pending_fam") or slot.get("fam")
+            live_fams = {
+                self._anima_efx_family(c)
+                for c in (slot.get("chs") or [])
+                if not self._anima_is_rhythm(c)
+            }
+            live_fams.discard(None)
+            if want_fam and live_fams and want_fam not in live_fams:
+                slot["pending"] = None
+                slot.pop("pending_fam", None)
+                self._anima_feedback(
+                    "efx",
+                    f"P{port + 1} drop defer {label} (now {','.join(sorted(live_fams))})",
+                    status=False,
+                )
+                continue
+            self._anima_efx_ours = True
+            self._safe_out_send(port, self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb]))
+            slot["typ"] = (msb, lsb)
+            slot["pending"] = None
+            slot.pop("pending_fam", None)
+            slot["t"] = now
+            self._anima_efx_sent = (msb, lsb)
+            self._anima_efx_label = label
+            self._anima_efx_bind_and_seed(msb, lsb, ports=[port])
+            self._anima_efx_shape(port, (msb, lsb), slot.get("chs") or [ch], slot.get("fam"))
+            slot["dirt_lvl"] = None
+            self._anima_dirt_level(port, force=True)
+            self._anima_efx_apply_pan(port, (msb, lsb), slot.get("chs") or [ch])
+            self._anima_organ_vol_lift(port, slot.get("chs") or [ch], label)
+            self._anima_bass_harm_drive(port, (msb, lsb), slot.get("chs") or [ch])
+            self._anima_lead_dirt_drive(port, (msb, lsb), slot.get("chs") or [ch])
+            chs_now = list(slot.get("chs") or [])
+            dirt_commit = (
+                (msb, lsb) in ANIMA_FILE_DIRT_TYPES
+                or str(slot.get("fam") or "").startswith("guitar_dist")
+            )
+            for c in range(16):
+                want = c in chs_now
+                if self._anima_is_rhythm(c):
+                    want = False
+                elif not want and any(
+                    k[0] == c and port in info.get("ports", [info["port"]])
+                    for k, info in self.active.items()
+                ):
+                    cfam = self._anima_efx_family(c) or ""
+                    if dirt_commit:
+                        want = cfam.startswith("guitar_dist") or cfam in ANIMA_FILE_DIRT_FAMS
+                    else:
+                        want = True
+                if want == self._anima_efx_on[port][c]:
+                    continue
+                val = 0x01 if want else 0x00
+                self._anima_efx_ours = True
+                self._safe_out_send(
+                    port,
+                    self._gs_dt1([0x40, self._gs_efx_part_mid(c), 0x22], [val]),
+                )
+                self._anima_efx_on[port][c] = want
+            self._anima_unpin_others(port, slot.get("fam") or "", chs_now, chs_now)
+            self._anima_feedback(
+                "efx",
+                f"P{port + 1} apply deferred GS {label}",
+                status=True,
+            )
+
+    def _anima_ghost_poly_ok(self, port: int) -> bool:
+        if port < 0 or port >= self.n_ports:
+            return False
+        lim = self.poly_limits[port] or 1
+        return self.voice_counts[port] < int(lim * ANIMA_GHOST_POLY_FRAC)
+
+    # ------------------------------------------------------------------
+    # Seat units: harmony ghosts on a spare unit, mirrored pan
+    # ------------------------------------------------------------------
+    def _anima_seat_units(self) -> list:
+        """GS units no family and no file insert has claimed (or a seat insert holds).
+
+        A seat a real family is waiting for ("yield") takes no new harmony, so
+        it goes quiet and the planner can hand it over (rule 1).
+        """
+        out = []
+        home = self._anima_file_home_port()   # the file's own insert lives there
+        for p in self._anima_gs_ports():
+            if p == home:
+                continue
+            sl = (self._anima_slots[p] if p < len(self._anima_slots) else {}) or {}
+            if sl.get("fam") == "seat":
+                if not sl.get("yield"):
+                    out.append(p)
+                continue
+            if sl.get("fam") or sl.get("chs"):
+                continue
+            out.append(p)
+        return out
+
+    def _anima_trait_state(self, ch: int):
+        """Watch state for a part whose Anima-picked tone has a short / slow / low trait."""
+        tw = getattr(self, "_anima_tw", None)
+        if tw is None:
+            tw = self._anima_tw = {}
+        slot = self._anima_tone_slot[ch]
+        st = tw.get(ch)
+        if st is None or st.get("slot") != slot:
+            traits = (anima_tone_traits(slot) & {"short", "slow", "low", "sweep"}) if slot else frozenset()
+            if not traits or tuple(slot)[0] == 0:
+                tw.pop(ch, None)
+                return None
+            st = tw[ch] = {"slot": slot, "traits": traits, "on": {}, "long": 0, "quick": 0, "high": 0, "sweep": 0,
+                           "last_on": 0.0, "last_off": 0.0, "due": None}
+        return st
+
+    def _anima_trait_on(self, ch: int, note: int) -> None:
+        st = self._anima_trait_state(ch & 0x0F)
+        if not st or st["due"]:
+            return
+        now = time.monotonic()
+        st["on"][note] = (now, bool(st["last_on"]) and now - st["last_on"] <= ANIMA_TRAIT_QUICK_GAP)
+        st["last_on"] = now
+        if "low" in st["traits"] and note >= ANIMA_TRAIT_HIGH_NOTE:
+            st["high"] += 1
+            if st["high"] >= ANIMA_TRAIT_HIGH_N:
+                st["due"] = "the part plays high"
+
+    def _anima_trait_off(self, ch: int, note: int, now: float) -> None:
+        st = (getattr(self, "_anima_tw", None) or {}).get(ch & 0x0F)
+        if not st:
+            return
+        st["last_off"] = now
+        t0 = st["on"].pop(note, None)
+        if not t0 or st["due"]:
+            return
+        dur, quick = now - t0[0], t0[1]
+        if "short" in st["traits"] and dur > ANIMA_TRAIT_LONG_SEC:
+            st["long"] += 1
+            if st["long"] >= ANIMA_TRAIT_LONG_N:
+                st["due"] = "the part holds notes"
+        if "slow" in st["traits"] and dur < ANIMA_TRAIT_QUICK_SEC and quick:
+            st["quick"] += 1
+            if st["quick"] >= ANIMA_TRAIT_QUICK_N:
+                st["due"] = "the part plays short quick notes"
+        if "sweep" in st["traits"]:
+            (n0, s0), (n1, s1) = ANIMA_TRAIT_SWEEP
+            x = min(1.0, max(0.0, (note - n0) / max(1, n1 - n0)))
+            need = (s0 + (s1 - s0) * x) * anima_tone_sweep_scale(st["slot"])
+            if dur < need:
+                st["sweep"] += 1
+                if st["sweep"] >= ANIMA_TRAIT_SWEEP_N:
+                    st["due"] = "its notes end before the squeal settles"
+
+    def _anima_trait_tick(self) -> None:
+        """A due fallback goes out at the part's next rest: capital tone, once per program."""
+        tw = getattr(self, "_anima_tw", None)
+        if not tw:
+            return
+        now = time.monotonic()
+        for ch, st in list(tw.items()):
+            if not st.get("due") or st.get("done"):
+                continue
+            if any(k[0] == ch for k in self.active) or now - st["last_off"] < ANIMA_TRAIT_REST_SEC:
+                continue
+            if any(item[3] == ch for item in (self._anima_mallet_q or [])):
+                continue
+            if any((getattr(m, "channel", -1) & 0x0F) == ch for _w, _p, m in (self._anima_strum_q or [])):
+                continue
+            gm, key = self._anima_ch_tone(ch)
+            if gm is None:
+                continue
+            step = anima_tone_stepdown(st["slot"])
+            slot = tuple(step) if step else (0, 4, gm)
+            for i in range(self.n_ports):
+                if not self._anima_port_8850(i):
+                    continue
+                adapted = self._anima_adapt_tone_slot(i, slot)
+                if not adapted:
+                    continue
+                cc0, cc32, pc_out = adapted
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                self._send_routed(i, mido.Message("program_change", channel=ch, program=pc_out))
+            st["done"] = True
+            self._anima_tone_slot[ch] = slot
+            self._anima_tone_cc0[ch] = slot[0]
+            self._anima_cm64[ch] = False
+            where = f"down to CC00={slot[0]:03d}" if step else f"back to the capital GM{gm + 1}"
+            self._anima_feedback(
+                "tone", f"ch{ch + 1} {where}: {st['due']} "
+                        f"(CC00={key[0]:03d} is marked {'/'.join(sorted(st['traits']))})", status=True,
+            )
+            port = self._anima_ch_port.get(ch)
+            if port is not None:
+                self._anima_efx_level_apply(port)
+
+    def _anima_hero_quiet(self, ch: int, now: float) -> bool:
+        """The hero is between phrases: nothing of it sounding or queued, for a breath."""
+        if any(k[0] == ch for k in self.active):
+            return False
+        for ghosts in (self._anima_ghosts or {}).values():
+            if any(g and (g[1] & 0x0F) == ch for g in ghosts or []):
+                return False
+        for _when, _p, msg in self._anima_strum_q or []:
+            if (getattr(msg, "channel", -1) & 0x0F) == ch:
+                return False
+        if any(item[3] == ch for item in (self._anima_mallet_q or [])):
+            return False
+        hist = self._anima_line_hist.get(ch) or []
+        last = max(hist[-1][0] if hist else 0.0, float(self._anima_line_off.get(ch) or 0.0))
+        return now - last >= ANIMA_HERO_SPLIT_BREATH
+
+    def _anima_hero_split_tick(self) -> None:
+        """Give a featured line (the hero) a spare unit of its own with a different
+        type of its family, when its family shares one unit and nothing else needs
+        the spare. Two steps, neither on a note (rule 8), no note delayed (rule 6):
+        the type goes onto the empty unit first (no player there, rule 1); in the
+        hero's next breath, at least PREP_SEC later, it moves over: Part On and pin
+        there, unpin and Part Off on the old unit together (rule 2)."""
+        now = time.monotonic()
+        if now - float(getattr(self, "_anima_hero_t", 0.0) or 0.0) < 0.1:
+            return
+        self._anima_hero_t = now
+        home = self._anima_file_home_port()
+        gs = [p for p in self._anima_gs_ports() if p != home and p < len(self._anima_slots)]
+        slots = self._anima_slots
+        # 1) a prepared unit: move the hero over in a breath, or give it back
+        for p in gs:
+            sl = slots[p]
+            ch = sl.get("hero_prep")
+            if ch is None:
+                continue
+            fam = sl.get("fam")
+            src = self._anima_ch_port.get(ch)
+            gone = ch not in (self._anima_line or {}) and now - float(sl.get("t") or 0) > ANIMA_HERO_SPLIT_WAIT
+            if fam != self._anima_efx_family(ch) or src is None or src == p or gone:
+                if not self._anima_port_players_sounding(p):
+                    self._anima_clear_slot(p)
+                continue
+            if now - float(sl.get("t") or 0) < ANIMA_HERO_SPLIT_PREP_SEC or not self._anima_hero_quiet(ch, now):
+                continue
+            self._anima_efx_ours = True
+            self._safe_out_send(p, self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x01]))
+            self._anima_efx_on[p][ch] = True
+            self._anima_efx_wet_mark(p, ch)
+            sl["chs"] = [ch]
+            sl.pop("hero_prep", None)
+            self._anima_ch_port[ch] = p
+            old = slots[src]
+            old["chs"] = [c for c in (old.get("chs") or []) if c != ch]
+            if self._anima_efx_on[src][ch]:
+                self._safe_out_send(src, self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x00]))
+                self._anima_efx_on[src][ch] = False
+            typ = tuple(sl.get("typ") or ())[:2]
+            self._anima_efx_shape(p, typ, [ch], fam)
+            self._anima_efx_apply_pan(p, typ, [ch])
+            self._anima_efx_level_apply(src)
+            self._anima_feedback(
+                "efx", f"P{p + 1} ch{ch + 1} hero split from P{src + 1} ({fam} → GS {GS_EFX_TYPES.get(typ, typ)})",
+                status=True,
+            )
+            return
+        if any(slots[p].get("hero_prep") is not None for p in gs):
+            return
+        # 2) a featured line on a shared unit, every family placed, a spare the seats can give
+        for ch, info in list((self._anima_line or {}).items()):
+            if now - info[2] > info[4]:
+                continue
+            fam = self._anima_efx_family(ch)
+            src = self._anima_ch_port.get(ch)
+            if not fam or fam in ANIMA_HERO_SPLIT_SKIP or src is None or src not in gs:
+                continue
+            ssl = slots[src]
+            if ssl.get("fam") != fam or ssl.get("hero") or not [c for c in ssl.get("chs") or [] if c != ch]:
+                continue
+            if any(slots[p].get("hero") and slots[p].get("fam") == fam for p in gs):
+                continue
+            reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
+            unplaced = any(
+                self._anima_ch_live(c) and not self._anima_is_rhythm(c) and c not in reserved
+                and self._anima_efx_family(c) and c not in self._anima_ch_port
+                for c in range(16)
+            )
+            if unplaced:
+                return
+            pool = [p for p in gs if not slots[p].get("fam") and not slots[p].get("chs")]
+            pool += [p for p in gs if slots[p].get("fam") == "seat" and not slots[p].get("yield")
+                     and not self._anima_port_players_sounding(p)]
+            harmony = any(
+                self._anima_ch_live(c) and not self._anima_is_rhythm(c) and self._anima_efx_family(c)
+                and self._anima_category(c) in ANIMA_HARM_CATS
+                for c in range(16)
+            )
+            if harmony or not pool:
+                return   # seat units carry the harmony on every spare; they come first
+            p = pool[-1]
+            self._anima_commit_slot({
+                "port": p, "fam": fam, "chs": [], "split": False, "hero": True,
+                "avoid": {tuple(ssl.get("typ") or ())[:2]},
+            })
+            if slots[p].get("fam") == fam:
+                slots[p]["hero_prep"] = ch
+                slots[p]["hero"] = True
+            return
+
+    def _anima_seat_efx(self, force: bool = False) -> None:
+        """Give each quiet seat unit the gentle "seat" insert, and wire the
+        channels whose harmony it carries (type and Part EFX together, rule 7).
+
+        Runs after the setup burst settles and then about once a second; never
+        on a unit with a sounding player (rule 1), never per note (rule 8).
+        """
+        now = time.monotonic()
+        if not force and now - float(getattr(self, "_anima_seat_efx_t", 0.0) or 0.0) < 1.0:
+            return
+        self._anima_seat_efx_t = now
+        if not ANIMA_EFX_GS.get("seat"):
+            return
+        chs = sorted(
+            c for c in range(16)
+            if self._anima_ch_live(c)
+            and not self._anima_is_rhythm(c)
+            and self._anima_efx_family(c)
+            and self._anima_category(c) in ANIMA_HARM_CATS
+        )
+        if not chs:
+            return
+        for p in self._anima_seat_units():
+            sl = self._anima_slots[p] if p < len(self._anima_slots) else {}
+            if sl.get("fam") == "seat" and set(chs) <= set(sl.get("chs") or []):
+                continue
+            if self._anima_port_players_sounding(p, chs):
+                continue
+            self._anima_commit_slot({"port": p, "fam": "seat", "chs": chs, "split": False})
+
+    def _anima_seat_port(self, ch: int, hero: int):
+        """Seat unit for this channel's harmony, or None (then the hero's unit)."""
+        seats = [p for p in self._anima_seat_units() if p != hero]
+        if not seats:
+            return None
+        if len(seats) == 1:
+            pick = seats[0]
+        else:
+            fam = self._anima_efx_family(ch) or self._anima_category(ch)
+            pick = self._anima_seat_fam.get(fam)
+            if pick not in seats:
+                load = {p: 0 for p in seats}
+                for f, p in self._anima_seat_fam.items():
+                    if p in load:
+                        load[p] += 1
+                pick = min(seats, key=lambda p: (load[p], p))
+                self._anima_seat_fam[fam] = pick
+        if not self._anima_ghost_poly_ok(pick) or self._anima_efx_wet_blocked(pick, ch):
+            return None
+        # A unit where this channel plays real notes keeps the file's pan.
+        for (c, _n), info in self.active.items():
+            if c == ch and pick in (info.get("ports") or [info["port"]]):
+                return None
+        return pick
+
+    def _anima_seat_mirror(self, ch: int, pan: int) -> int:
+        """Mirror of the hero's pan, with a seeded ±ANIMA_SEAT_JITTER."""
+        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        span = int(round(127 * ANIMA_SEAT_JITTER))
+        jit = (self._anima_mix(seed, 977 + ch) % (2 * span + 1)) - span if span else 0
+        pan = int(pan)
+        if abs(pan - 64) <= ANIMA_SEAT_CENTRE:
+            side = 1 if (self._anima_mix(seed, 409 + ch) & 1) else -1
+            mirror = 64 + side * ANIMA_SEAT_CENTRE_SPREAD
+        else:
+            mirror = 128 - pan
+        return max(0, min(127, mirror + jit))
+
+    def _anima_seat_pan_fix(self, port: int, msg):
+        """A file CC10 heading to a seat unit is mirrored there."""
+        if msg.type != "control_change" or msg.control != 10:
+            return msg
+        seats = getattr(self, "_anima_seat_pan", None)
+        key = (port, msg.channel & 0x0F)
+        if not seats or key not in seats:
+            return msg
+        val = self._anima_seat_mirror(msg.channel & 0x0F, msg.value)
+        seats[key] = val
+        return msg.copy(value=val)
+
+    def _anima_seat_take(self, port: int, ch: int) -> None:
+        """Mirror this channel's pan on a seat unit (once, then the send hook keeps it)."""
+        key = (port, ch)
+        if key in self._anima_seat_pan:
+            return
+        self._anima_seat_pan[key] = -1
+        file_pan = int(self.pan[ch]) if self.pan[ch] is not None else 64
+        self._send_routed(port, mido.Message("control_change", channel=ch, control=10, value=file_pan))
+        self._anima_feedback(
+            "seat",
+            f"ch{ch + 1} harmony → P{port + 1} pan {self._anima_seat_pan[key]} (file {file_pan})",
+        )
+
+    def _anima_seat_release(self, port: int, ch: int) -> None:
+        """A real note of this channel is about to play here: give it the file's pan back."""
+        key = (port, ch & 0x0F)
+        if key not in self._anima_seat_pan:
+            return
+        self._anima_seat_pan.pop(key, None)
+        file_pan = int(self.pan[ch]) if self.pan[ch] is not None else 64
+        self._send_routed(port, mido.Message("control_change", channel=ch, control=10, value=file_pan))
+
+    def _anima_ghost_fam(self, ch: int):
+        """bass / organ family key for one-sub-per-family, else None."""
+        ch = ch & 0x0F
+        fam = self._anima_efx_family(ch) or ""
+        cat = self._anima_category(ch)
+        if fam.startswith("bass") or cat == "bass":
+            return "bass"
+        if fam.startswith("organ") or cat == "organ":
+            return "organ"
+        return None
+
+    def _anima_family_lowest(self, fam: str, extra=None):
+        """Lowest sounding pitch in a family. extra = (ch, note) not yet in active."""
+        cands = []
+        if extra is not None:
+            cands.append((int(extra[1]) & 0x7F, int(extra[0]) & 0x0F))
+        for (c, n) in self.active:
+            if self._anima_ghost_fam(c) == fam:
+                cands.append((int(n) & 0x7F, int(c) & 0x0F))
+        if not cands:
+            return None
+        n, c = min(cands)
+        return (c, n)
+
+    def _anima_bass_hero_hard(self, ch: int) -> bool:
+        pc = int(self._anima_prog[ch & 0x0F]) & 0x7F
+        return pc in ANIMA_BASS_HARD_PC
+
+    def _anima_bass_slot_is_multi(self, port: int) -> bool:
+        slot = self._anima_slots[port] if port < len(self._anima_slots) else None
+        if not slot:
+            return False
+        lab = str(slot.get("label") or "").lower()
+        if "bass multi" in lab:
+            return True
+        typ = slot.get("typ")
+        if typ and tuple(typ)[:2] in ((0x01, 0x10), (0x01, 0x11)):
+            return True
+        return False
+
+    def _anima_bass_sub_wanted(self, ch: int, hero: int) -> bool:
+        """Thin-mix only. Skip if the arrangement already has bottom."""
+        if self._anima_bass_slot_is_multi(hero):
+            return False
+        if "interval" in self._anima_ch_traits(ch):
+            return False   # sub-octave / fifths / thirds already in the tone
+        others = 0
+        for (c, _n) in self.active:
+            if c != ch and self._anima_ghost_fam(c) == "bass":
+                others += 1
+        if others:
+            return False
+        return True
+
+    def _anima_pick_bass_sub(self, port: int, ch: int = 0):
+        """Seed-stable named bass-sub slot that this port can actually play."""
+        hard_hero = self._anima_bass_hero_hard(ch)
+        cached = getattr(self, "_anima_bass_sub_choice", None)
+        if cached:
+            name = cached[3] if len(cached) > 3 else ""
+            hard_names = {s[3] for s in ANIMA_BASS_SUB_HARD}
+            if not (hard_hero and name in hard_names):
+                adapted = self._anima_adapt_tone_slot(port, cached[:3])
+                if adapted:
+                    return adapted + (cached[3],)
+        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        if getattr(self, "anima_game", False) or getattr(self, "_anima_game", False):
+            seed = (seed + int(self._anima_scene_salt() or 0)) & 0xFFFF
+        if hard_hero:
+            slots = list(ANIMA_BASS_SUB_SOFT)
+        else:
+            slots = list(ANIMA_BASS_SUB_SOFT) + list(ANIMA_BASS_SUB_HARD)
+        if slots:
+            rot = seed % len(slots)
+            slots = slots[rot:] + slots[:rot]
+        for cc0, _cc32, pc, name in slots:
+            adapted = None
+            for maplsb in (4, 3, 2, 0):
+                cand = self._anima_adapt_tone_slot(port, (cc0, maplsb, pc))
+                if not cand:
+                    continue
+                if cand[0] == 0 and cc0 != 0:
+                    continue
+                adapted = cand
+                break
+            if not adapted:
+                continue
+            self._anima_bass_sub_choice = (adapted[0], adapted[1], adapted[2], name)
+            return adapted + (name,)
+        # Last resort: capital SynBass 1
+        self._anima_bass_sub_choice = (0, 0, 38, "Synth Bass 1")
+        return (0, 0, 38, "Synth Bass 1")
+
+    def _anima_ghost_kill(self, key) -> None:
+        """Note-off every ghost tied to a hero (ch, note)."""
+        ghosts = (self._anima_ghosts or {}).pop(key, None)
+        (getattr(self, "_anima_harm_hero", None) or {}).pop(key, None)
+        (getattr(self, "_anima_harm_up", None) or {}).pop(key, None)
+        fams = getattr(self, "_anima_fam_ghost", None) or {}
+        for fam, owner in list(fams.items()):
+            if owner == key:
+                fams.pop(fam, None)
+        snd = getattr(self, "_anima_ghost_sound", None)
+        if snd is None:
+            self._anima_ghost_sound = {}
+            snd = self._anima_ghost_sound
+        if not ghosts:
+            return
+        for item in ghosts:
+            port, ch, note = item[0], item[1], item[2]
+            w = item[3] if len(item) > 3 else self._tone_voices(ch, port)
+            if snd.get((ch, note)) == key:
+                snd.pop((ch, note), None)
+            try:
+                self._send_routed(
+                    port,
+                    mido.Message("note_off", channel=ch, note=note, velocity=0),
+                )
+            except Exception:
+                pass
+            if 0 <= port < self.n_ports:
+                self.voice_counts[port] = max(0, self.voice_counts[port] - int(w or 1))
+
+    def _anima_ghost_release_pitch(self, ch: int, note: int) -> None:
+        """If Anima is ghosting this pitch on this channel, drop that ghost.
+
+        Stops the file+ghost stack where the file later releases nX on port A
+        while the harmony ghost of nX is still hanging on port B.
+        """
+        ch, note = ch & 0x0F, int(note) & 0x7F
+        snd = getattr(self, "_anima_ghost_sound", None) or {}
+        hero = snd.get((ch, note))
+        if hero:
+            self._anima_ghost_kill(hero)
+
+    def _anima_ghost_kill_all(self) -> None:
+        for key in list((self._anima_ghosts or {}).keys()):
+            self._anima_ghost_kill(key)
+
+    def _anima_ghost_log(self, detail: str) -> None:
+        now = time.monotonic()
+        if now - getattr(self, "_anima_ghost_log_t", 0) < ANIMA_GHOST_LOG_SEC:
+            self._log_line(f"ANIMA ghost: {detail}")
+            return
+        self._anima_ghost_log_t = now
+        self._anima_feedback("ghost", detail, status=True)
+
+    def _anima_ghost_efx_on(self, port: int, ch: int) -> None:
+        """Same-part EFX On on the unison port if the hero already uses an insert."""
+        if port < 0 or port >= self.n_ports:
+            return
+        ch = ch & 0x0F
+        hero_has = (
+            self._anima_ch_port.get(ch) is not None
+            or ch in (self._anima_file_efx_parts or set())
+        )
+        if not hero_has:
+            return
+        if self._gs_canvas_class(self.out_formats[port]) not in ("88pro", "8850"):
+            return
+        try:
+            mid = self._gs_efx_part_mid(ch)
+            self._send(port, self._gs_dt1([0x40, mid, 0x22], [0x01]))
+            # Track it so the next type change on this box turns it Off.
+            if port < len(self._anima_efx_on):
+                self._anima_efx_on[port][ch] = True
+        except Exception:
+            pass
+
+    def _anima_family_rehome(self) -> None:
+        """If a family lost its sub owner, give the sub to the new lowest pitch."""
+        if getattr(self, "_anima_rehome_guard", False):
+            return
+        self._anima_rehome_guard = True
+        try:
+            for fam in ("bass", "organ"):
+                if fam in (getattr(self, "_anima_fam_ghost", None) or {}):
+                    continue
+                lowest = self._anima_family_lowest(fam)
+                if not lowest:
+                    continue
+                c, n = lowest
+                info = self.active.get((c, n))
+                if not info:
+                    continue
+                ports = info.get("ports") or [info["port"]]
+                vel = int(info.get("velocity") or 80)
+                msg = mido.Message("note_on", channel=c, note=n, velocity=vel)
+                self._anima_ghost_maybe(msg, ports)
+        finally:
+            self._anima_rehome_guard = False
+
+    def _anima_chord_guess(self, extra=None, ctx=True):
+        """Held pitch-classes → (root, name, tone_pcs) or None.
+
+        extra = (ch, note) not yet in self.active. Passing tones younger
+        than ANIMA_HARM_HOLD are ignored so we do not chase melody debris.
+        Notes other parts struck within ANIMA_HARM_CTX count too: a picked
+        guitar releases each note at once, yet its chord is still there.
+        """
+        now = time.monotonic()
+        pcs = set()
+        if extra is not None:
+            pcs.add(int(extra[1]) & 0x7F)
+            for t0, c, n in (list(getattr(self, "_anima_harm_ctx", None) or []) if ctx else []):
+                if c != (int(extra[0]) & 0x0F) and now - t0 <= ANIMA_HARM_CTX:
+                    pcs.add(int(n) & 0x7F)
+        for (c, n), info in list(self.active.items()):
+            if self._anima_is_rhythm(c):
+                continue
+            cat = self._anima_category(c)
+            if cat in ("sfx",):
+                continue
+            t0 = float(info.get("time") or 0)
+            if t0 and (now - t0) < ANIMA_HARM_HOLD:
+                continue
+            pcs.add(int(n) & 0x7F)
+        classes = {p % 12 for p in pcs}
+        if len(classes) < 2:
+            return None
+        best = None
+        for root in range(12):
+            rel = frozenset((p - root) % 12 for p in classes)
+            for iv, name in ANIMA_HARM_TEMPLATES:
+                siv = frozenset(iv)
+                if siv <= rel:
+                    score = len(siv) * 10 + (0 if name == "pow" else 3)
+                    cand = (score, root, name, siv)
+                    if best is None or cand[0] > best[0]:
+                        best = cand
+                elif name != "pow" and rel <= siv and len(rel) >= 2:
+                    score = len(rel) * 3
+                    cand = (score, root, name, siv)
+                    if best is None or cand[0] > best[0]:
+                        best = cand
+        if not best:
+            return None
+        _, root, name, siv = best
+        tones = frozenset((root + i) % 12 for i in siv)
+        return root, name, tones
+
+    def _anima_harm_sounding(self, ch: int, window: float = ANIMA_HARM_RUB_CTX):
+        """Real pitches sounding now, plus notes other parts struck within `window`."""
+        now = time.monotonic()
+        notes = {int(n) for (c, n) in self.active if not self._anima_is_rhythm(c)}
+        for t0, c, n in list(getattr(self, "_anima_harm_ctx", None) or []):
+            if c != ch and now - t0 <= window:
+                notes.add(int(n))
+        return notes
+
+    @staticmethod
+    def _anima_harm_rubs(cand: int, notes, chord) -> bool:
+        """True if cand rubs against a nearby sounding pitch: a semitone (or major 7th /
+        minor 9th) within an octave, or a tritone the chord does not own."""
+        tri_ok = chord is not None and chord[1] in ("dim", "dim7", "m7b5", "7")
+        for n in notes:
+            d = abs(cand - n)
+            if d in (1, 11, 13):
+                return True
+            if d == 6 and not tri_ok:
+                return True
+        return False
+
+    def _anima_harm_interval(self, note: int, chord, ok=None) -> int | None:
+        """Chord-tone interval above `note`, or +12 when we have no chord.
+
+        ok(cand) -> bool rejects candidates that would rub (see _anima_harm_rubs).
+        """
+        note = int(note) & 0x7F
+        ok = ok or (lambda _c: True)
+        if chord is None:
+            return 12 if note + 12 <= 127 and ok(note + 12) else None
+        _root, name, tones = chord
+        if name == "pow":
+            for iv in (12, 7):
+                if note + iv <= 127 and ok(note + iv):
+                    return iv
+            return None
+        # Thirds and sixths first, then a fourth / fifth, then the octave. Never a
+        # second, tritone or seventh against the hero: moving in parallel with a
+        # tune those read as atonal even when they are chord tones.
+        if name.startswith("sus"):
+            ordered = (5, 7, 12)
+        else:
+            sweet = (4, 3, 9, 8) if name in ("maj", "maj7", "7", "aug") else (3, 4, 8, 9)
+            seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+            # Seed picks third-first or sixth-first, so a locked seed is repeatable.
+            if (seed >> 3) & 1:
+                sweet = sweet[2:] + sweet[:2]
+            ordered = sweet + (5, 7, 12)
+        for iv in ordered:
+            cand = note + iv
+            if cand > 127 or cand == note:
+                continue
+            if (cand % 12) not in tones:
+                continue
+            if (note % 12) == (cand % 12) and iv != 12:
+                continue
+            if not ok(cand):
+                continue
+            return iv
+        return 12 if note + 12 <= 127 and ok(note + 12) else None
+
+    def _anima_harm_interval_below(self, note: int, chord, avoid=(), ok=None) -> int | None:
+        """Chord-tone interval below `note` (third, then sixth), or None.
+
+        Octave below only when we cannot see a chord. Never under ANIMA_HARM_FLOOR.
+        """
+        note = int(note) & 0x7F
+        if chord is None:
+            prefer = (12,)
+            tones = None
+        else:
+            _root, name, tones = chord
+            if name == "pow":
+                prefer = (5, 12)
+            else:
+                prefer = (3, 4, 8, 9, 5, 12)
+                seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+                # Seed picks third-first or sixth-first; both stay chord tones.
+                if (seed >> 3) & 1:
+                    prefer = (8, 9, 3, 4, 5, 12)
+        for iv in prefer:
+            cand = note - iv
+            if cand < ANIMA_HARM_FLOOR:
+                continue
+            if tones is not None and iv != 12 and (cand % 12) not in tones:
+                continue
+            if cand in avoid:
+                continue
+            if ok is not None and not ok(cand):
+                continue
+            return iv
+        return None
+
+    def _anima_harm_others(self, ch: int, note: int):
+        """(above, voices) for other melodic parts: any sounding above `note`, how many voices.
+
+        A part counts while it holds a note or struck one within ANIMA_HARM_RECENT
+        (staccato melody lines leave gaps between notes).
+        """
+        now = time.monotonic()
+        above = False
+        voices = 0
+        seen = {}
+        held = {}
+        for (c, n) in list(self.active):
+            seen[c] = max(seen.get(c, -1), int(n) & 0x7F)
+            held[c] = held.get(c, 0) + 1
+        for c, (n, t) in list((getattr(self, "_anima_harm_recent", None) or {}).items()):
+            if now - t <= ANIMA_HARM_RECENT:
+                seen[c] = max(seen.get(c, -1), n)
+        for c, top in seen.items():
+            if c == ch or self._anima_is_rhythm(c):
+                continue
+            if self._anima_category(c) in ANIMA_HARM_QUIET_CATS or self._anima_ghost_fam(c) == "bass":
+                continue
+            voices += max(1, held.get(c, 0))
+            if top > note:
+                above = True
+        return above, voices
+
+    def _anima_harm_plan(self, ch: int, note: int):
+        """Harmony for a note about to be sent: None or a plan dict.
+
+        Decided before the hero goes out so its own velocity can make room.
+          mel  - top of the texture: hero x0.90, ghost above x0.50 (below if no room)
+          acc  - another part sounds above, or this is the top of a held chord
+                 while another part moves: hero x0.85, ghost below x0.45
+          both - thin source (at most ANIMA_HARM_THIN other voices, or
+                 ANIMA_HARM_THIN_SEAT with a seat unit): above x0.50, below x0.45,
+                 hero x0.90
+        """
+        ch, note = ch & 0x0F, int(note) & 0x7F
+        if "interval" in self._anima_ch_traits(ch):
+            return None   # the tone already plays extra pitches (Tone Palettes note)
+        key = (ch, note)
+        if self.scpop_mode or getattr(self, "voodoo_active", False) or getattr(self, "voodoo_loading", False):
+            return None   # no ghosts there, so no room to make
+        if self._anima_la_native():
+            return None   # native MT-32 / CM music: no ghosts on LA units (0.19.064)
+        if key in (self._anima_ghosts or {}):
+            scale = (getattr(self, "_anima_harm_hero", None) or {}).get(key)
+            return {"mode": "keep", "hero": scale, "ivs": []} if scale else None
+        if self._anima_is_rhythm(ch):
+            return None
+        cat = self._anima_category(ch)
+        if cat not in ANIMA_HARM_CATS or self._anima_ghost_fam(ch):
+            return None
+        if self._anima_should_strum(ch):
+            return None
+        if not self._anima_harm_is_melody(ch, note):
+            return None
+        owner = (getattr(self, "_anima_fam_ghost", None) or {}).get(f"harm-{cat}")
+        if owner and owner != key and note < owner[1]:
+            if owner in (self._anima_ghosts or {}) or owner in self.active:
+                return None
+        chord = self._anima_chord_guess(extra=(ch, note))
+        if chord is not None and (note % 12) not in chord[2]:
+            # Right after a chord change the recent notes still hold the old
+            # chord; what is held now may already show the new one.
+            held = self._anima_chord_guess(extra=(ch, note), ctx=False)
+            if held is not None and (note % 12) in held[2]:
+                chord = held
+            else:
+                return None   # a passing tone: harmonising it doubles the rub
+        near = self._anima_harm_sounding(ch)
+        near.discard(note)
+        if chord is None and any(abs(note - n) in (1, 11, 13) for n in near):
+            return None   # no chord seen and the note already rubs: leave it alone
+        rubs = lambda cand: not self._anima_harm_rubs(cand, near, chord)
+        above, voices = self._anima_harm_others(ch, note)
+        featured = ch in (getattr(self, "_anima_line", None) or {})
+        line = None if featured else self._anima_line_over(ch, note)
+        busy = voices > 0
+        # A unison part (or its ghost), or this part's own chord, already sounds it: no double.
+        snd = getattr(self, "_anima_ghost_sound", None) or {}
+        sounding = {int(n) for (_c, n) in self.active} | {int(n) for (_c, n) in snd}
+        up = self._anima_harm_interval(note, chord, ok=rubs)
+        if up and (note + up > ANIMA_HARM_TOP or note + up in sounding):
+            up = None   # ONESTOP end: n92→104 string ghosts stacked shrill
+        down = self._anima_harm_interval_below(note, chord, avoid=sounding, ok=rubs)
+        # The top of a held chord accompanies any line that is moving.
+        now = time.monotonic()
+        chordal = now - float(self._anima_harm_chord_t.get(ch, -99.0)) <= ANIMA_HARM_CHORD_SEC
+        if featured:
+            above = chordal = False   # the line is the hero; it is lifted, not lowered
+        if line:
+            above = True              # in a featured line's register: accompany it
+            lo, hi = line[0], line[1]
+            if up and lo - 2 <= note + up <= hi + 2:
+                up = None
+            if down and lo - 2 <= note - down <= hi + 2:
+                down = None
+        thin = ANIMA_HARM_THIN_SEAT if self._anima_seat_units() else ANIMA_HARM_THIN
+        loudest = self._anima_harm_loudest(ch, note)
+        if above or (chordal and busy):
+            mode, hero = "acc", ANIMA_HARM_ACC_HERO
+            if down:
+                ivs = [(-down, ANIMA_HARM_ACC_VEL)]
+            elif up and note >= ANIMA_HARM_ACC_UP_MIN and not self._anima_harm_crosses(ch, note, note + up):
+                ivs = [(up, ANIMA_HARM_ACC_VEL)]
+            else:
+                ivs = []
+        elif voices <= thin and up and down and not loudest:
+            mode, hero = "both", ANIMA_HARM_HERO
+            ivs = [(up, ANIMA_HARM_VEL), (-down, ANIMA_HARM_LOW_VEL)]
+        else:
+            mode, hero = "mel", ANIMA_HARM_HERO
+            if up:
+                ivs = [(up, ANIMA_HARM_VEL)]
+            elif down:
+                ivs = [(-down, ANIMA_HARM_VEL)]
+            else:
+                ivs = []
+        if featured and self._anima_line_lift(ch, note, 100) > 100:
+            hero = 1.0   # a buried line is lifted, not lowered
+        if not ivs:
+            return None
+        return {"mode": mode, "hero": hero, "ivs": ivs, "chord": chord, "loudest": loudest}
+
+    def _anima_harm_loudest(self, ch: int, note: int) -> bool:
+        """True if this part already out-sounds every other part playing (vel x CC7 x CC11).
+
+        "Both sides" fills out a lackluster part; a melody that is already the
+        loudest thing playing only gets its one ghost (07 wind, 03 flute).
+        """
+        info_v = {}
+        for (c, _n), info in list(self.active.items()):
+            if c == ch or self._anima_is_rhythm(c):
+                continue
+            lvl = int(info.get("velocity") or 0) * self._anima_gain(c)
+            info_v[c] = max(info_v.get(c, 0.0), lvl)
+        if not info_v:
+            return False
+        last = self._anima_last_vel[ch] if self._anima_last_vel[ch] >= 0 else 100
+        return last * self._anima_gain(ch) >= max(info_v.values())
+
+    def _anima_harm_crosses(self, ch: int, note: int, gnote: int) -> bool:
+        """True if a ghost at gnote would reach (within a tone) a part sounding above note."""
+        now = time.monotonic()
+        tops = [int(n) for (c, n) in self.active if c != ch and not self._anima_is_rhythm(c)]
+        for c, (n, t) in (getattr(self, "_anima_harm_recent", None) or {}).items():
+            if c != ch and now - t <= ANIMA_HARM_RECENT:
+                tops.append(n)
+        return any(gnote >= t - 2 for t in tops if t > note)
+
+    def _anima_harm_onset(self, ch: int, note: int) -> None:
+        """A real note starts: note it for recency and clear upper ghosts it collides with.
+
+        An upper harmony ghost from another channel whose hero sits below this
+        note just became an inner voice; if the ghost reaches this note (within
+        a tone) it would cover the line, so release it.
+        """
+        ch, note = ch & 0x0F, int(note) & 0x7F
+        if self._anima_is_rhythm(ch):
+            return
+        now = time.monotonic()
+        if self._anima_category(ch) not in ("sfx", "percussive", "fx"):
+            ctx = [x for x in self._anima_harm_ctx if now - x[0] <= ANIMA_HARM_CTX]
+            ctx.append((now, ch, note))
+            self._anima_harm_ctx = ctx[-48:]
+        if self._anima_category(ch) in ANIMA_HARM_QUIET_CATS or self._anima_ghost_fam(ch) == "bass":
+            return
+        if any(c == ch and n != note for (c, n) in self.active):
+            self._anima_harm_chord_t[ch] = now
+        rec = self._anima_harm_recent
+        old = rec.get(ch)
+        if old and now - old[1] <= ANIMA_HARM_HOLD and old[0] > note:
+            rec[ch] = (old[0], now)
+        else:
+            rec[ch] = (note, now)
+        self._anima_line_feed(ch, note)
+        if ch in self._anima_line:
+            # Another part's ghost on this very note (within a tone) would mask the line.
+            for (gc, gn), hkey in list((self._anima_ghost_sound or {}).items()):
+                if hkey[0] != ch and abs(gn - note) <= 2 and hkey in (self._anima_ghosts or {}):
+                    self._anima_ghost_kill(hkey)
+        for hkey, gnote in list((self._anima_harm_up or {}).items()):
+            if hkey[0] == ch or hkey[1] >= note:
+                continue
+            if gnote >= note - 2:
+                self._anima_ghost_kill(hkey)
+                self._anima_ghost_log(
+                    f"harm yield ch{hkey[0] + 1} n{gnote} under ch{ch + 1} n{note}"
+                )
+
+    def _anima_line_feed(self, ch: int, note: int) -> None:
+        """Track a channel's onsets; mark it a featured line while it plays like one.
+
+        Fast: a busy, single-note, stepwise run (a solo over a pad).
+        Slow: a sustained single-note tune, each note following the last.
+        """
+        now = time.monotonic()
+        others = sum(1 for (c, _n) in self.active if c == ch)
+        mono = others == 0
+        off = self._anima_line_off.get(ch)
+        legato = others == 1 or (off is not None and now - off <= 0.15)
+        keep = max(ANIMA_LINE_WIN, ANIMA_LINE_SLOW_WIN)
+        hist = [x for x in self._anima_line_hist.get(ch, []) if now - x[0] <= keep]
+        # (t, note, nothing else held, follows the last note, at most one other held)
+        hist.append((now, note, mono, bool(hist) and legato, others <= 1))
+        self._anima_line_hist[ch] = hist
+        was = ch in self._anima_line
+
+        def _moves(xs):
+            ns = [x[1] for x in xs]
+            return ns, [abs(b - a) for a, b in zip(ns, ns[1:]) if b != a]
+
+        rate, ok, hold = 0.0, False, ANIMA_LINE_HOLD
+        fast = [x for x in hist if now - x[0] <= ANIMA_LINE_WIN]
+        if len(fast) >= ANIMA_LINE_MIN_NOTES:
+            span = max(0.25, fast[-1][0] - fast[0][0])
+            rate = (len(fast) - 1) / span
+            notes, moves = _moves(fast)
+            ok = (
+                rate >= ANIMA_LINE_RATE
+                and sum(1 for x in fast if x[2]) / len(fast) >= ANIMA_LINE_MONO
+                and bool(moves)
+                and sum(1 for m in moves if m <= 2) / len(moves) >= ANIMA_LINE_STEP
+                and sorted(notes)[len(notes) // 2] >= ANIMA_LINE_MIN_NOTE
+            )
+        if not ok and len(hist) >= ANIMA_LINE_SLOW_NOTES:
+            span = max(0.25, hist[-1][0] - hist[0][0])
+            srate = (len(hist) - 1) / span
+            notes, moves = _moves(hist)
+            ok = (
+                ANIMA_LINE_SLOW_RATE <= srate <= ANIMA_LINE_SLOW_MAX
+                and all(x[4] for x in hist)
+                and sum(1 for x in hist[1:] if x[3]) / (len(hist) - 1) >= ANIMA_LINE_SLOW_LEGATO
+                and len(set(notes)) >= 3
+                and bool(moves)
+                and sum(1 for m in moves if m <= ANIMA_LINE_SLOW_MOVE) / len(moves) >= 0.75
+                and sorted(notes)[len(notes) // 2] >= ANIMA_LINE_MIN_NOTE
+            )
+            if ok:
+                rate, hold = srate, ANIMA_LINE_SLOW_HOLD
+                fast = hist
+        if ok:
+            # One hero at a time. A clearly busier line wins; between comparable
+            # lines the current one keeps it unless the new one sits above it.
+            med = sorted(x[1] for x in fast)[len(fast) // 2]
+            for c, info in list(self._anima_line.items()):
+                if c == ch:
+                    continue
+                if now - info[2] > info[4]:
+                    self._anima_line.pop(c, None)
+                elif info[3] >= rate * ANIMA_LINE_RANK:
+                    ok = False
+                elif rate >= info[3] * ANIMA_LINE_RANK or med > info[1]:
+                    self._anima_line.pop(c, None)
+                else:
+                    ok = False
+        if ok:
+            notes = [x[1] for x in fast]
+            self._anima_line[ch] = (min(notes), max(notes), now, rate, hold)
+            if not was:
+                kind = "slow" if hold == ANIMA_LINE_SLOW_HOLD else "fast"
+                self._anima_feedback(
+                    "line", f"ch{ch + 1} featured {kind} line {min(notes)}-{max(notes)}",
+                    status=True,
+                )
+        elif was:
+            # It played but no longer reads as a line (the hold only bridges gaps).
+            self._anima_line.pop(ch, None)
+
+    def _anima_line_over(self, ch: int, note: int):
+        """(lo, hi, cur) of another channel's featured line whose register this note sits in."""
+        now = time.monotonic()
+        for c, (lo, hi, t, _r, hold) in list((getattr(self, "_anima_line", None) or {}).items()):
+            if now - t > hold:
+                self._anima_line.pop(c, None)
+                continue
+            if c != ch and lo - 5 <= note <= hi + 12:
+                hist = self._anima_line_hist.get(c) or [(t, lo)]
+                return lo, hi, hist[-1][1], float(self._anima_line_vel.get(c, 0))
+        return None
+
+    def _anima_gain(self, ch: int) -> float:
+        """The file's channel level: CC7 x CC11 (0..1)."""
+        ch &= 0x0F
+        return (self._dirt_cc7[ch] / 127.0) * (self._dirt_cc11[ch] / 127.0)
+
+    def _anima_pluck_lift(self, ch: int, note: int, vel: int) -> int:
+        """Acoustic guitar note: a little louder while a sustained part at least as
+        loud sounds within an octave (03: steel guitar under flute, horns, strings)."""
+        if self._anima_category(ch) != "guitar" or self._anima_gm_pc(ch) not in ANIMA_ACOUSTIC_PCS:
+            return vel
+        mine = vel * self._anima_gain(ch)
+        for (c, n), info in list(self.active.items()):
+            if c == ch or self._anima_is_rhythm(c) or abs(int(n) - note) > 12:
+                continue
+            if self._anima_category(c) not in ANIMA_SUSTAIN_CATS:
+                continue
+            if int(info.get("velocity") or 0) * self._anima_gain(c) >= mine:
+                return min(127, int(round(vel * ANIMA_PLUCK_LIFT)))
+        return vel
+
+    def _anima_line_lift(self, ch: int, note: int, vel: int) -> int:
+        """Velocity for a featured line's note: part of the way up to the loudest part over it.
+
+        Loudness is velocity x CC7 x CC11, so a horn at velocity 109 but CC7 50
+        does not count as louder than a line at 90 on CC7 127.
+        """
+        g = max(0.05, self._anima_gain(ch))
+        loud = 0.0
+        for (c, n), info in list(self.active.items()):
+            if c == ch or self._anima_is_rhythm(c) or int(n) < note - 5:
+                continue
+            if self._anima_category(c) in ANIMA_HARM_QUIET_CATS:
+                continue
+            loud = max(loud, int(info.get("velocity") or 0) * self._anima_gain(c))
+        target = loud / g   # the loudest part, in this channel's velocity
+        if target + ANIMA_LINE_MARGIN <= vel:
+            return vel
+        want = vel + (target + ANIMA_LINE_MARGIN - vel) * ANIMA_LINE_LIFT
+        return max(vel, min(127, int(round(min(want, vel * ANIMA_LINE_LIFT_MAX)))))
+
+    def _anima_harm_is_melody(self, ch: int, note: int) -> bool:
+        """Only harmonize the current highest held tone in harmony families."""
+        best = (int(note) & 0x7F, -(int(ch) & 0x0F))
+        for (c, n) in self.active:
+            if self._anima_is_rhythm(c):
+                continue
+            if self._anima_category(c) not in ANIMA_HARM_CATS:
+                continue
+            cand = (int(n) & 0x7F, -(int(c) & 0x0F))
+            if cand > best:
+                return False
+        return True
+
+    def _anima_ghost_maybe(self, msg: mido.Message, hero_ports: list) -> None:
+        """Bass/organ −12, chord-tone harmony, or dist unison on a spare GS port."""
+        if not self.anima or not hero_ports:
+            return
+        if self.scpop_mode or getattr(self, "voodoo_active", False):
+            return
+        if getattr(self, "voodoo_loading", False):
+            return
+        # No ghosts on LA units: they were made for spare GS units, and on an LA unit they
+        # add notes (and partials) the game music never had (0.19.064).
+        if self._anima_la_native() or any(
+            self.out_formats[p] & LA_TAGS for p in hero_ports if p < len(self.out_formats)
+        ):
+            return
+        ch = msg.channel & 0x0F
+        if self._anima_is_rhythm(ch):
+            return
+        note = int(msg.note) & 0x7F
+        vel = int(msg.velocity) & 0x7F
+        if vel <= 0:
+            return
+        key = (ch, note)
+        gfam = self._anima_ghost_fam(ch)
+        # Retrigger of a pitch we already ghosted: keep the sounding layer.
+        # Killing/recreating every 16th was the "rolling" click.
+        if key in (self._anima_ghosts or {}):
+            if gfam:
+                if getattr(self, "_anima_fam_ghost", None) is None:
+                    self._anima_fam_ghost = {}
+                self._anima_fam_ghost[gfam] = key
+            return
+        hero = hero_ports[0]
+        fam = self._anima_efx_family(ch)
+        cat = self._anima_category(ch)
+        ghosts = []
+
+        is_bass = gfam == "bass"
+        is_organ = gfam == "organ"
+        sl = (self._anima_slots[hero] if hero < len(self._anima_slots) else {}) or {}
+        want_sub = is_bass or is_organ
+        if want_sub and self._anima_should_strum(ch):
+            want_sub = False
+        # One sub-octave per family. Do not hop to another channel
+        # that is only tied for lowest pitch (ch3 n64 vs ch6 n64).
+        if want_sub and gfam:
+            owner = (getattr(self, "_anima_fam_ghost", None) or {}).get(gfam)
+            if owner:
+                _och, onote = owner
+                if note > onote:
+                    want_sub = False
+                elif note == onote and owner != key:
+                    if owner in (self._anima_ghosts or {}) or owner in self.active:
+                        want_sub = False
+                    else:
+                        self._anima_ghost_kill(owner)
+                elif note < onote:
+                    self._anima_ghost_kill(owner)
+            elif self._anima_family_lowest(gfam, extra=(ch, note)) != key:
+                want_sub = False
+        if want_sub and note >= ANIMA_GHOST_MIN_NOTE:
+            sub = note - 12
+            if sub >= 12 and (ch, sub) not in self.active:
+                dest = None
+                if is_bass:
+                    # Dedicated variation on a spare box so Bass Multi stays clean.
+                    # Never a unit the file's bass plays on: the sub reprograms
+                    # this channel there (22:07 test: first sub hit the bass's
+                    # pinned P1 while a 150 ms reroute sent that note to P2,
+                    # and every later bass note played as Mild Bass).
+                    avoid = set(hero_ports)
+                    for q in (self._anima_ch_port.get(ch), self._anima_note_port.get(ch)):
+                        if q is not None:
+                            avoid.add(q)
+                    for p in self._anima_gs_ports():
+                        if p in avoid:
+                            continue
+                        if self._anima_ghost_poly_ok(p):
+                            dest = p
+                            break
+                elif self._anima_ghost_poly_ok(hero):
+                    dest = hero
+                if dest is not None and is_bass and not self._anima_bass_sub_wanted(ch, hero):
+                    dest = None
+                if dest is not None:
+                    try:
+                        if is_bass:
+                            slot = self._anima_pick_bass_sub(dest, ch)
+                            cc0, cc32, pc, name = slot
+                            saved = getattr(self, "_anima_wave_sub_saved", None)
+                            if saved is None:
+                                saved = self._anima_wave_sub_saved = {}
+                            if (dest, ch) not in saved:
+                                tone = getattr(self, "_tone_port", None)
+                                if tone and dest < len(tone):
+                                    saved[(dest, ch)] = list(tone[dest][ch])
+                            self._safe_out_send(dest, mido.Message("control_change", channel=ch, control=32, value=int(cc32) & 0x7F))
+                            self._safe_out_send(dest, mido.Message("control_change", channel=ch, control=0, value=int(cc0) & 0x7F))
+                            self._safe_out_send(dest, mido.Message("program_change", channel=ch, program=int(pc) & 0x7F))
+                            src_vol = self.vol[ch]
+                            if src_vol is None:
+                                src_vol = 100
+                            cc7 = max(1, min(127, int(src_vol * ANIMA_WAVE_SUB_VOL)))
+                            self._safe_out_send(dest, mido.Message("control_change", channel=ch, control=7, value=cc7))
+                            armed = getattr(self, "_anima_wave_sub_armed", None)
+                            if armed is None:
+                                self._anima_wave_sub_armed = set()
+                                armed = self._anima_wave_sub_armed
+                            armed.add((dest, ch))
+                            gvel = max(1, min(127, int(vel * ANIMA_WAVE_SUB_VEL)))
+                            kind = name
+                            w = 1
+                        else:
+                            # Organ: same part / same tone as the hero.
+                            gvel = max(1, min(127, int(vel * ANIMA_GHOST_SUB_VEL)))
+                            kind = "organ"
+                            pc = None
+                            name = None
+                            w = self._tone_voices(ch, dest)
+                        self._send_routed(
+                            dest,
+                            mido.Message("note_on", channel=ch, note=sub, velocity=gvel),
+                        )
+                        self.voice_counts[dest] += w
+                        ghosts.append((dest, ch, sub, w))
+                        up = None
+                        # Organ +12 on the same tone when there is headroom.
+                        if is_organ:
+                            cand = note + 12
+                            if (
+                                cand <= 127
+                                and (ch, cand) not in self.active
+                                and self._anima_ghost_poly_ok(dest)
+                            ):
+                                self._send_routed(
+                                    dest,
+                                    mido.Message("note_on", channel=ch, note=cand, velocity=gvel),
+                                )
+                                self.voice_counts[dest] += w
+                                ghosts.append((dest, ch, cand, w))
+                                up = cand
+                        if up is not None:
+                            self._anima_ghost_log(
+                                f"organ ±12 ch{ch + 1} n{note}→{sub}/{up} P{dest + 1}"
+                            )
+                        else:
+                            self._anima_ghost_log(
+                                f"{kind} −12 ch{ch + 1} n{note}→{sub} P{dest + 1}"
+                            )
+                    except Exception:
+                        pass
+
+        # Chord-tone harmony (one hero per harmony family; plan from the send path).
+        plan = None
+        pend = getattr(self, "_anima_harm_next", None)
+        if pend and pend[0] == key:
+            plan = pend[1]
+            self._anima_harm_next = None
+        elif not ghosts:
+            plan = self._anima_harm_plan(ch, note)
+        if plan and (ghosts or not plan.get("ivs")):
+            plan = None
+        hfam = f"harm-{cat}" if plan else None
+        if plan:
+            owner = (getattr(self, "_anima_fam_ghost", None) or {}).get(hfam)
+            if owner and owner != key:
+                if owner in (self._anima_ghosts or {}) or owner in self.active:
+                    if note < owner[1]:
+                        plan = None
+                    else:
+                        self._anima_ghost_kill(owner)
+        if plan:
+            dest = self._anima_seat_port(ch, hero)
+            seat = dest is not None
+            if seat:
+                self._anima_seat_take(dest, ch)
+            elif self._anima_ghost_poly_ok(hero):
+                dest = hero
+            else:
+                for p in self._anima_gs_ports():
+                    if p != hero and self._anima_ghost_poly_ok(p):
+                        dest = p
+                        break
+            snd = getattr(self, "_anima_ghost_sound", None) or {}
+            sounding = {int(n) for (_c, n) in self.active if _c != ch}
+            sounding |= {int(n) for (_c, n) in snd}
+            chord = plan.get("chord")
+            label = chord[1] if chord else "oct"
+            placed = []
+            for iv, scale in plan["ivs"] if dest is not None else ():
+                hnote = note + iv
+                if hnote < 0 or hnote > 127 or hnote == note:
+                    continue
+                # Already sounding (a unison part's ghost, or a real voice): no double.
+                if hnote in sounding or (ch, hnote) in self.active:
+                    continue
+                if dest != hero and not self._anima_ghost_poly_ok(dest):
+                    break
+                if seat and not plan.get("loudest"):
+                    scale += ANIMA_SEAT_VEL_ADD
+                gvel = max(1, min(127, int(plan.get("vel", vel) * scale)))
+                try:
+                    self._send_routed(
+                        dest,
+                        mido.Message("note_on", channel=ch, note=hnote, velocity=gvel),
+                    )
+                    w = self._tone_voices(ch, dest)
+                    self.voice_counts[dest] += w
+                    ghosts.append((dest, ch, hnote, w))
+                    sounding.add(hnote)
+                    placed.append(f"{iv:+d}")
+                    if iv > 0:
+                        self._anima_harm_up[key] = hnote
+                    gfam = hfam
+                except Exception:
+                    pass
+            if placed:
+                self._anima_harm_hero[key] = plan["hero"]
+                self._anima_ghost_log(
+                    f"harm {plan['mode']} {label} {'/'.join(placed)} ch{ch + 1} n{note} P{dest + 1}"
+                )
+
+        if not ghosts and fam == "guitar_dist" and not self._anima_should_strum(ch):
+            def _uni_dest_ok(p: int) -> bool:
+                if not self._anima_ghost_poly_ok(p):
+                    return False
+                sl = (self._anima_slots[p] if p < len(self._anima_slots) else {}) or {}
+                fam_p = sl.get("fam")
+                if fam_p and fam_p not in ("guitar_dist", "file_park"):
+                    return False
+                for k, info in self.active.items():
+                    if k == (ch, note) and p in info.get("ports", [info["port"]]):
+                        return False
+                return True
+            gs = [p for p in self._anima_gs_ports() if p not in hero_ports]
+            dest = next((p for p in gs if _uni_dest_ok(p)), None)
+            if dest is not None:
+                gvel = max(1, min(127, int(vel * ANIMA_GHOST_UNI_VEL)))
+                try:
+                    self._anima_ghost_efx_on(dest, ch)
+                    self._send_routed(
+                        dest,
+                        mido.Message("note_on", channel=ch, note=note, velocity=gvel),
+                    )
+                    w = self._tone_voices(ch, dest)
+                    self.voice_counts[dest] += w
+                    ghosts.append((dest, ch, note, w))
+                    self._anima_ghost_log(
+                        f"dist unison ch{ch + 1} n{note} P{hero + 1}→P{dest + 1}"
+                    )
+                except Exception:
+                    pass
+
+        if ghosts:
+            if key in (self._anima_ghosts or {}):
+                self._anima_ghost_kill(key)
+            self._anima_ghosts[key] = ghosts
+            snd = getattr(self, "_anima_ghost_sound", None)
+            if snd is None:
+                self._anima_ghost_sound = {}
+                snd = self._anima_ghost_sound
+            for item in ghosts:
+                snd[(item[1], item[2])] = key
+            if gfam:
+                if getattr(self, "_anima_fam_ghost", None) is None:
+                    self._anima_fam_ghost = {}
+                self._anima_fam_ghost[gfam] = key
 
     def _anima_foley_spec(self, ch: int):
+
         fam = self._anima_efx_family(ch)
         if fam in ANIMA_FOLEY_SPEC:
             return ANIMA_FOLEY_SPEC[fam]
@@ -4123,26 +9454,52 @@ class Duality:
             return ANIMA_FOLEY_SPEC.get(alias)
         return None
 
+    def _anima_foley_restore_ch(self, port: int, fch: int) -> None:
+        """Put a borrowed part back on a safe capital so SFX does not linger."""
+        if port < 0 or port >= self.n_ports or fch is None:
+            return
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=32, value=4))
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=0, value=0))
+        self._safe_out_send(port, mido.Message("program_change", channel=fch, program=0))
+        self._safe_out_send(
+            port, self._gs_dt1([0x40, self._gs_efx_part_mid(fch), 0x22], [0x00])
+        )
+        try:
+            self._anima_efx_on[port][fch] = False
+        except Exception:
+            pass
+
     def _anima_foley_reclaim(self, reason: str = "") -> None:
         """Drop the reserved noise channel so a later song can use it."""
         if not any(c is not None for c in self._anima_foley_ch):
             return
+        for i, fch in enumerate(self._anima_foley_ch):
+            if fch is not None:
+                self._anima_foley_restore_ch(i, fch)
         self._anima_foley_ch = [None] * self.n_ports
         self._anima_foley_armed = [False] * self.n_ports
+        self._anima_foley_patch = None
         if reason:
             self._anima_feedback("foley", f"foley channel released ({reason})", status=False)
 
     def _anima_foley_pick_ch(self, avoid: int) -> int | None:
-        """Silent high channel the FILE is not using as a program."""
-        for c in range(15, -1, -1):
+        """Quiet high channel. Prefer ones the file never programmed."""
+        def _ok(c: int, allow_used: bool) -> bool:
             if c == avoid or c == 9 or self._anima_is_rhythm(c):
-                continue
+                return False
             if any(k[0] == c for k in self.active):
-                continue
-            prog = int(self._anima_prog[c]) if hasattr(self, "_anima_prog") else 0
-            if prog not in (0, 120, 121) and self._anima_efx_family(c):
-                continue
-            return c
+                return False
+            if not allow_used and self._file_used_ch[c]:
+                return False
+            if any(c in (s.get("chs") or []) for s in self._anima_slots):
+                return False
+            return True
+        for c in range(15, -1, -1):
+            if _ok(c, False):
+                return c
+        # Do not steal a channel the file already programmed.
+        # ONESTOP uses ch15 as flute; stealing it for SFX 122 was the
+        # "foley goes nuts" collision (longform and song loops alike).
         return None
 
     def _anima_foley_dest(self, hero: int, eligible: list[int]) -> int | None:
@@ -4159,6 +9516,25 @@ class Duality:
                 return p
         return None
 
+    def _anima_foley_place(self, hero: int, eligible: list[int], avoid: int):
+        """Hero GS port first, then other GS outs. None = skip foley this hit."""
+        order = []
+        if hero is not None and self._anima_port_8850(hero):
+            order.append(hero)
+        for p in (eligible or []):
+            if p not in order and self._anima_port_8850(p):
+                order.append(p)
+        for p in self._anima_gs_ports():
+            if p not in order:
+                order.append(p)
+        for p in order:
+            if self.voice_counts[p] >= self.poly_limits[p]:
+                continue
+            fch = self._anima_foley_arm(p, avoid)
+            if fch is not None:
+                return p, fch
+        return None, None
+
     def _anima_foley_arm(self, port: int, ch: int) -> int | None:
         fch = self._anima_foley_ch[port]
         if fch is None:
@@ -4168,17 +9544,55 @@ class Duality:
             self._anima_foley_ch[port] = fch
         return fch
 
+    def _anima_foley_follow_efx(self, port: int, hero_ch: int, fch: int) -> None:
+        """Same insert as the hero part — foley would be on the same mic."""
+        if port < 0 or port >= self.n_ports:
+            return
+        on = False
+        try:
+            on = bool(self._anima_efx_on[port][hero_ch])
+        except Exception:
+            on = False
+        slot = (self._anima_slots[port] if port < len(self._anima_slots) else None) or {}
+        if hero_ch in (slot.get("chs") or []):
+            on = True
+        if not on or fch == hero_ch:
+            return False
+        already = False
+        try:
+            already = bool(self._anima_efx_on[port][fch])
+        except Exception:
+            already = False
+        if not already:
+            self._anima_efx_ours = True
+            self._safe_out_send(
+                port, self._gs_dt1([0x40, self._gs_efx_part_mid(fch), 0x22], [0x01])
+            )
+            try:
+                self._anima_efx_on[port][fch] = True
+            except Exception:
+                pass
+            self._anima_feedback(
+                "foley",
+                f"foley EFX on P{port + 1} ch{fch + 1} (follow ch{hero_ch + 1})",
+                status=False,
+            )
+        return True
+
     def _anima_foley_program(self, port: int, fch: int, pc: int, lsb: int) -> None:
         key = (pc, lsb)
         last = getattr(self, "_anima_foley_patch", None)
         if last == (port, fch, key) and self._anima_foley_armed[port]:
             return
-        # SC-8850 instrument list "CC00" column = Bank MSB (CC0).
-        # CC32 stays 0. (CC32=N is GS-generic and 88emu treats it as a map switch.)
+        # SFX on 8850 map: map first, then variation, then PC 121/122.
         var = lsb & 0x7F
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=32, value=4))
         self._safe_out_send(port, mido.Message("control_change", channel=fch, control=0, value=var))
-        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=32, value=0))
         self._safe_out_send(port, mido.Message("program_change", channel=fch, program=pc & 0x7F))
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=7, value=ANIMA_FOLEY_CC7))
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=11, value=127))
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=10, value=64))
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=91, value=ANIMA_FOLEY_CC91))
         self._anima_foley_armed[port] = True
         self._anima_foley_patch = (port, fch, key)
 
@@ -4192,6 +9606,10 @@ class Duality:
                 self._anima_foley_reclaim("no foley instrument")
             return
         pc, lsb, keys = spec
+        # Keep wind/brass SFX on the soft banks (Breath / Harmonica).
+        # CC00 3 and 8 on PC 122 are the harsh "stab/rip" noises.
+        if pc == 121 and lsb not in (0, 1):
+            lsb = 0
         pend = self._anima_foley_pend
         if pend and pend["ch"] == ch and (now - pend["t0"]) < 0.05:
             pend["n"] += 1
@@ -4199,7 +9617,13 @@ class Duality:
             pend["vel"] = vel
             pend["t"] = now + ANIMA_FOLEY_HOLD
             return
-        if (now - self._anima_foley_last) < ANIMA_FOLEY_GAP:
+        gap = ANIMA_FOLEY_GAP + random.uniform(-ANIMA_FOLEY_GAP_JITTER, ANIMA_FOLEY_GAP_JITTER)
+        if (now - self._anima_foley_last) < max(0.6, gap):
+            prev = self._anima_foley_pitch[ch]
+            self._anima_foley_pitch[ch] = note
+            return
+        if random.random() < ANIMA_FOLEY_SKIP:
+            self._anima_foley_last = now
             prev = self._anima_foley_pitch[ch]
             self._anima_foley_pitch[ch] = note
             return
@@ -4209,7 +9633,7 @@ class Duality:
         if prev >= 0 and jump < ANIMA_FOLEY_JUMP:
             return
         self._anima_foley_pend = {
-            "t": now + ANIMA_FOLEY_HOLD, "t0": now,
+            "t": now + ANIMA_FOLEY_HOLD + random.uniform(0.0, 0.035), "t0": now,
             "ch": ch, "note": note, "vel": vel, "jump": jump, "prev": prev,
             "hero": hero, "eligible": list(eligible or []),
             "ports": list(ports or []), "n": 1,
@@ -4233,40 +9657,77 @@ class Duality:
         cat = self._anima_category(ch)
         lsb, keys = pend["lsb"], pend["keys"]
         if fam.startswith("guitar") or cat == "guitar":
-            if nnotes >= 3:
-                lsb, keys = 11, (60, 64, 67)    # Chord Stroke
-            elif nnotes >= 2:
+            # + samples live near C4. Prefer fret / cut; stroke is a last resort.
+            if jump >= 12:
+                lsb, keys = 35, (60, 61)        # StlGt.SldNz1
+            elif nnotes >= 3:
+                lsb, keys = 1, (60, 62)         # cut in a chord (not Chord Stroke)
+            elif nnotes >= 2 or jump >= ANIMA_FOLEY_SLIDE:
                 lsb, keys = 1, (60, 62)         # Gt.Cut Noise
-            elif jump >= 12:
-                lsb, keys = 35, (66, 72)        # StlGt.SldNz1
-            elif jump >= ANIMA_FOLEY_SLIDE:
-                lsb, keys = 1, (60, 62)         # Gt.Cut Noise (acoustic)
             else:
-                lsb, keys = 0, (66, 64, 60)
+                lsb, keys = 0, (60, 64, 67)     # Gt.FretNoise
         elif fam.startswith("bass") or cat == "bass":
             lsb, keys = (5, (48, 50)) if jump >= ANIMA_FOLEY_SLIDE else (2, (36, 38))
         elif cat == "wind" or fam == "ethnic_wind":
-            lsb, keys = (3, (60, 62)) if jump >= 12 else (1, (72, 74))
+            # 122/0 Breath and 122/3 Fl.Breath sit under the line.
+            # 122/1 Fl.Key Click is a dart — rare and quieter.
+            if jump >= 12:
+                lsb, keys = 3, (60, 62)
+            elif random.random() < 0.12:
+                lsb, keys = 1, (60, 61)
+            else:
+                lsb, keys = 0, (60, 64)
         elif cat == "brass" or fam in ("orch_brass", "synth_brass"):
             pc = 121
             lsb, keys = (9, (60, 64)) if (self._anima_prog[ch] & 0x7F) in (56, 57) else (8, (60, 64))
-        dest = self._anima_foley_dest(hero, eligible)
-        if dest is None:
+        # Key click / brass-noise one-shots sit on C4–C5 and flam the kit.
+        if now - getattr(self, "_anima_drum_last", 0.0) < ANIMA_FOLEY_DRUM_GATE:
             return
-        fch = self._anima_foley_arm(dest, ch)
-        if fch is None:
+        if pc == 121 and lsb in (1, 8, 9):
+            if now - getattr(self, "_anima_drum_last", 0.0) < 2.0:
+                return
+        # On-channel tricks do not need a spare part.
+        if jump >= ANIMA_FOLEY_BEND_JUMP and ports:
+            amt = ANIMA_FOLEY_BEND if note >= prev else -ANIMA_FOLEY_BEND
+            scoop = mido.Message("pitchwheel", channel=ch, pitch=amt)
+            zero = mido.Message("pitchwheel", channel=ch, pitch=0)
+            for port in ports:
+                self._send_routed(port, scoop)
+                self._anima_strum_q.append((now + ANIMA_FOLEY_BEND_SEC, port, zero))
+        dest, fch = self._anima_foley_place(hero, eligible, ch)
+        if dest is None or fch is None:
+            self._anima_foley_last = now
+            self._anima_feedback("foley", "foley SFX skipped (on-channel only)", status=False)
             return
         self._anima_foley_program(dest, fch, pc, lsb)
+        wet = bool(self._anima_foley_follow_efx(dest, ch, fch))
         n = keys[self._anima_foley_n % len(keys)]
         self._anima_foley_n += 1
-        fv = max(ANIMA_FOLEY_VEL[0], min(ANIMA_FOLEY_VEL[1], 48 + vel // 4))
-        if lsb == 1:  # Gt.Cut Noise is a quiet sample
-            fv = min(127, fv + 20)
+        fv = max(ANIMA_FOLEY_VEL[0], min(ANIMA_FOLEY_VEL[1], 24 + vel // 3))
+        if pc == 120 and lsb == 1:  # Gt.Cut Noise is a quiet sample
+            fv = min(127, fv + 12)
+        if pc == 121 and lsb == 1:  # Fl.Key Click is hot
+            fv = max(18, fv - 22)
+        elif pc == 121:
+            # Breath / brass harmonica foley — sit under the section
+            fv = max(14, int(fv * 0.75))
+        cat = self._anima_category(ch)
+        if cat == "brass" or (self._anima_efx_family(ch) or "").startswith("orch_brass"):
+            fv = max(12, int(fv * 0.75))
+        # Spare parts often inherit CC7=0 from the file. Stamp level every hit.
+        self._safe_out_send(dest, mido.Message("control_change", channel=fch, control=7, value=ANIMA_FOLEY_CC7))
+        self._safe_out_send(dest, mido.Message("control_change", channel=fch, control=11, value=110))
+        self._safe_out_send(dest, mido.Message("control_change", channel=fch, control=91, value=ANIMA_FOLEY_CC91))
         on = mido.Message("note_on", channel=fch, note=n, velocity=fv)
         off = mido.Message("note_off", channel=fch, note=n, velocity=0)
-        self._send_routed(dest, on)
+        pre = ANIMA_FOLEY_EFX_PRE if wet else 0.0
+        post = ANIMA_FOLEY_EFX_POST if wet else 0.0
+        if pre <= 0:
+            self._send_routed(dest, on)
+        else:
+            self._anima_strum_q.append((now + pre, dest, on))
         self.voice_counts[dest] += 1
-        self._anima_strum_q.append((now + ANIMA_FOLEY_MS, dest, off))
+        self._anima_strum_q.append((now + pre + ANIMA_FOLEY_MS + post, dest, off))
         self._anima_foley_last = now
         where = "overflow" if dest != hero else "home"
         self._anima_feedback(
@@ -4274,108 +9735,182 @@ class Duality:
             f"foley {pc+1}/{lsb} n{n} P{dest + 1} ch{fch + 1} ({where})",
             status=True,
         )
-        if jump >= ANIMA_FOLEY_SLIDE and ports:
-            amt = 1600 if note >= prev else -1600
-            scoop = mido.Message("pitchwheel", channel=ch, pitch=amt)
-            zero = mido.Message("pitchwheel", channel=ch, pitch=0)
-            for port in ports:
-                self._send_routed(port, scoop)
-                self._anima_strum_q.append((now + 0.06, port, zero))
+
+    def _anima_efx_place(self, ch: int) -> None:
+        """Seat one unpinned part on a box. Touches only that box.
+
+        Order: this family's box (guitars prefer a spare unit first), an
+        empty box, then the lowest-priority evictable box. A heard owner is
+        only displaced by a higher family after ANIMA_EFX_IDLE_SEC of
+        silence. Nothing fits → the part plays dry and retries later.
+        """
+        fam = self._anima_efx_family(ch)
+        if not fam:
+            return
+        home = self._anima_file_home_port()
+        reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
+        if ch in reserved:
+            return
+        gs = [p for p in self._anima_gs_ports() if p != home]
+        if not gs:
+            return
+        now = time.monotonic()
+        pri = {f: i for i, f in enumerate(ANIMA_EFX_PRIORITY)}
+        rank = pri.get(fam, 99)
+
+        def _slot(p: int) -> dict:
+            return self._anima_slots[p] if p < len(self._anima_slots) else {}
+
+        same = [p for p in gs if _slot(p).get("fam") == fam]
+        empty = [p for p in gs if not _slot(p).get("fam")]
+        steal = None
+        steal_r = -1
+        for p in gs:
+            of = _slot(p).get("fam")
+            if not of or of == fam or of == "file_park":
+                continue
+            # Never under a sounding player of that box, and never twice
+            # inside SWITCH_SEC (one type write per box per switch window).
+            if self._anima_port_players_sounding(p):
+                continue
+            if now - float(_slot(p).get("t") or 0) < ANIMA_EFX_SWITCH_SEC:
+                continue
+            r = pri.get(of, 99)
+            if r <= rank:
+                # A higher (or equal) owner only yields once it has gone stale.
+                if not self._anima_slot_stale(p, now):
+                    continue
+            elif not self._anima_slot_stale(p, now):
+                # This part is playing and outranks the owner: take it in the
+                # owner's gap (none of its channels sounding anywhere).
+                owners = set(_slot(p).get("chs") or [])
+                if any(k[0] in owners for k in self.active):
+                    continue
+            if r > steal_r:
+                steal, steal_r = p, r
+        spare = empty[0] if empty else steal
+        port = None
+        chs = [ch]
+        split = False
+        partner = [
+            p for p in same
+            if len([c for c in (_slot(p).get("chs") or []) if c != ch]) == 1
+        ]
+        if fam == "guitar_dist" and empty:
+            port = empty[0]            # one guitar per unit keeps its pan
+        elif fam == "guitar_dist" and partner:
+            # Pair with the other guitar (OD1/OD2 keeps both sides) rather
+            # than taking another family's box (ONESTOP end: organ lost P3).
+            port = partner[0]
+            pair = [c for c in (_slot(port).get("chs") or []) if c != ch][:1] + [ch]
+            chs = pair
+            split = bool(_slot(port).get("split")) or self._anima_chs_want_split(pair)
+        elif fam == "guitar_dist" and spare is not None:
+            port = spare
+        elif same:
+            port = same[0]
+            sl = _slot(port)
+            if fam == "guitar_dist":
+                pair = [c for c in (sl.get("chs") or []) if c != ch][:1] + [ch]
+                chs = pair
+                split = bool(sl.get("split")) or (
+                    len(pair) >= 2 and self._anima_chs_want_split(pair)
+                )
+        elif spare is not None:
+            port = spare
+        if port is None:
+            return
+        self._anima_efx_grace = ANIMA_EFX_DUMP_SEC  # playing now; heard at once
+        self._anima_commit_slot({"port": port, "fam": fam, "chs": chs, "split": split})
+        sl = _slot(port)
+        if sl.get("fam") == fam and ch in (sl.get("chs") or []) and self._anima_efx_on[port][ch]:
+            self._anima_ch_port[ch] = port
+
+    def _anima_efx_settle_burst(self) -> None:
+        """One global plan after the PC dump has gone quiet (or at the first note)."""
+        if not getattr(self, "_anima_efx_burst_dirty", False):
+            return
+        self._anima_efx_burst_dirty = False
+        n = int(getattr(self, "_anima_efx_burst_n", 0) or 0)
+        self._anima_efx_burst_n = 0
+        self._anima_efx_grace = (
+            ANIMA_EFX_DUMP_SEC if n >= ANIMA_EFX_BIG_BURST else ANIMA_EFX_PC_GRACE_SEC
+        )
+        plan = self._anima_build_plan()
+        self._anima_commit_plan(plan)
+        self._anima_efx_grace = ANIMA_EFX_DUMP_SEC
+        self._anima_seat_efx(force=True)
+
+    def _anima_efx_burst_poll(self) -> None:
+        if not getattr(self, "_anima_efx_burst_dirty", False):
+            return
+        if time.monotonic() - float(getattr(self, "_anima_efx_burst_t", 0.0) or 0.0) >= ANIMA_EFX_BURST_SEC:
+            self._anima_efx_settle_burst()
+
+    def _anima_efx_on_pc(self, ch: int) -> None:
+        """PC: re-seat a pinned part whose family changed; then mark the burst."""
+        ch = ch & 0x0F
+        port = self._anima_ch_port.get(ch)
+        if port is not None and 0 <= port < len(self._anima_slots):
+            sl = self._anima_slots[port]
+            fam = self._anima_efx_family(ch)
+            if sl.get("fam") not in (None, "file_park") and fam != sl.get("fam"):
+                others = [c for c in (sl.get("chs") or []) if c != ch]
+                if fam and not others and not self._anima_port_players_sounding(port):
+                    # Sole owner, quiet box: retype on the PC, before its notes.
+                    self._anima_efx_grace = ANIMA_EFX_PC_GRACE_SEC
+                    self._anima_commit_slot({"port": port, "fam": fam, "chs": [ch], "split": False})
+                    self._anima_efx_grace = ANIMA_EFX_DUMP_SEC
+                    if self._anima_slots[port].get("fam") == fam and self._anima_efx_on[port][ch]:
+                        self._anima_ch_port[ch] = port
+                        return
+                # Leave the box to its remaining owners: unpin + Part Off together.
+                sl["chs"] = others
+                self._anima_ch_port.pop(ch, None)
+                if self._anima_efx_on[port][ch]:
+                    self._anima_efx_ours = True
+                    self._safe_out_send(
+                        port,
+                        self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x00]),
+                    )
+                    self._anima_efx_on[port][ch] = False
+                if not others:
+                    # Owner left; box keeps its type but is free for the next family.
+                    sl["heard_t"] = 0.0
+                    sl["t"] = 0.0
+        if self._anima_ch_port.get(ch) is None and self._anima_efx_family(ch):
+            self._anima_efx_burst_t = time.monotonic()
+            self._anima_efx_burst_dirty = True
+            self._anima_efx_burst_n = int(getattr(self, "_anima_efx_burst_n", 0) or 0) + 1
 
     def _anima_maybe_efx(self, ch: int) -> None:
+        if self._anima_cue_chs is not None:
+            self._anima_cue_chs.add(ch & 0x0F)   # a part that plays is part of the cue
         if not self.anima or self._anima_is_rhythm(ch):
             return
         fmt = (getattr(self, "detected_format", None) or "").upper()
         if fmt not in ("GS", "SC", "SC-8850", "XG") and not self._anima_gs_ports():
             return
-        plan = self._anima_build_plan(extra_ch=ch)
-        self._anima_commit_plan(plan)
-        return
-        # legacy single-slot path kept below as dead code for reference
-        # First priority family that currently has notes (short hold on gaps).
-        sounding = {}
-        for key in self.active:
-            c = key[0]
-            if c == 9:
-                continue
-            fam = self._anima_efx_family(c)
-            if not fam:
-                continue
-            sounding.setdefault(fam, c)
-            self._anima_efx_sound_t[fam] = now
-        for fam, ts in list(self._anima_efx_sound_t.items()):
-            if fam not in sounding and now - ts < ANIMA_EFX_HOLD_SEC:
-                sounding[fam] = self._anima_efx_hero if self._anima_efx_key == fam else next(
-                    (c for c in range(16) if self._anima_efx_family(c) == fam), 0)
-        # Keep the current insertion family on the list through IDLE_SEC so
-        # bass/pads cannot steal the slot on a short guitar rest.
-        if self._anima_efx_key:
-            ts = self._anima_efx_sound_t.get(self._anima_efx_key, 0.0)
-            if ts and (now - ts) < ANIMA_EFX_IDLE_SEC and self._anima_efx_key not in sounding:
-                sounding[self._anima_efx_key] = self._anima_efx_hero or 0
-        fam = None
-        hero = ch
-        for cand in ANIMA_EFX_PRIORITY:
-            if cand in sounding:
-                fam = cand
-                hero = sounding[cand]
-                break
-        if self._anima_split_on and "guitar_dist" not in sounding:
-            self._anima_split_restore()
-        if not fam:
+        # A pending setup burst is placed once, before this note routes.
+        self._anima_efx_settle_burst()
+        # Already parked on a box — do not rebuild the 4-port map.
+        # Re-planning every note was the 17:49:27 OD1/OD2 + 170 toggles.
+        if self._anima_ch_port.get(ch) is not None:
             return
-        # Same family: keep the current type/parts. Do not resend
-        # (except guitar_dist may upgrade to OD1/OD2 mid-family).
-        if self._anima_efx_key == fam:
-            self._anima_efx_pending = None
-            if fam == "guitar_dist":
-                self._anima_maybe_guitar_split()
+        # No insert family (sfx, unmapped PC) must not rebuild the plan.
+        # A hit on that channel was stealing a box a millisecond after a
+        # real part had just turned its EFX on.
+        if not self._anima_efx_family(ch):
             return
-        # Want a different family. Current family still holding notes?
-        cur_still_up = bool(
-            self._anima_efx_key
-            and self._anima_efx_key in sounding
-        )
-        if cur_still_up:
-            # Must request the new family continuously for SWITCH_SEC.
-            pend = self._anima_efx_pending
-            if not pend or pend[0] != fam:
-                self._anima_efx_pending = (fam, now)
-                return
-            if (now - pend[1]) < ANIMA_EFX_SWITCH_SEC:
-                return
-        else:
-            self._anima_efx_pending = None
-        pick = self._anima_palette_pick(fam)
-        if not pick:
+        # A dry part re-seeks at most once per SWITCH_SEC.
+        now = time.monotonic()
+        seek = getattr(self, "_anima_efx_seek_t", None)
+        if seek is None:
+            seek = self._anima_efx_seek_t = [0.0] * 16
+        if now - seek[ch] < ANIMA_EFX_SWITCH_SEC:
             return
-        msb, lsb, label = pick
-        if self._anima_efx_sent == (msb, lsb):
-            self._anima_efx_key = fam
-            self._anima_efx_assign_part(hero)
-            return
-        ports = self._anima_gs_ports()
-        if not ports:
-            return
-        self._anima_efx_ours = True
-        self._anima_efx_pending = None
-        if self._anima_split_on:
-            self._anima_split_restore()
-        msg = self._gs_dt1([0x40, 0x03, 0x00], [msb, lsb])
-        for i in ports:
-            self._safe_out_send(i, msg)
-        self._anima_efx_sent = (msb, lsb)
-        self._anima_efx_key = fam
-        self._anima_efx_label = label
-        self._anima_efx_switch_t = now
-        self._anima_efx_hero = hero
-        self._anima_efx_assign_part(hero)
-        self._anima_efx_bind_and_seed(msb, lsb)
-        self._anima_feedback(
-            "efx",
-            f"ch{hero + 1} {fam} → GS {label}",
-            status=True,
-        )
+        seek[ch] = now
+        self._anima_efx_place(ch)
 
     def _anima_efx_assign_family(self, fam: str, hero: int) -> None:
         """EFX On for every channel in this family; Off for the others."""
@@ -4486,13 +10021,23 @@ class Duality:
                 status=False,
             )
             return
-        tgt = ANIMA_EXPR_FLOOR + (msg.velocity * (127 - ANIMA_EXPR_FLOOR)) // 127
-        tgt = max(1, min(127, tgt))
-        # Ignore tiny target hops (stops CC chatter / hitching on busy lines)
-        if self._anima_cc11_own[ch] and abs(tgt - self._anima_cc11_tgt[ch]) < 4:
+        # Phrase lock: later notes in the same line do not retarget CC11.
+        if self._anima_expr_phrase[ch]:
             self._anima_idle_t[ch] = 0.0
             return
-        # Swell-from-below only when coming off idle AND target isn't already loud
+        tgt = ANIMA_EXPR_FLOOR + (msg.velocity * (127 - ANIMA_EXPR_FLOOR)) // 127
+        tgt = max(ANIMA_EXPR_FLOOR, min(127, tgt))
+        # Stabs: keep prior (louder) expression — do not double-dip velocity
+        if self._anima_last_dur[ch] < ANIMA_STAB_SEC and tgt < self._anima_cc11_tgt[ch]:
+            tgt = self._anima_cc11_tgt[ch]
+        self._anima_expr_peak[ch] = tgt
+        self._anima_expr_phrase[ch] = True
+        self._anima_expr_shape[ch] = None
+        # Shape families wait for the hold clock. Lead / wind / fx take the peak now.
+        if cat in ANIMA_EXPR_SHAPE_CATS:
+            self._anima_cc11_own[ch] = True
+            self._anima_idle_t[ch] = 0.0
+            return
         if (not self._anima_cc11_own[ch]) and tgt < 118:
             start = min(tgt, max(ANIMA_EXPR_FLOOR, tgt - 24))
             self._anima_cc11_cur[ch] = start
@@ -4507,7 +10052,11 @@ class Duality:
         )
 
     def _anima_live_ports(self, ch: int) -> list:
-        """Ports that currently hold notes on this channel — not historical."""
+        """Ports that currently hold notes on this channel — not historical.
+
+        Include ghost/harmony dests so a swell on the hero also moves the
+        doubled voice on another box (same MIDI channel, parallel engines).
+        """
         ports = []
         for key, info in self.active.items():
             if key[0] != ch:
@@ -4515,9 +10064,56 @@ class Duality:
             for p in info.get("ports") or [info["port"]]:
                 if p not in ports:
                     ports.append(p)
+        for _hero, ghosts in (getattr(self, "_anima_ghosts", None) or {}).items():
+            if _hero[0] != ch:
+                continue
+            for g in ghosts:
+                p = g[0] if g else None
+                if p is not None and p not in ports:
+                    ports.append(p)
         if not ports:
             ports = list(self._anima_ports[ch])
         return ports
+
+    def _anima_wave_sub_restore(self, port: int, ch: int) -> None:
+        """A file note is about to play where a bass sub reprogrammed this
+        channel: put the unit's own tone (bank / PC / CC7) back first."""
+        armed = getattr(self, "_anima_wave_sub_armed", None) or set()
+        if (port, ch) not in armed:
+            return
+        armed.discard((port, ch))
+        saved = (getattr(self, "_anima_wave_sub_saved", None) or {}).pop((port, ch), None)
+        if not saved:
+            return
+        cc0, cc32, pc, cc7 = saved
+        if cc32 is not None:
+            self._safe_out_send(port, mido.Message("control_change", channel=ch, control=32, value=cc32))
+        if cc0 is not None:
+            self._safe_out_send(port, mido.Message("control_change", channel=ch, control=0, value=cc0))
+        if pc is not None:
+            self._safe_out_send(port, mido.Message("program_change", channel=ch, program=pc))
+        if cc7 is not None:
+            self._safe_out_send(port, mido.Message("control_change", channel=ch, control=7, value=cc7))
+        self._anima_feedback("ghost", f"ch{ch + 1} tone restored on P{port + 1} after bass sub", status=False)
+
+    def _anima_mod_clear(self, ch: int) -> None:
+        """CC1=0 on every unit that still holds a raised wheel for this channel.
+
+        ONESTOP: ch6's brass swell left CC1=25 on P2; ch6 then became a
+        piano there and played with heavy vibrato. Same for a file lead's
+        wheel carried into a mallet PC.
+        """
+        ch = ch & 0x0F
+        shadow = getattr(self, "_cc1_port", None) or []
+        msg = mido.Message("control_change", channel=ch, control=1, value=0)
+        for p, vals in enumerate(shadow):
+            if vals[ch] > 0:
+                self._safe_out_send(p, msg)
+        self._anima_cc1_cur[ch] = 0
+        self._anima_cc1_tgt[ch] = 0
+        _l1, l11 = self._anima_cc_sent[ch]
+        self._anima_cc_sent[ch] = (0, l11)
+        self.mod[ch] = 0
 
     def _anima_send_cc(self, ports, ch: int, control: int, value: int) -> None:
         """Send a CC only to live ports, quantized, with a small per-port gap.
@@ -4538,7 +10134,8 @@ class Duality:
         for p in ports:
             if p < len(gap_t) and now - gap_t[p] < ANIMA_CC_GAP:
                 continue
-            self._safe_out_send(p, msg)
+            if not (self._cm64v_parts and self._cm64v_intercept(p, msg)):
+                self._safe_out_send(p, msg)
             if p < len(gap_t):
                 gap_t[p] = now
             sent_any = True
@@ -4561,10 +10158,21 @@ class Duality:
             return min(tgt, int(cur + max(1, delta)))
         return max(tgt, int(cur - max(1, delta)))
 
+    def _anima_roll_mode(self, ch: int) -> str | None:
+        """strum (guitar) / unroll (mallets, harp, pizz, ethnic plucked) / None."""
+        if self._anima_is_rhythm(ch):
+            return None
+        pc = self._anima_gm_pc(ch)
+        if pc in ANIMA_UNROLL_PCS:
+            return "unroll"
+        if self._anima_category(ch) in ANIMA_STRUM_CATS:
+            return "strum"
+        return None
+
     def _anima_should_strum(self, ch: int) -> bool:
         if self._anima_is_rhythm(ch):
             return False
-        return self._anima_category(ch) in ANIMA_STRUM_CATS
+        return self._anima_roll_mode(ch) is not None
 
     def _anima_strum_style(self, ch: int) -> str:
         """Choose stroke style for this chord.
@@ -4572,7 +10180,7 @@ class Duality:
         Default: alternate. Occasional double down/up for feel.
         Distortion/overdrive (Hetfield): down-picks only.
         """
-        pc = self._anima_prog[ch]
+        pc = self._anima_gm_pc(ch)
         if pc in ANIMA_HETFIELD_PC:
             return "hetfield"
         if self._anima_file_dirt[ch] and self._anima_hetfield_roll[ch]:
@@ -4590,7 +10198,12 @@ class Duality:
         now = time.monotonic()
         buf = self._anima_strum_buf[ch]
         if buf is None:
-            style = self._anima_strum_style(ch)
+            self._anima_mallet_cancel(ch)
+            mode = self._anima_roll_mode(ch) or "strum"
+            if mode == "unroll":
+                style = "alt"
+            else:
+                style = self._anima_strum_style(ch)
             if style == "hetfield" or style == "down":
                 direction = 1
             elif style == "hold":
@@ -4602,6 +10215,7 @@ class Duality:
                 "t0": now,
                 "dir": direction,
                 "style": style,
+                "mode": mode,
                 "items": [],
             }
             self._anima_strum_buf[ch] = buf
@@ -4613,7 +10227,9 @@ class Duality:
             self._anima_strum_buf[ch] = None
             return
         now = time.monotonic()
-        if not immediate and (now - buf["t0"]) < ANIMA_STRUM_COLLECT:
+        mode = buf.get("mode") or "strum"
+        collect = ANIMA_UNROLL_COLLECT if mode == "unroll" else ANIMA_STRUM_COLLECT
+        if not immediate and (now - buf["t0"]) < collect:
             return
         items = buf["items"]
         items.sort(key=lambda it: it[0].note)
@@ -4624,41 +10240,216 @@ class Duality:
         burst = self._anima_strum_burst[ch]
         pickup = 0.0
         release = 0.0
-        if last and ioi > ANIMA_BURST_HOLE and len(items) >= 2:
+        jitter = ANIMA_UNROLL_JITTER if mode == "unroll" else ANIMA_STRUM_JITTER
+        if mode == "strum" and last and ioi > ANIMA_BURST_HOLE and len(items) >= 2:
             # First stroke after a hole – land a hair late
             pickup = random.uniform(*ANIMA_BURST_PICKUP)
             burst = 1
-        elif ANIMA_BURST_IOI_LO <= ioi <= ANIMA_BURST_IOI_HI and len(items) >= 2:
+        elif mode == "strum" and ANIMA_BURST_IOI_LO <= ioi <= ANIMA_BURST_IOI_HI and len(items) >= 2:
             burst += 1
-            pickup = random.uniform(-ANIMA_STRUM_JITTER, ANIMA_STRUM_JITTER)
+            pickup = random.uniform(-jitter, jitter)
             release = random.uniform(*ANIMA_BURST_RELEASE)
         else:
             burst = 1 if len(items) >= 2 else 0
         self._anima_strum_burst[ch] = burst
         self._anima_strum_last_t[ch] = now
         self._anima_strum_off_hold[ch] = release
-        t0 = now + pickup + random.uniform(-ANIMA_STRUM_JITTER, ANIMA_STRUM_JITTER)
-        for i, (note_msg, ports) in enumerate(items):
-            string_j = random.uniform(0.0, ANIMA_STRUM_JITTER)
-            when = t0 + (i * ANIMA_STRUM_STEP) + string_j
-            for p in ports:
-                self._anima_strum_q.append((when, p, note_msg))
+        t0 = now + pickup + random.uniform(-jitter, jitter)
+        pc = self._anima_gm_pc(ch)
+        if mode == "unroll":
+            step = ANIMA_UNROLL_STEP
+        elif pc in ANIMA_ACOUSTIC_PCS:
+            step = ANIMA_STRUM_STEP * 1.65
+        else:
+            step = ANIMA_STRUM_STEP
+        if mode == "unroll" and pc in ANIMA_MALLET_PCS:
+            self._anima_mallet_flush(ch, items, t0, buf["dir"], jitter)
+        else:
+            for i, (note_msg, ports) in enumerate(items):
+                string_j = random.uniform(0.0, jitter)
+                when = t0 + (i * step) + string_j
+                for p in ports:
+                    self._anima_strum_q.append((when, p, note_msg))
         self._anima_strum_n[ch] += 1
         nstr = len(items)
         label = {1: "down", -1: "up"}[buf["dir"]]
         if buf["style"] == "hetfield":
             label = "down/Hetfield"
         if nstr >= 2:
+            kind = "roll" if mode == "unroll" else "strum"
             self._anima_feedback(
-                "strum",
+                kind,
                 f"ch{ch + 1} {label} x{nstr}",
                 status=True,
             )
         self._anima_strum_buf[ch] = None
 
+    def _anima_mallet_flush(self, ch: int, items, t0: float, direction: int, jitter: float) -> None:
+        """Strike a mallet chord by hands, then maybe ornament it in the gap.
+
+        The first hand lands at t0 like any unroll; the other hand follows by
+        ANIMA_MALLET_HAND_GAP. Extra strokes only go where this part usually
+        leaves room, and a new note on the channel cancels what is still pending.
+        """
+        asc = sorted(items, key=lambda it: it[0].note)
+        if len(asc) >= 2:
+            half = len(asc) // 2
+            hands = [asc[:half], asc[half:]]
+            if direction < 0:
+                hands.reverse()
+        else:
+            hands = [asc]
+        for h, hand in enumerate(hands):
+            for note_msg, ports in hand:
+                when = t0 + h * ANIMA_MALLET_HAND_GAP + random.uniform(0.0, jitter * 0.5)
+                for p in ports:
+                    self._anima_strum_q.append((when, p, note_msg))
+        now = time.monotonic()
+        hist = [t for t in self._anima_mallet_hist[ch] if now - t <= 8.0][-8:]
+        hist.append(now)
+        self._anima_mallet_hist[ch] = hist
+        gaps = sorted(b - a for a, b in zip(hist, hist[1:]) if b - a > 0.03)
+        if len(gaps) < 3:
+            return
+        space = gaps[len(gaps) // 2]
+        if space < ANIMA_MALLET_MIN_SPACE:
+            return
+        style = ANIMA_MALLET_PCS[self._anima_gm_pc(ch)]
+        damp = 1.0
+        port0 = asc[0][1][0] if asc and asc[0][1] else None
+        if port0 is not None and 0 <= port0 < len(self._anima_slots):
+            sl = self._anima_slots[port0] or {}
+            if ch in (sl.get("chs") or []) and sl.get("pitch_mode") == "power":
+                damp = ANIMA_MALLET_SHIFT_DAMP
+        n = self._anima_mallet_n[ch]
+        self._anima_mallet_n[ch] = n + 1
+        seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+        rng = random.Random((seed << 12) ^ (ch << 8) ^ (n * 2654435761 & 0xFFFFFFFF))
+        roll = rng.random()
+        kind = None
+        for name, odds in ANIMA_MALLET_ODDS[style]:
+            if name == "roll" and space < ANIMA_MALLET_ROLL_SPACE:
+                continue
+            if name in ("roll", "triplet"):
+                odds *= damp
+            if roll < odds:
+                kind = name
+                break
+            roll -= odds
+        if kind is None:
+            return
+        if kind == "double":
+            offs = [space * 0.5]
+        elif kind == "triplet":
+            offs = [space / 3.0, space * 2.0 / 3.0]
+        else:
+            offs, k = [], 1
+            while k * ANIMA_MALLET_ROLL_STEP <= space * ANIMA_MALLET_END:
+                offs.append(k * ANIMA_MALLET_ROLL_STEP)
+                k += 1
+        base = t0 + (len(hands) - 1) * ANIMA_MALLET_HAND_GAP
+        for k, off in enumerate(offs):
+            hand = hands[k % len(hands)]
+            for note_msg, ports in hand:
+                vel = max(1, min(127, int(note_msg.velocity * ANIMA_MALLET_VEL * (ANIMA_MALLET_FADE ** k))))
+                msg = note_msg.copy(velocity=vel)
+                for p in ports:
+                    self._anima_mallet_q.append([base + off, p, msg, ch, False])
+        self._anima_feedback(
+            "mallet", f"ch{ch + 1} {kind} x{len(offs)} ({'chord' if len(asc) > 1 else 'note'})"
+        )
+
+    def _anima_mallet_space(self, ch: int) -> float:
+        """The mallet part's usual gap between notes (median of recent strokes), or 0."""
+        hist = self._anima_mallet_hist[ch & 0x0F]
+        gaps = sorted(b - a for a, b in zip(hist, hist[1:]) if b - a > 0.03)
+        return gaps[len(gaps) // 2] if len(gaps) >= 3 else 0.0
+
+    def _anima_efx_dly_pulse(self, chs) -> tuple:
+        """(seconds, mallet?) that a delay insert's taps are timed from.
+
+        A mallet owner with a known spacing gives that spacing: the delay's
+        longest tap is then set to land on the part's next note. Otherwise the
+        song's beat.
+        """
+        for c in chs or []:
+            if self._anima_gm_pc(c) in ANIMA_MALLET_PCS:
+                sp = self._anima_mallet_space(c)
+                if sp >= ANIMA_MALLET_MIN_SPACE:
+                    return sp, True
+        return self._anima_beat_sec(), False
+
+    def _anima_mallet_drain(self) -> None:
+        """Fire due mallet strokes. Re-strike a key the file still holds (off + on,
+        the file's off ends it); otherwise play a short stroke with its own off.
+        A stroke on a key one of ours still sounds on ends that one first, so a
+        key never has two note-ons for one note-off (0.19.062)."""
+        if not self._anima_mallet_q:
+            return
+        now = time.monotonic()
+        due = [it for it in self._anima_mallet_q if it[0] <= now]
+        rest = [it for it in self._anima_mallet_q if it[0] > now]
+        due.sort(key=lambda it: (it[0], 0 if it[4] else 1))   # own offs first
+        while due:
+            item = due.pop(0)
+            when, port, msg, ch, own_off = item
+            if own_off:
+                self._send_routed(port, msg)
+                self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+                continue
+            key = (ch, msg.note)
+            off = mido.Message("note_off", channel=ch, note=msg.note, velocity=0)
+            info = self.active.get(key)
+            if info is not None and info.get("strum_pending"):
+                # The file's own note-on for this key is still in the strum queue:
+                # re-striking now would put an off before it and leave two ons
+                # for one off (a hanging voice). Wait for it to go out first
+                # (a stroke that waited this long has lost its place: drop it).
+                if now - when < ANIMA_MALLET_WAIT_MAX:
+                    rest.append(item)
+                continue
+            if info is not None:
+                self._send_routed(port, off)
+                self._send_routed(port, msg)
+                continue
+            prev = next(
+                (it for it in due + rest
+                 if it[4] and it[1] == port and it[3] == ch and it[2].note == msg.note),
+                None,
+            )
+            if prev is not None:                      # our last stroke still rings
+                (due if prev in due else rest).remove(prev)
+                self._send_routed(port, prev[2])
+                self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+            self._send_routed(port, msg)
+            self.voice_counts[port] += 1
+            rest.append([now + ANIMA_MALLET_LEN, port, off, ch, True])
+        self._anima_mallet_q = rest
+
+    def _anima_mallet_cancel(self, ch: int) -> None:
+        """The part plays again: drop its pending strokes and end the sounding ones now."""
+        if not self._anima_mallet_q:
+            return
+        keep = []
+        for item in self._anima_mallet_q:
+            when, port, msg, c, own_off = item
+            if c != ch:
+                keep.append(item)
+            elif own_off:
+                self._send_routed(port, msg)
+                self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+        self._anima_mallet_q = keep
+
     def _anima_strum_drain(self) -> None:
         if self.anima:
             self._anima_foley_tick()
+        self._anima_strum_q_drain()
+        if self.anima:
+            # After the strum queue: a mallet stroke due in the same pass as the
+            # note it re-strikes must find that note already sounding (0.19.062).
+            self._anima_mallet_drain()
+
+    def _anima_strum_q_drain(self) -> None:
         if not self._anima_strum_q:
             return
         now = time.monotonic()
@@ -4682,14 +10473,20 @@ class Duality:
         self._anima_strum_q = keep
 
     def _anima_strum_cancel(self, ch: int, note: int) -> bool:
-        """Drop queued/buffered note-ons for this key. True if an on never left."""
-        dropped = False
+        """Note-off arrived while the on was still in the strum queue.
+
+        Ghost / 1-tick backbeats die if we drop the on. Fire any pending
+        on immediately and return False so the off still goes out.
+        """
+        fired = False
         buf = self._anima_strum_buf[ch]
         if buf and buf.get("items"):
             keep = []
             for note_msg, ports in buf["items"]:
                 if note_msg.note == note:
-                    dropped = True
+                    for p in ports:
+                        self._send_routed(p, note_msg)
+                    fired = True
                 else:
                     keep.append((note_msg, ports))
             buf["items"] = keep
@@ -4703,11 +10500,15 @@ class Duality:
                 and msg.note == note
                 and msg.velocity > 0
             ):
-                dropped = True
+                self._send_routed(port, msg)
+                info = self.active.get((ch, note))
+                if info:
+                    info["strum_pending"] = False
+                fired = True
                 continue
             keep_q.append((when, port, msg))
         self._anima_strum_q = keep_q
-        return dropped
+        return False
 
     def _anima_tick(self) -> None:
         """Hold-detect + joystick-style ramps for CC1 / CC11."""
@@ -4736,6 +10537,8 @@ class Duality:
             cat = self._anima_category(ch)
             if cat not in ANIMA_MOD_CATS:
                 continue
+            if self._anima_ch_lfo_insert(ch):
+                continue
             if cat in ("brass", "wind"):
                 if self._anima_mt32_mode():
                     held_need, mod_level = ANIMA_MOD_HELD_SEC_MT32, ANIMA_MOD_LEVEL_WIND
@@ -4757,6 +10560,65 @@ class Duality:
                 status=True,
             )
 
+        # --- held-chord shapes (swell / fp / sfz→cres). No messa. ---
+        for ch in range(16):
+            if not any(k[0] == ch for k in self.active):
+                continue
+            if time.monotonic() - self._anima_file_cc11_t[ch] < ANIMA_FILE_CC11_HOLD:
+                continue
+            cat = self._anima_category(ch)
+            if cat not in ANIMA_EXPR_SHAPE_CATS:
+                continue
+            if self._anima_last_dur[ch] < ANIMA_STAB_SEC and self._anima_expr_shape[ch] is None:
+                continue
+            hold = 0.0
+            oldest = None
+            for (c, _n), info in self.active.items():
+                if c != ch:
+                    continue
+                t0 = info.get("time", now)
+                oldest = t0 if oldest is None else min(oldest, t0)
+            if oldest is not None:
+                hold = now - oldest
+            shape = self._anima_expr_shape[ch]
+            if shape is None:
+                if hold < ANIMA_EXPR_SHAPE_HOLD:
+                    continue
+                seed = int(self._anima_ensure_efx_seed()) & 0xFFFF
+                seed = (seed + ch * 19) & 0xFFFF
+                if getattr(self, "anima_game", False):
+                    seed = (seed + int(self._anima_scene_salt() or 0)) & 0xFFFF
+                if cat == "brass":
+                    shape = "swell"  # fp/sfz dunked muted horns
+                else:
+                    shape = ANIMA_EXPR_SHAPE_NAMES[seed % len(ANIMA_EXPR_SHAPE_NAMES)]
+                self._anima_expr_shape[ch] = shape
+                self._anima_expr_shape_t[ch] = now
+                peak = self._anima_expr_peak[ch] or ANIMA_EXPR_DEFAULT
+                dip = max(ANIMA_EXPR_FLOOR, peak - 12)
+                if shape == "swell":
+                    start = max(ANIMA_EXPR_FLOOR, peak - 10)
+                    self._anima_cc11_cur[ch] = min(self._anima_cc11_cur[ch], start)
+                    self._anima_cc11_tgt[ch] = peak
+                elif shape == "fp":
+                    self._anima_cc11_cur[ch] = peak
+                    self._anima_cc11_tgt[ch] = dip
+                else:  # sfz → cres
+                    self._anima_cc11_cur[ch] = peak
+                    self._anima_cc11_tgt[ch] = dip
+                self._anima_cc11_own[ch] = True
+                self._anima_stats["expr"] += 1
+                self._anima_feedback(
+                    "expr-shape",
+                    f"ch{ch + 1} {cat} {shape} peak {peak}",
+                    status=True,
+                )
+            elif shape == "sfz":
+                if now - self._anima_expr_shape_t[ch] >= ANIMA_EXPR_SHAPE_FP_DIP:
+                    peak = self._anima_expr_peak[ch] or ANIMA_EXPR_DEFAULT
+                    if self._anima_cc11_tgt[ch] < peak:
+                        self._anima_cc11_tgt[ch] = peak
+
         # --- idle: return wheels to rest ---
         active_ch = {k[0] for k in self.active}
         for ch in range(16):
@@ -4772,6 +10634,8 @@ class Duality:
             if self._anima_cc11_own[ch] and self._anima_cc11_tgt[ch] != ANIMA_EXPR_DEFAULT:
                 if now - self._anima_file_cc11_t[ch] >= ANIMA_FILE_CC11_HOLD:
                     self._anima_cc11_tgt[ch] = ANIMA_EXPR_DEFAULT
+                    self._anima_expr_phrase[ch] = False
+                    self._anima_expr_shape[ch] = None
 
         # --- ramp toward targets ---
         for ch in range(16):
@@ -4789,6 +10653,7 @@ class Duality:
                     if nxt == tgt:
                         if tgt == 0:
                             self._anima_mod_ch[ch] = False
+                            self._anima_mod_clear(ch)   # units the ramp skipped
                             self._anima_feedback("mod-rest", f"ch{ch + 1} CC1=0", status=False)
                         else:
                             self._anima_feedback("mod", f"ch{ch + 1} CC1={nxt}", status=False)
@@ -4812,13 +10677,20 @@ class Duality:
                         and ch not in active_ch
                     ):
                         self._anima_cc11_own[ch] = False
+                        self._anima_expr_phrase[ch] = False
+                        self._anima_expr_shape[ch] = None
                         self._anima_feedback("expr-rest", f"ch{ch + 1} CC11=127", status=False)
 
     def _thin_high_rate(self, msg: mido.Message) -> bool:
         """True = drop this message (too soon after the last of its kind)."""
+        if self.n_ports <= 1:
+            return False
         kind = None
         settle = False
         if msg.type == "pitchwheel":
+            # 88Pro leads in YS4-style files use small scoops; do not thin them.
+            if any(self._gs_canvas_class(tags) == "88pro" for tags in self.out_formats):
+                return False
             kind = "pw"
             settle = msg.pitch == 0
         elif msg.type == "aftertouch":
@@ -4877,6 +10749,8 @@ class Duality:
         self._rec_in = []
         self._rec_out = [[] for _ in range(self.n_ports)]
         self._rec_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        # One log per take, named like its IN/OUT files.
+        self._log_rotate(self._rec_stamp, f"take {self._rec_stamp}")
         self._set_status(f"Recording ON ({self._rec_stamp})", duration=3.0)
         self._log_line(f"RECORD start {self._rec_stamp} ({reason})")
 
@@ -4936,21 +10810,14 @@ class Duality:
         return track
 
     def _record_write_file(self, events, name: str):
-        """Type-1 SMF: conductor + one track per MIDI channel + SysEx."""
+        """Type-1 SMF: tempo + one chronological track (SysEx interleaved).
+
+        Per-channel tracks left SysEx on a dead last track; some players
+        (and 88emu via those players) then replay a different stream than live.
+        """
         mid = mido.MidiFile(type=1, ticks_per_beat=480)
         mid.tracks.append(self._record_fill_track([], name[:32], tempo=True))
-        buckets = [[] for _ in range(16)]
-        other = []
-        for t, msg in events:
-            ch = getattr(msg, "channel", None)
-            if ch is None:
-                other.append((t, msg))
-            else:
-                buckets[int(ch) & 0x0F].append((t, msg))
-        for ch in range(16):
-            mid.tracks.append(self._record_fill_track(buckets[ch], f"Ch{ch + 1}"))
-        if other:
-            mid.tracks.append(self._record_fill_track(other, "SysEx"))
+        mid.tracks.append(self._record_fill_track(events, "MIDI"))
         return mid
 
     def _record_stop(self, reason: str = "") -> None:
@@ -4958,7 +10825,7 @@ class Duality:
             return
         self._rec_on = False
         import os
-        dest = self.record_dir or "."
+        dest = self.record_dir or "recordings"
         try:
             os.makedirs(dest, exist_ok=True)
         except Exception:
@@ -4990,16 +10857,80 @@ class Duality:
         self._set_status(f"Recording saved: {names}", duration=5.0)
         self._log_line(f"RECORD stop ({reason}): {names}")
 
+    def _is_init_reset_sysex(self, msg: mido.Message) -> bool:
+        """GS Reset / XG On / GM On — start of a module program dump."""
+        if msg.type != "sysex":
+            return False
+        d = list(msg.data or [])
+        if d and d[0] == 0xF0:
+            d = d[1:]
+        if len(d) >= 7 and d[0] == 0x41 and d[2] == 0x42 and d[3] == 0x12:
+            if d[4] == 0x00 and d[5] == 0x00 and d[6] == 0x7F:
+                return True
+            if d[4] == 0x40 and d[5] == 0x00 and d[6] == 0x7F:
+                return True
+        if len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C and d[3] == 0x00 and d[4] == 0x00 and d[5] == 0x7E:
+            return True
+        if len(d) >= 4 and d[0] == 0x7E and d[2] == 0x09 and d[3] in (0x01, 0x03):
+            return True
+        return False
+
+    def _init_dump_begin(self, why: str = "GS Reset") -> None:
+        if self._init_dump:
+            self._init_dump_last = time.monotonic()
+            return
+        self._init_dump = True
+        self._init_dump_last = time.monotonic()
+        self._init_dump_n = 0
+        self._gs_reset_part_rx()
+        self._log_line(f"INIT dump fast-path ON ({why})")
+        self._set_status(f"Init dump — fast path ({why})", duration=2.0)
+        # File is about to re-program inserts / rhythm. Clear Anima's
+        # previous file-EFX picture so observe during the dump is clean.
+        if self.anima:
+            self._anima_release_efx_lock("reset")
+            self._anima_reset_efx_seed()
+            self._anima_gs_map_home("GS Reset")
+
+    def _init_dump_end(self, why: str) -> None:
+        if not self._init_dump:
+            return
+        n = self._init_dump_n
+        self._init_dump = False
+        self._gs_ys_stack_apply()
+        self._log_line(f"INIT dump fast-path OFF ({why}, {n} msgs)")
+        extra = ""
+        if self.anima and getattr(self, "_anima_file_efx_parts", None):
+            parts = ",".join(str(p + 1) for p in sorted(self._anima_file_efx_parts))
+            extra = f" · file EFX parts {parts}"
+            self._log_line(f"ANIMA efx-file: dump captured parts {parts}")
+        self._set_status(f"Init dump done ({why}, {n}){extra}", duration=2.5)
+
+    def _init_dump_touch(self, msg: mido.Message) -> None:
+        if msg.type in ("sysex", "control_change", "program_change"):
+            self._init_dump_last = time.monotonic()
+            self._init_dump_n += 1
+
     def process(self, msg: mido.Message):
         # Any MIDI activity refreshes format-idle timer
         self.last_midi_time = time.monotonic()
+        # YS4-style dumps pause ~0.9s after GS Reset. 200ms was cutting the window.
+        if self._init_dump and (self.last_midi_time - self._init_dump_last) >= 3.0:
+            self._init_dump_end("idle")
         self._record_in(msg)
+        if self.anima and (msg.type == "clock" or (msg.type == "note_on" and msg.velocity > 0)):
+            self._tempo_feed(msg, self.last_midi_time)
 
         # Drop surplus pitch/AT/mod from the FILE. 190 pitchbends in 100ms
         # cannot fit a 31.25 kbps DIN cable (MS40, many M8U ports). USB
         # modules hide this; hardware does not. Always keep center/zero.
         if self._thin_high_rate(msg):
             return
+
+        if msg.type == "program_change":
+            self._ch_program[msg.channel & 0x0F] = msg.program & 0x7F
+        elif msg.type == "sysex" and list(msg.data[:5]) == [0x41, 0x10, 0x16, 0x12, 0x7F]:
+            self._ch_program = [None] * 16   # LA/PCM all-parameter reset: power-on patches
 
         # Anima bookkeeping (no-ops when disabled aside from the bool check)
         if self.anima:
@@ -5018,9 +10949,23 @@ class Duality:
                 self._voodoo_enqueue(msg)
                 return
 
+        if self._cm64v_parts and msg.type in _CM64V_TYPES:
+            msg = self._cm64v_route(msg)
+            if msg is None:
+                return
+
         if msg.type in ("note_on", "note_off"):
             key = (msg.channel, msg.note)
             is_note_on = msg.type == "note_on" and msg.velocity > 0
+            if is_note_on and self._init_dump:
+                self._init_dump_end("first note")
+            if is_note_on and self.anima:
+                ch = msg.channel & 0x0F
+                pend = self._anima_pend_bank[ch]
+                if pend:
+                    pc = int(self._file_pc[ch]) & 0x7F
+                    if not anima_combo_ok(pend[0], self._anima_file_map(*pend), pc):
+                        self._anima_pend_bank[ch] = None
             now = time.monotonic()
 
             if is_note_on:
@@ -5045,6 +10990,34 @@ class Duality:
                 voodoo_ports = self._voodoo_ports_for_channel(msg.channel)
                 if voodoo_ports is not None:
                     eligible = list(voodoo_ports)
+                # CM-64 pool: a channel on a PCM part plays on that part's unit
+                # (_send_routed hands the note to the part); a layer adds the unit.
+                pcm_layer_port = None
+                if (
+                    self._cm64v_parts and not self._cm64v_seats
+                    and voodoo_ports is not None and (msg.channel & 0x0F) != 9
+                ):
+                    vp = self._cm64v_owned(msg.channel & 0x0F)
+                    if vp is not None:
+                        if self._cm64v_pick(msg.channel & 0x0F)[0] == "pcm":
+                            voodoo_ports = [vp["port"]]
+                            eligible = [vp["port"]]
+                        else:
+                            pcm_layer_port = vp["port"]
+                # CM sound-effect keys exist only on CM units (an MT-32 plays the
+                # Voodoo kit's own sounds there): send them to CM units only.
+                if (
+                    (msg.channel & 0x0F) == 9
+                    and msg.note in CM_VOODOO_SFX
+                    and (self.voodoo_active or self.voodoo_catchup)
+                ):
+                    cm = set(self._cm_port_indices())
+                    pool = eligible if eligible else list(range(self.n_ports))
+                    only = [p for p in pool if p in cm]
+                    if only:
+                        eligible = only
+                        if voodoo_ports is not None:
+                            voodoo_ports = only
 
                 if not eligible:
                     self.drop_count += 1
@@ -5076,6 +11049,30 @@ class Duality:
                     targets = [port]
                 else:
                     ch_n = msg.channel & 0x0F
+                    # CM-64: ch11-16 of an LA stream are the PCM half (CM-32P
+                    # parts) — only a CM-64 out has it; MT-32s ignore them.
+                    pcm_only = None
+                    if (
+                        self._cm64_ports
+                        and ch_n in CM64_PCM_CHANNELS
+                        and not self.voodoo_active
+                        and (self.detected_format == "MT-32" or self._only_mt32_outs())
+                    ):
+                        pcm_only = [p for p in eligible if p in self._cm64_ports]
+                        if pcm_only:
+                            eligible = pcm_only
+                        else:
+                            pcm_only = None
+                    if self.anima:
+                        fchs = getattr(self, "_anima_foley_ch", None) or []
+                        blocked = [
+                            i for i, fc in enumerate(fchs)
+                            if fc == ch_n
+                        ]
+                        if blocked:
+                            filtered = [p for p in eligible if p not in blocked]
+                            if filtered:
+                                eligible = filtered
                     if (
                         self.anima
                         and self._anima_file_efx_t
@@ -5087,61 +11084,149 @@ class Duality:
                     if pin is None and self.anima:
                         self._anima_maybe_efx(ch_n)
                         pin = self._anima_ch_port.get(ch_n)
+                    if pin is None and self.anima:
+                        # Keep a phrase on one box even without an EFX slot.
+                        # Flute/wind lines hopping P1–P4 sounded like cutoffs.
+                        last = self._anima_note_port.get(ch_n)
+                        if last is not None and last in eligible:
+                            lim = self.poly_limits[last] or 1
+                            if self.voice_counts[last] < lim:
+                                pin = last
+                    wet_skip = None
+                    if (
+                        pin is not None
+                        and self.anima
+                        and self._anima_efx_wet_blocked(pin, ch_n)
+                    ):
+                        # Box was just retyped / Part On for this channel:
+                        # this note plays dry elsewhere (not delayed); the
+                        # next phrase lands on the insert.
+                        others = [p for p in eligible if p != pin]
+                        if others:
+                            wet_skip = pin
+                            pin = None
                     if pin is not None and pin in eligible:
                         port = pin
+                    elif wet_skip is not None:
+                        port = self._choose_from_ports(
+                            [p for p in eligible if p != wet_skip], is_chord
+                        )
+                    elif pcm_only is not None:
+                        port = self._choose_from_ports(eligible, is_chord, ch_n)
                     else:
                         port = self._choose_port(is_chord)
                     if port is None:
                         self.drop_count += 1
                         return
                     self.last_chord_port = port
-                    targets = [port]
-
-                # Same key already down (drums often retrigger without an
-                # off). Release the old voice so the extra file-off is not
-                # the one that gets dropped.
-                if key in self.active:
-                    old = self.active.pop(key)
-                    old_ports = old.get("ports") or [old["port"]]
-                    off = mido.Message(
-                        "note_off",
-                        channel=msg.channel,
-                        note=msg.note,
-                        velocity=0,
-                    )
-                    for p in old_ports:
-                        self._send_routed(p, off)
-                        self.voice_counts[p] = max(0, self.voice_counts[p] - 1)
-                    self._last_key_ports[key] = old_ports
                     if self.anima:
-                        self._anima_mod_on.discard(key)
+                        self._anima_note_port[ch_n] = port
+                    targets = [port]
+                if pcm_layer_port is not None and pcm_layer_port not in targets:
+                    targets.append(pcm_layer_port)
+
+                # Same key already down. Drums / rhythm parts often retrigger
+                # without an off — synthesize one so a later file-off is not
+                # the voice that gets dropped. Melodic parts stack in 88emu
+                # when the file overlaps the same pitch; we refcount those
+                # ons so a later off cannot hop to another port.
+                stacking = False
+                if key in self.active:
+                    old = self.active[key]
+                    old_ports = old.get("ports") or [old["port"]]
+                    ch_n = msg.channel & 0x0F
+                    rhythm = ch_n == 9 or (
+                        hasattr(self, "_anima_is_rhythm")
+                        and self._anima_is_rhythm(ch_n)
+                    )
+                    old_w = int(old.get("voices") or 1)
+                    self._last_key_ports[key] = old_ports
+                    if rhythm:
+                        self.active.pop(key, None)
+                        for p in old_ports:
+                            self.voice_counts[p] = max(0, self.voice_counts[p] - old_w)
+                        off = mido.Message(
+                            "note_off",
+                            channel=msg.channel,
+                            note=msg.note,
+                            velocity=0,
+                        )
+                        for p in old_ports:
+                            self._send_routed(p, off)
+                        if self.anima:
+                            self._anima_mod_on.discard(key)
+                            self._anima_ghost_kill(key)
+                    else:
+                        stacking = True
+                        targets = list(old_ports)
+                        self.last_chord_port = targets[0]
 
                 # Anima Phase 1: velocity humanize before send
                 note_msg = msg
                 if self.anima:
                     note_msg = self._anima_humanize_velocity(msg)
+                    # File (or retrigger) now owns this pitch — drop a harmony
+                    # ghost that was sitting on the same channel+note.
+                    self._anima_ghost_release_pitch(note_msg.channel & 0x0F, note_msg.note)
+                    # Harmony is decided now so the hero itself can make room.
+                    self._anima_harm_next = None
+                    self._anima_trait_on(note_msg.channel & 0x0F, note_msg.note)
+                    try:
+                        self._anima_harm_onset(note_msg.channel & 0x0F, note_msg.note)
+                        hplan = self._anima_harm_plan(note_msg.channel & 0x0F, note_msg.note)
+                    except Exception:
+                        hplan = None
+                    hch = note_msg.channel & 0x0F
+                    scale = 1.0
+                    if hplan and hplan.get("hero") and note_msg.velocity > 0:
+                        self._anima_harm_next = ((hch, note_msg.note), hplan)
+                        hplan["vel"] = note_msg.velocity
+                        scale = hplan["hero"]
+                    newv = self._anima_pluck_lift(hch, note_msg.note, note_msg.velocity)
+                    if hch in self._anima_line:
+                        newv = self._anima_line_lift(hch, note_msg.note, note_msg.velocity)
+                        self._anima_line_vel[hch] = newv * self._anima_gain(hch)
+                    elif (
+                        not self._anima_is_rhythm(hch)
+                        and self._anima_category(hch) not in ANIMA_HARM_QUIET_CATS
+                    ):
+                        over = self._anima_line_over(hch, note_msg.note)
+                        if over:
+                            near = abs(note_msg.note - over[2]) <= 2
+                            lvl = note_msg.velocity * self._anima_gain(hch)
+                            if lvl >= over[3] * (ANIMA_LINE_COMPETE_NEAR if near else ANIMA_LINE_COMPETE):
+                                scale = min(scale, ANIMA_LINE_DUCK_NEAR if near else ANIMA_LINE_DUCK)
+                    newv = max(1, min(127, int(newv * scale)))
+                    if newv != note_msg.velocity and note_msg.velocity > 0:
+                        note_msg = note_msg.copy(velocity=newv)
 
-                def _notes_on_port(p: int) -> int:
-                    return sum(
-                        1 for info in self.active.values()
-                        if p in info.get("ports", [info["port"]])
-                    )
-
+                note_ch = note_msg.channel & 0x0F
                 sent_ports = []
+                if self.anima and self._anima_seat_pan:
+                    for port in targets:
+                        self._anima_seat_release(port, note_ch)
                 for port in targets:
-                    real_count = _notes_on_port(port)
-                    if real_count >= self.poly_limits[port]:
-                        self._steal_least_important(port)
-                    real_count = _notes_on_port(port)
-                    if real_count >= self.poly_limits[port]:
+                    # A CM-64 counts (and steals in) the half this channel plays.
+                    # The PCM half needs room for this note's partials (1 or 2).
+                    need = self._cm64_pcm_partials(note_ch) if self._cm64_half(port, note_ch) else 1
+                    real_count, lim = self._port_notes(port, note_ch)
+                    for _ in range(need):
+                        if real_count + need <= lim:
+                            break
+                        self._steal_least_important(port, note_ch)
+                        real_count, lim = self._port_notes(port, note_ch)
+                    if real_count + need > lim:
                         continue  # this port full – try others when broadcasting
                     self._maybe_gs_efx_on_note(port, note_msg)
-                    self.voice_counts[port] += 1
                     sent_ports.append(port)
 
                 if not sent_ports:
                     self.drop_count += 1
                     return
+
+                if self.anima and getattr(self, "_anima_wave_sub_armed", None):
+                    for port in sent_ports:
+                        self._anima_wave_sub_restore(port, note_msg.channel & 0x0F)
 
                 if self.anima and self._anima_should_strum(note_msg.channel & 0x0F):
                     self._anima_strum_push(note_msg.channel & 0x0F, note_msg, sent_ports)
@@ -5152,7 +11237,23 @@ class Duality:
                 if self.anima:
                     for port in sent_ports:
                         self._anima_apply_note_on_cc(port, note_msg)
-                    self._anima_maybe_efx(note_msg.channel & 0x0F)
+                    try:
+                        played = self._anima_efx_family(note_msg.channel & 0x0F)
+                    except Exception:
+                        played = None
+                    if played:
+                        self._anima_fam_played[played] = time.monotonic()
+                        # This box's owner is actively playing. Any note of a
+                        # pinned owner counts: a re-struck held key stays on its
+                        # old port, and that must not make the box look unheard.
+                        hch = note_msg.channel & 0x0F
+                        hp = self._anima_ch_port.get(hch)
+                        if hp is not None and 0 <= hp < len(self._anima_slots):
+                            hsl = self._anima_slots[hp]
+                            if hch in (hsl.get("chs") or []):
+                                hsl["heard_t"] = time.monotonic()
+                    if (note_msg.channel & 0x0F) == 9:
+                        self._anima_drum_last = time.monotonic()
                     self._anima_maybe_foley(
                         note_msg.channel & 0x0F,
                         note_msg.note,
@@ -5161,28 +11262,55 @@ class Duality:
                         list(eligible),
                         sent_ports,
                     )
+                    self._anima_ghost_maybe(note_msg, sent_ports)
 
                 primary = sent_ports[0]
                 self.last_chord_port = primary
-                self.active[key] = {
-                    "port": primary,
-                    "ports": sent_ports,
-                    "time": now,
-                    "velocity": note_msg.velocity,
-                    "strum_pending": bool(
-                        self.anima and self._anima_should_strum(note_msg.channel & 0x0F)
-                    ),
-                }
-                self._last_key_ports[key] = sent_ports
+                w = self._tone_voices(note_msg.channel & 0x0F, primary)
+                for port in sent_ports:
+                    self.voice_counts[port] += w
+                if stacking and key in self.active:
+                    info = self.active[key]
+                    stack = list(info.get("stack") or info.get("ports") or [info["port"]])
+                    stack.extend(sent_ports)
+                    info["stack"] = stack
+                    info["port"] = stack[0]
+                    info["ports"] = list(dict.fromkeys(stack))
+                    info["time"] = now
+                    info["velocity"] = note_msg.velocity
+                    info["voices"] = w
+                    self._last_key_ports[key] = info["ports"]
+                else:
+                    self.active[key] = {
+                        "port": primary,
+                        "ports": sent_ports,
+                        "stack": list(sent_ports),
+                        "time": now,
+                        "velocity": note_msg.velocity,
+                        "voices": w,
+                        "strum_pending": bool(
+                            self.anima and self._anima_should_strum(note_msg.channel & 0x0F)
+                        ),
+                    }
+                    self._last_key_ports[key] = sent_ports
 
                 total_now = sum(self.voice_counts)
                 if total_now > self.peak_voices:
                     self.peak_voices = total_now
             else:
-                # Note Off
-                info = self.active.pop(key, None)
+                # Note Off — one off pops one stacked on on that port.
+                info = self.active.get(key)
                 if info is not None:
-                    ports = info.get("ports") or [info["port"]]
+                    stack = list(info.get("stack") or info.get("ports") or [info["port"]])
+                    port_off = stack.pop(0) if stack else (info.get("port") or 0)
+                    ports = [port_off]
+                    info["stack"] = stack
+                    if stack:
+                        info["port"] = stack[0]
+                        info["ports"] = list(dict.fromkeys(stack))
+                        self._last_key_ports[key] = info["ports"]
+                    else:
+                        self.active.pop(key, None)
                     ch_off = msg.channel & 0x0F
                     # If the matching on is still in the strum queue, drop it
                     # and do not send an off (the synth never saw the on).
@@ -5198,17 +11326,30 @@ class Duality:
                                 self._anima_strum_q.append((now + hold, port, msg))
                             else:
                                 self._send_routed(port, msg)
+                    w = int(info.get("voices") or 1)
                     for port in ports:
-                        self.voice_counts[port] = max(0, self.voice_counts[port] - 1)
+                        self.voice_counts[port] = max(0, self.voice_counts[port] - w)
                     if self.anima:
-                        self._anima_mod_on.discard(key)
+                        still_held = key in self.active
+                        self._anima_line_off[ch_off] = now
+                        self._anima_trait_off(ch_off, msg.note, now)
+                        if not still_held:
+                            self._anima_mod_on.discard(key)
+                            self._anima_ghost_kill(key)
+                            self._anima_family_rehome()
+                        self._anima_ghost_release_pitch(ch_off, msg.note)
                         ch = msg.channel & 0x0F
+                        on_t = self._anima_last_on[ch]
+                        if on_t:
+                            self._anima_last_dur[ch] = time.monotonic() - on_t
                         if self._anima_strum_buf[ch] is not None:
                             self._anima_strum_flush(ch, immediate=True)
                             self._anima_strum_drain()
                         still = any(k[0] == ch for k in self.active)
                         if not still:
                             self._anima_idle_t[ch] = time.monotonic()
+                            self._anima_efx_flush_pending(ch)
+                            self._anima_efx_guitar_upkeep(ch)
                 else:
                     # Unknown off — do not broadcast to every port (that
                     # was leaving phantom offs on the unit that never
@@ -5238,24 +11379,45 @@ class Duality:
 
         # SysEx → detect format, describe it, show in status, and forward
         if msg.type == "sysex":
+            if self._is_init_reset_sysex(msg):
+                self._init_dump_begin("reset")
+                self._gs_reset_part_rx()
+            self._gs_observe_part_dt1(msg)
+            self._init_dump_touch(msg)
             self._voodoo_on_mt32_sysex(msg)
             self._detect_format(msg)
             self._voodoo_maybe_auto()
-            description = self._describe_sysex(msg)
-            self._anima_observe_sysex(msg, description)
-            self._anima_observe_file_efx(msg, description)
-            self._anima_observe_rhythm(msg)
-
-            # Suppress pure noise
-            if description in (
-                "GS SysEx", "SysEx", "GM/Universal SysEx", "XG SysEx", "MT-32 SysEx",
-                "SC-ext SysEx", "SC-ext bulk SysEx",
-            ):
-                # Only show the generic message if history is empty
-                if not self.status_history and not self.status_message:
-                    self._set_status(description, duration=2.5)
+            dump = self._init_dump
+            description = "" if dump else self._describe_sysex(msg)
+            # A bulk dump carries the file's insert + Part EFX assigns packed;
+            # Anima must see them like the plain 40 03 00 / 40 4x 22 messages.
+            bulk = self._gs_bulk_efx_msgs(msg) if self.anima else []
+            if dump:
+                # State only — no describe / status / history. Bytes already
+                # on the wire. Anima needs the file's EFX + rhythm map.
+                if self.anima:
+                    self._anima_observe_file_efx(msg, "", quiet=True)
+                    self._anima_observe_rhythm(msg, quiet=True)
+                    for bm in bulk:
+                        self._anima_observe_file_efx(bm, "", quiet=True)
             else:
-                self._set_status(description, duration=3.5)
+                for bm in bulk:
+                    self._anima_observe_file_efx(bm, "GS EFX (bulk dump)")
+                if description == "GS Reset" or (description and description.startswith("GS Reset")):
+                    self._anima_gs_map_home("GS Reset")
+                self._anima_observe_sysex(msg, description)
+                self._anima_observe_file_efx(msg, description)
+                self._anima_observe_rhythm(msg)
+                # Suppress pure noise
+                if description in (
+                    "GS SysEx", "SysEx", "GM/Universal SysEx", "XG SysEx", "MT-32 SysEx",
+                    "SC-ext SysEx", "SC-ext bulk SysEx",
+                ):
+                    # Only show the generic message if history is empty
+                    if not self.status_history and not self.status_message:
+                        self._set_status(description, duration=2.5)
+                else:
+                    self._set_status(description, duration=3.5)
 
             # Route SysEx: Crucible affinity, Alchemy translate / overflow / fanout
             if self.alchemy_all:
@@ -5286,17 +11448,89 @@ class Duality:
                     targets = [home]
                 elif kind == "part":
                     targets = [home]
+            data = list(msg.data)
+            gm_on = (
+                self.anima
+                and len(data) >= 4
+                and data[0] == 0x7E
+                and data[2] == 0x09
+                and data[3] in (0x01, 0x03)
+            )
+            gs_reset = self._gs_dt1([0x40, 0x00, 0x7F], [0x00]) if gm_on else None
+            xg_on = (
+                mido.Message("sysex", data=[0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00])
+                if gm_on else None
+            )
+            n_gs = n_xg = 0
             for i in targets:
-                self._send_routed(i, msg)
+                tags = {str(x).lower() for x in self.out_formats[i]}
+                if gm_on and tags & {"gs", "gs55", "gs88", "gs88pro", "gs8850", "gs8820", "sc", "sc-8850", "sc8850"}:
+                    self._send_routed(i, gs_reset)
+                    n_gs += 1
+                elif gm_on and tags & {"xg"}:
+                    self._send_routed(i, xg_on)
+                    n_xg += 1
+                else:
+                    # 88Pro vel-offset at 40 1x 16 is Key Shift on 8820/8850
+                    rewritten = None
+                    cls = self._gs_canvas_class(tags)
+                    # Only 8820/8850 rewrite 40 1x 16. 88Pro gets the file unchanged.
+                    if cls == "8850":
+                        rewritten = self._gs_8850_compat(msg, cls=cls)
+                    if rewritten:
+                        for m in rewritten:
+                            self._send_routed(i, m)
+                    else:
+                        self._send_routed(i, msg)
+            if n_gs:
+                self._anima_gs_map_home("GM On → GS Reset")
+                self._anima_feedback(
+                    "tone",
+                    f"GM On → GS Reset ({n_gs} port(s))",
+                    status=True,
+                )
+            if n_xg:
+                self._anima_feedback(
+                    "tone",
+                    f"GM On → XG On ({n_xg} port(s))",
+                    status=True,
+                )
+
             return
 
         # Track common controllers per channel + timestamp
         # Bank select for Alchemy program mapping
+        if msg.type in ("control_change", "program_change"):
+            self._init_dump_touch(msg)
         if msg.type == "control_change":
             if msg.control == 0:
-                self.bank_msb[msg.channel] = msg.value
+                ch = msg.channel & 0x0F
+                prev = self._anima_pend_bank[ch] or (
+                    self.bank_msb[ch], self.bank_lsb[ch]
+                )
+                self._anima_pend_bank[ch] = (msg.value & 0x7F, prev[1])
+                pc = int(self._file_pc[ch]) & 0x7F
+                cc0, cc32 = self._anima_pend_bank[ch]
+                if anima_combo_ok(cc0, self._anima_file_map(cc0, cc32), pc):
+                    self.bank_msb[ch] = cc0
+                    self.bank_lsb[ch] = cc32
+                    self._anima_pend_bank[ch] = None
+                self._anima_seen_cc0[ch] = True
+                self._anima_cm64_restore_pc(msg)
             elif msg.control == 32:
-                self.bank_lsb[msg.channel] = msg.value
+                ch = msg.channel & 0x0F
+                prev = self._anima_pend_bank[ch] or (
+                    self.bank_msb[ch], self.bank_lsb[ch]
+                )
+                self._anima_pend_bank[ch] = (prev[0], msg.value & 0x7F)
+                pc = int(self._file_pc[ch]) & 0x7F
+                cc0, cc32 = self._anima_pend_bank[ch]
+                if anima_combo_ok(cc0, self._anima_file_map(cc0, cc32), pc):
+                    self.bank_msb[ch] = cc0
+                    self.bank_lsb[ch] = cc32
+                    self._anima_pend_bank[ch] = None
+                self._anima_seen_cc32[ch] = True
+                self._anima_cm64_restore_pc(msg)
 
         # Input-side log for patch path (OUT lines still show per-port result)
         if self._log_file is not None and msg.type in (
@@ -5311,6 +11545,25 @@ class Duality:
         if msg.type == "control_change":
             ch = msg.channel
             if msg.control == 7:       # Volume
+                self._file_vol[ch] = msg.value
+                if self._anima_organ_rotary_ch(ch):
+                    lifted = self._anima_organ_vol_gain(msg.value)
+                    if lifted != msg.value:
+                        try:
+                            msg = msg.copy(value=lifted)
+                        except Exception:
+                            msg = mido.Message(
+                                "control_change", channel=ch, control=7, value=lifted
+                            )
+                        self._anima_feedback(
+                            "efx",
+                            f"ch{ch + 1} organ CC7 {self._file_vol[ch]}→{lifted} (file)",
+                            status=False,
+                        )
+                elif self._anima_wah_gtr_ch(ch):
+                    lifted = self._anima_wah_gtr_vol_gain(msg.value)
+                    if lifted != msg.value:
+                        msg = mido.Message("control_change", channel=ch, control=7, value=lifted)
                 self.vol[ch] = msg.value
                 self.vol_time[ch] = now
             elif msg.control == 10:    # Pan
@@ -5361,14 +11614,80 @@ class Duality:
         else:
             targets = list(range(self.n_ports))
 
+        # File CC00/CC32: send now if the combo exists on the sounding PC.
+        # Otherwise hold — Piano+CC00=32 after GS Reset is empty until the
+        # real PC arrives and the file_banked path emits LSB+MSB+PC.
+        if (
+            self.anima
+            and msg.type == "control_change"
+            and msg.control in (0, 32)
+            and not self._anima_is_rhythm(msg.channel)
+        ):
+            ch = msg.channel & 0x0F
+            pc = int(self._file_pc[ch]) & 0x7F
+            pend = self._anima_pend_bank[ch]
+            if pend:
+                cc0, cc32 = pend
+            else:
+                cc0 = int(self.bank_msb[ch]) & 0x7F
+                cc32 = int(self.bank_lsb[ch]) & 0x7F
+            ok = anima_combo_ok(cc0, self._anima_file_map(cc0, cc32), pc)
+            for i in targets:
+                if not self._should_send(i, msg):
+                    continue
+                if self._anima_port_8850(i) and not ok:
+                    continue
+                self._send_routed(i, msg)
+            return
+
         file_banked = False
         if msg.type == "program_change":
             ch = msg.channel & 0x0F
-            msb = int(self.bank_msb[ch]) & 0x7F
-            lsb = int(self.bank_lsb[ch]) & 0x7F
-            file_banked = (msb != 0 or lsb != 0)
+            pend = getattr(self, "_anima_pend_bank", [None]*16)[ch]
+            msb = int((pend[0] if pend else self.bank_msb[ch])) & 0x7F
+            lsb = int((pend[1] if pend else self.bank_lsb[ch])) & 0x7F
+            fmt = (getattr(self, "detected_format", None) or "").upper()
+            gs = fmt in ("GS", "SC", "SC-8850")
+            seen = bool(self._anima_seen_cc0[ch] or self._anima_seen_cc32[ch])
+            # File named the bank (including 0/0 after GS Reset, or map 1–3).
+            file_banked = (msb != 0) or (lsb in (1, 2, 3)) or (gs and seen)
+        # GM scene pads often send CC0=0 without a new PC. Forwarding that
+        # wipes the 8850 variation Anima just chose. Hold the slot.
+        if (
+            self.anima
+            and msg.type == "control_change"
+            and msg.control in (0, 32)
+            and msg.value == 0
+        ):
+            ch = msg.channel & 0x0F
+            slot = self._anima_tone_slot[ch]
+            if slot and slot[0] != 0 and not self._anima_is_rhythm(ch):
+                for i in targets:
+                    if not self._should_send(i, msg):
+                        continue
+                    if not self._anima_port_8850(i):
+                        self._send_routed(i, msg)
+                        continue
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=slot[1]))
+                    self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=slot[0]))
+                self._anima_feedback(
+                    "tone",
+                    f"hold ch{ch + 1} CC00={slot[0]:03d} (file CC0=0 ignored)",
+                    status=False,
+                )
+                return
+
         for i in targets:
             if not self._should_send(i, msg):
+                continue
+            if (
+                self.anima
+                and msg.type == "control_change"
+                and msg.control in (7, 10, 11)
+                and i < len(getattr(self, "_anima_foley_ch", []) or [])
+                and self._anima_foley_ch[i] is not None
+                and (msg.channel & 0x0F) == self._anima_foley_ch[i]
+            ):
                 continue
             if (
                 self.anima
@@ -5377,16 +11696,67 @@ class Duality:
                 and not self._anima_is_rhythm(msg.channel)
                 and self._anima_port_8850(i)
             ):
-                var = self._anima_tone_pick(msg.channel & 0x0F, msg.program)
                 ch = msg.channel & 0x0F
-                # Always emit bank, including 0/0, so a prior 008/016 cannot stick.
-                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=var))
-                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=0))
-                self._send_routed(i, mido.Message("program_change", channel=ch, program=msg.program))
+                slot = self._anima_tone_pick(ch, msg.program)
+                adapted = self._anima_adapt_tone_slot(i, slot)
+                if not adapted:
+                    continue
+                cc0, cc32, pc_out = adapted
+                # Map first. 126/127 is only valid after SC-55 (CC32=1) on 8850.
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                self._send_routed(i, mido.Message("program_change", channel=ch, program=pc_out))
                 self._anima_feedback(
                     "tone",
-                    f"tone ch{ch + 1} PC{msg.program + 1} CC00={var:03d}",
+                    f"tone ch{ch + 1} GM{msg.program + 1} → CC00={cc0:03d} map{cc32} PC{pc_out + 1}",
                     status=True,
+                )
+                continue
+            if (
+                self.anima
+                and msg.type == "program_change"
+                and file_banked
+                and not self._anima_is_rhythm(msg.channel)
+                and self._anima_port_8850(i)
+            ):
+                ch = msg.channel & 0x0F
+                pend = self._anima_pend_bank[ch]
+                if pend:
+                    cc0, raw32 = pend
+                    self._anima_pend_bank[ch] = None
+                else:
+                    cc0 = int(self.bank_msb[ch]) & 0x7F
+                    raw32 = int(self.bank_lsb[ch]) & 0x7F
+                cc32 = self._anima_file_map(cc0, raw32)
+                pc = msg.program & 0x7F
+                emit0, emit32 = cc0, cc32
+                if not anima_combo_ok(cc0, cc32, pc):
+                    # Hole for THIS pc only. Keep the file bank pending so
+                    # the next PC (Strings+32) is still honored.
+                    emit0, emit32 = 0, 0
+                    self._anima_pend_bank[ch] = (cc0, raw32)
+                    self._anima_feedback(
+                        "tone",
+                        f"file ch{ch + 1} empty combo → capital PC{pc + 1} (bank {cc0} held)",
+                        status=False,
+                    )
+                else:
+                    self.bank_msb[ch] = cc0
+                    self.bank_lsb[ch] = cc32
+                    self._anima_pend_bank[ch] = None
+                adapted = self._anima_adapt_tone_slot(i, (emit0, emit32, pc))
+                if not adapted:
+                    continue
+                cc0, cc32, pc = adapted
+                self._anima_cm64[ch] = False
+                self._anima_tone_slot[ch] = None
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=32, value=cc32))
+                self._send_routed(i, mido.Message("control_change", channel=ch, control=0, value=cc0))
+                self._send_routed(i, mido.Message("program_change", channel=ch, program=pc))
+                self._anima_feedback(
+                    "tone",
+                    f"file ch{ch + 1} CC00={cc0:03d} map{cc32} PC{pc + 1}",
+                    status=False,
                 )
                 continue
             self._send_routed(i, msg)
@@ -5420,8 +11790,40 @@ class Duality:
                     )
                 except Exception:
                     break  # port is gone; skip remaining channels
+        self._anima_ghosts = {}
+        # CM-64 PCM parts were silenced and reset with the rest (CC123 / CC121).
+        self._cm64v_active = {}
+        for part in self._cm64v_parts:
+            part["primed"] = False
+        self._anima_ghost_sound = {}
+        self._anima_wave_sub_armed = set()
+        self._anima_wave_sub_saved = {}
+        self._anima_fam_ghost = {}
+        self._anima_harm_next = None
+        self._anima_harm_hero = {}
+        self._anima_harm_up = {}
+        self._anima_harm_recent = {}
+        self._anima_harm_chord_t = {}
+        self._anima_line_hist = {}
+        self._anima_line_off = {}
+        self._anima_line_vel = {}
+        self._anima_harm_ctx = []
+        for (sp, sc) in list((getattr(self, "_anima_seat_pan", None) or {}).keys()):
+            try:   # a seat unit gets the file's pan back (CC121 leaves pan alone)
+                fp = int(self.pan[sc]) if self.pan[sc] is not None else 64
+                self.outs[sp].send(mido.Message("control_change", channel=sc, control=10, value=fp))
+            except Exception:
+                pass
+        self._anima_seat_pan = {}
+        self._anima_seat_fam = {}
+        self._anima_line = {}
+        self._anima_bass_sub_choice = None
         self.active.clear()
         self.voice_counts = [0] * self.n_ports
+        self._anima_settle_q = []
+        self._anima_settle_on = {}
+        self._anima_efx_settle = [0.0] * self.n_ports
+        self._anima_settle_bypass = False
         self.last_chord_port = None
         self.last_sent.clear()
         self._send_queue.clear()
@@ -5434,13 +11836,49 @@ class Duality:
     # Status panel
     # ------------------------------------------------------------------
     def _make_status_panel(self) -> Panel:
+        """The live panel. While a multi-port song's lanes play, the meters show each
+        out's lane and the channel grid shows the main port's lane."""
+        if not self._lanes:
+            return self._status_panel_body()
+        names = ("voice_counts", "active", "_anima_ghosts", "last_note_time", "last_activity_time",
+                 "current_chord_size", "peak_chord_size", "peak_voices", "detected_format",
+                 "drop_count", "steal_count", "filtered_count")
+        keep = {k: getattr(self, k) for k in names}
+        lanes = self._lanes
+        main = lanes.get(self._player_main_port) or next(iter(lanes.values()))
+        try:
+            counts = [0] * self.n_ports
+            for p, lane in lanes.items():
+                for j, i in enumerate(self._lane_outs.get(p, [])):
+                    if j < len(lane.voice_counts):
+                        counts[i] = lane.voice_counts[j]
+            self.voice_counts = counts
+            for k in ("active", "_anima_ghosts", "last_note_time", "last_activity_time",
+                      "current_chord_size", "peak_chord_size", "detected_format"):
+                setattr(self, k, getattr(main, k))
+            for k in ("peak_voices", "drop_count", "steal_count", "filtered_count"):
+                setattr(self, k, keep[k] + sum(getattr(l, k) for l in lanes.values()))
+            return self._status_panel_body()
+        finally:
+            for k, v in keep.items():
+                setattr(self, k, v)
+
+    def _status_panel_body(self) -> Panel:
         counts = self.voice_counts
         total = sum(counts)
 
-        # Notes per MIDI channel (1–16)
+        # Voices per MIDI channel (8850 weight when known, else 1)
         channel_counts = [0] * 16
-        for (ch, note) in self.active:
-            channel_counts[ch] += 1
+        for key, info in self.active.items():
+            ch = key[0]
+            w = int(info.get("voices") or 1)
+            channel_counts[ch] += w
+        for key, ghosts in (self._anima_ghosts or {}).items():
+            for item in ghosts:
+                gch = item[1]
+                w = item[3] if len(item) > 3 else 1
+                if 0 <= gch < 16:
+                    channel_counts[gch] += int(w or 1)
 
         # Dynamic bar width – make bars longer so they align better with Channel Activity
         term_width = console.width or 80
@@ -5498,7 +11936,11 @@ class Duality:
             "XG": "bright_yellow",
             "MT-32": "bright_red",
         }
-        if self.detected_format:
+        if self.voodoo_active and self._cm64v_parts:
+            # CM-64 enhanced Voodoo: the LA half plays the GM bank, the PCM half its parts
+            label = "[CM-64 LA+PCM*]" if self.format_locked else "[CM-64 LA+PCM]"
+            format_badge = f" [bold bright_red]{label}[/]"
+        elif self.detected_format:
             col = colours.get(self.detected_format, "white")
             # [GS] or [GS*] when locked (* = format lock via L)
             core = self.detected_format
@@ -5699,7 +12141,13 @@ class Duality:
         else:
             badge_scpop = " " * 8  # len(" [SCPOP]")
         if self.anima:
-            badge_anima = " [bold magenta][Anima][/]"
+            seed = self._anima_ensure_efx_seed() if self._anima_efx_seed is None else self._anima_efx_seed
+            if seed is None:
+                badge_anima = " [bold magenta][Anima][/]"
+            elif self._anima_seed_locked:
+                badge_anima = f" [bold magenta][Anima {seed:04X}*][/]"
+            else:
+                badge_anima = f" [bold magenta][Anima {seed:04X}][/]"
         else:
             badge_anima = ""
         if self.voodoo_loading:
@@ -5769,7 +12217,13 @@ class Duality:
             )
             left_column.add_row(detail_row)
 
-            # 4. Labelled status message (can wrap)
+            # 4. The file player, when there is one
+            if self.player is not None:
+                left_column.add_row(Text.from_markup(
+                    f"[cyan]Player:[/]           {escape(self._player_status_text())}"
+                ))
+
+            # 5. Labelled status message (can wrap)
             if self.status_message and time.monotonic() < self.status_message_time:
                 status_row = Text.from_markup(
                     f"[cyan]Status Message:[/]   [bold yellow]{escape(self.status_message)}[/]"
@@ -5779,12 +12233,12 @@ class Duality:
                 self.status_message = ""
             left_column.add_row(status_row)
 
-            # History panel – height 10 matches the taller left column (+1 for detail row)
+            # History panel – height 10 matches the taller left column (+1 for detail row, +1 player)
             history_panel = Panel(
                 history_text if str(history_text).strip() else Text(" "),
                 border_style="bright_blue",
                 padding=(0, 0),
-                height=10,
+                height=10 + (1 if self.player is not None else 0),
                 title="[dim]Recent Status Messages[/]",
                 title_align="left",
             )
@@ -5797,7 +12251,11 @@ class Duality:
             content = Group(header, table, side_by_side)
         else:
             # Narrow terminal – original stacked layout
-            content = Group(header, table, channel_table, footer, status_line)
+            if self.player is not None:
+                player_line = Text.from_markup(f"[cyan]Player:[/] {escape(self._player_status_text())}")
+                content = Group(header, table, channel_table, footer, player_line, status_line)
+            else:
+                content = Group(header, table, channel_table, footer, status_line)
 
         return Panel(
             content,
@@ -5809,6 +12267,10 @@ class Duality:
     def _handle_hotkey(self, ch: str) -> None:
         """Dispatch a single hotkey character."""
         c = ch.lower()
+        if self._lanes and c in LANE_HOTKEYS:
+            # A multi-port song plays on lanes: the routing keys act on them too
+            for lane in list(self._lanes.values()):
+                lane._handle_hotkey(ch)
         if c == "f":
             self._clear_format("hotkey")
         elif c == "g":
@@ -5863,13 +12325,15 @@ class Duality:
             self._clear_log()
         elif c == "l":
             self._toggle_format_lock()
+        elif c == "s":
+            self._anima_toggle_seed_lock()
         elif c == "w":
             if self._rec_on or self._rec_wanted:
                 self._rec_wanted = False
                 self._record_stop("hotkey W")
             else:
                 if not self.record_dir:
-                    self.record_dir = "."
+                    self.record_dir = "recordings"
                 self._rec_wanted = True
                 self._record_start("hotkey W")
         elif c == "a":
@@ -5884,6 +12348,7 @@ class Duality:
                 self.anima_game = False
             self._anima_release_efx_lock("Anima toggle")
             if not self.anima:
+                self._anima_ghost_kill_all()
                 # Park wheels we were driving so A/B compare is clean
                 for ch in range(16):
                     if self._anima_mod_ch[ch] or self._anima_cc1_cur[ch]:
@@ -5901,6 +12366,9 @@ class Duality:
                 mode = "game" if self.anima_game else "normal"
                 self._set_status(f"Anima ON ({mode})", duration=2.5)
                 self._log_line(f"ANIMA on {mode} (hotkey A)")
+        elif c in (" ", "n", "z", "t") and self.player is not None:
+            # File player: Space pause / play, N next, Z back (start of song, or the one before), T stop
+            self._player_key({" ": "toggle", "n": "next", "z": "prev", "t": "stop"}[c])
         elif c == "q":
             self._set_status("Quit requested – panicking and exiting…", duration=2.0)
             self.panic(reason="hotkey Q")
@@ -5964,6 +12432,252 @@ class Duality:
             pass
 
     # ------------------------------------------------------------------
+    # File player
+    def _player_send(self, port: int, msg) -> None:
+        """A player event into Duality. A single-port song takes the live-input path;
+        a multi-port song's events go to their port's lane (dropped ports are skipped)."""
+        if self._lanes:
+            lane = self._lanes.get(port)
+            if lane is not None:
+                lane.process(msg)
+            if port == self._player_main_port:
+                if msg.type == "sysex" and player_system_sysex(msg.data):
+                    # One device's ports share its system section (reset, reverb / chorus,
+                    # master volume): a lane without the file's own copy gets port A's.
+                    for p, other in self._lanes.items():
+                        if p != port:
+                            other.process(msg)
+                self._record_in(msg)            # the IN take keeps the main port
+            return
+        if port == self._player_main_port:
+            self.process(msg)
+            return
+        if port not in self._player_port_note:
+            self._player_port_note.add(port)
+            self._log_line(f"PLAY  Port {chr(65 + port)} events skipped (no unit for it)")
+
+    def _player_take(self, events) -> bool:
+        for port, msg in events:
+            self._player_send(port, msg)
+        p = self.player
+        if p.session != self._lane_session:
+            # A song began or ended: its lanes go, the new song's are built
+            if self._lanes:
+                self._lanes_stop("song over")
+            self._lane_session = p.session
+            if p.session is not None and p.song is not None:
+                self._lanes_start(p.song)
+        while p.messages:
+            self._set_status(p.messages.pop(0), duration=4.0)
+        while p.logs:
+            self._log_line(p.logs.pop(0))
+        return bool(events)
+
+    def _player_status_text(self) -> str:
+        """The player's line, with the song's ports and their outs when it has lanes."""
+        text = self.player.status(time.monotonic())
+        if self._lanes:
+            parts = []
+            for p, outs in sorted(self._lane_outs.items()):
+                parts.append(f"{chr(65 + p)}:" + "+".join(str(i + 1) for i in outs))
+            text += "  [" + " ".join(parts) + "]"
+        return text
+
+    def _player_tick(self) -> bool:
+        """Send the player's due events. While a Voodoo bank loads (here or on a lane)
+        the song waits."""
+        if self.player is None:
+            return False
+        stall = self.voodoo_loading or any(l.voodoo_loading for l in self._lanes.values())
+        return self._player_take(self.player.tick(time.monotonic(), stall=stall))
+
+    def _player_key(self, key: str) -> None:
+        p = self.player
+        now = time.monotonic()
+        events = {"toggle": p.toggle, "next": p.next, "prev": p.prev, "stop": p.stop}[key](now)
+        self._player_take(events)
+
+    # ------------------------------------------------------------------
+    # Multi-port songs (0.19.066): each port of the song plays on lanes of its own
+    def _lanes_plan(self, song) -> tuple[dict, list]:
+        """Share the outs among the song's ports: every port that can play gets a unit
+        first (A, B, C …), then ports that asked for a number of units get them, then the
+        rest go round in port order. A port's request ("duality: 8850") picks the kind
+        of unit; without one it takes GM-family outs (not LA-only). Returns
+        ({port: [out indices]}, [dropped ports])."""
+        ports = list(song.ports)
+        req = song.requests
+        free = [i for i in range(self.n_ports) if not self._out_offline[i]]
+        taken: set = set()
+        plan = {p: [] for p in ports}
+
+        def kinds(p):
+            """The port's wanted kinds in order of preference; (None,) = any GM-family out."""
+            return req.get(p, (None, None))[0] or (None,)
+
+        def take(p) -> bool:
+            for want in kinds(p):
+                for i in free:
+                    if i not in taken and out_matches(self.out_formats[i], want):
+                        taken.add(i)
+                        plan[p].append(i)
+                        return True
+            return False
+
+        for p in ports:
+            take(p)
+        for p in ports:
+            n = req.get(p, (None, None))[1]
+            while n and len(plan[p]) < n and take(p):
+                pass
+        sharing = [p for p in ports if plan[p] and not req.get(p, (None, None))[1]]
+        while sharing:
+            sharing = [p for p in sharing if take(p)]
+        dropped = [p for p in ports if not plan[p]]
+        # The same units, in blocks: in port order each port takes as many units of each
+        # kind as it got, the first ones in --outs order, so A plays on 1-3 and B on 4-6,
+        # not 1/3/5 and 2/4/6.
+        block = {p: [] for p in ports}
+        used: set = set()
+        for p in ports:
+            for kind in [self.out_formats[i] for i in plan[p]]:
+                for i in free:
+                    if i not in used and self.out_formats[i] == kind:
+                        used.add(i)
+                        block[p].append(i)
+                        break
+        if all(len(block[p]) == len(plan[p]) for p in ports):
+            plan = block
+        return {p: o for p, o in plan.items() if o}, dropped
+
+    def _lanes_start(self, song) -> None:
+        self._player_port_note = set()
+        if len(song.ports) <= 1:
+            self._player_main_port = song.ports[0] if song.ports else 0
+            return
+        plan, dropped = self._lanes_plan(song)
+        self._player_main_port = min(plan) if plan else 0
+        names = lambda outs: ", ".join(self.port_names[i] for i in outs)   # noqa: E731
+        for p in dropped:
+            wants = song.requests.get(p, (None, None))[0]
+            kind = " or ".join(FORMAT_DISPLAY.get(w, w) for w in wants) if wants else "GM-family"
+            self._log_line(f"PLAY  Port {chr(65 + p)} dropped: no free {kind} unit")
+            self._set_status(f"Port {chr(65 + p)} dropped: no free {kind} unit", duration=5.0)
+        if len(plan) <= 1:
+            # One port can play: the router plays it on every out, as for any song
+            return
+        self.panic(reason="multi-port song")   # the router's outs change hands: nothing left sounding
+        for p in sorted(plan):
+            self._lanes[p] = self._lane_make(p, plan[p])
+            self._lane_outs[p] = plan[p]
+        line = " · ".join(f"{chr(65 + p)} → {names(o)}" for p, o in sorted(plan.items()))
+        self._log_line(f"PLAY  Ports: {line}")
+        self._set_status(f"Ports: {line}", duration=6.0)
+
+    def _lane_make(self, port: int, outs: list[int]):
+        """A router for one port of a song, on these outs, with the main router's
+        settings. Its outs are views of the main router's (one send path)."""
+        global console
+        letter = chr(65 + port)
+        main = self
+        index = {self.port_names[i]: i for i in outs}
+
+        def opener(name):
+            return _LaneOut(main, index[name])
+
+        seed = None
+        if self._anima_efx_seed is not None and self._anima_seed_locked:
+            seed = (int(self._anima_efx_seed) + 0x0101 * port) & 0xFFFF
+        saved = console
+        console = Console(file=open(os.devnull, "w"))
+        try:
+            lane = Duality(
+                None, [self.port_names[i] for i in outs], mode=self.mode,
+                poly_limits=[self.poly_limits[i] for i in outs],
+                chord_window_ms=self.chord_window * 1000.0, show_status=False,
+                out_formats=[self.out_formats[i] for i in outs],
+                crucible=self.crucible, crucible_notes=self.crucible_notes,
+                crucible_gm_wide=self.crucible_gm_wide, scpop=self.scpop_forced,
+                sync_delays_ms=[self.sync_delays[i] * 1000.0 for i in outs],
+                strict_format_detection=self.strict_format_detection,
+                voodoo_bank=self.voodoo_bank, voodoo_layout=self.voodoo_layout,
+                cm64_seats=self.cm64_seats, anima=self.anima, anima_seed=seed,
+                anima_game=self.anima_game, opener=opener,
+            )
+        finally:
+            console = saved
+        lane._log_line = lambda text, L=letter: main._log_line(f"[{L}] {text}")
+        lane._set_status = lambda m, duration=5.0, L=letter: main._set_status(f"[{L}] {m}", duration)
+        return lane
+
+    def _lanes_stop(self, reason: str) -> None:
+        """The song's lanes end: they silence their units, and the router takes its
+        outs back knowing nothing of what the lanes left on them."""
+        for p, lane in sorted(self._lanes.items()):
+            try:
+                lane.panic(reason=reason)
+            except Exception as e:
+                self._log_line(f"PLAY  Lane {chr(65 + p)} panic failed: {e}")
+        self._lanes = {}
+        self._lane_outs = {}
+        self._player_main_port = 0
+        self.last_sent.clear()
+        self._tone_port = None
+        self._cc1_port = None
+        if self.anima:
+            self._anima_reset_session("multi-port song over")
+        self._log_line(f"PLAY  Lanes closed ({reason}); the router has every out again")
+
+    def _service_lane(self) -> None:
+        """A lane's share of the loop: queues, Voodoo, Anima and its idle checks."""
+        self._flush_send_queue()
+        if self.voodoo_loading or self.voodoo_catchup:
+            self._voodoo_tick()
+        if self.anima:
+            self._anima_tick()
+        self._check_format_idle()
+        self._check_anima_session_idle()
+
+    def _service(self) -> bool:
+        """One pass of the event loop: live input, the player, queues and idle checks.
+        While a multi-port song's lanes play, live input goes to the main port's lane and
+        the router itself rests (its outs belong to the lanes)."""
+        processed = False
+        for msg in self.inport.iter_pending():
+            lane = self._lanes.get(self._player_main_port) if self._lanes else None
+            (lane or self).process(msg)
+            processed = True
+        if self._player_tick():
+            processed = True
+        for lane in list(self._lanes.values()):
+            lane._service_lane()
+
+        # Drain delayed outbound MIDI (no-op if sync disabled)
+        self._flush_send_queue()
+        self._record_idle_check()
+
+        if not self._lanes:
+            # Voodoo paced bank load / elastic catch-up
+            if self.voodoo_loading or self.voodoo_catchup:
+                self._voodoo_tick()
+
+            # Anima sustained-note mod (idle when disabled / no notes)
+            if self.anima:
+                self._anima_tick()
+
+        # Background reconnect for offline outputs
+        self._retry_offline_ports()
+
+        if not self._lanes:
+            # Format idle clear (60s with no MIDI)
+            self._check_format_idle()
+            self._check_anima_session_idle()
+
+        # Hotkeys (format, mode, quit, …)
+        self._poll_hotkeys()
+        return processed
+
+    # ------------------------------------------------------------------
     def run(self):
         def _signal_handler(sig, frame):
             self.panic(reason="signal")
@@ -5979,33 +12693,8 @@ class Duality:
                 last_ui_update = 0.0
                 try:
                     while True:
-                        # --- Fast MIDI processing path ---
-                        processed = False
-                        for msg in self.inport.iter_pending():
-                            self.process(msg)
-                            processed = True
-
-                        # Drain delayed outbound MIDI (no-op if sync disabled)
-                        self._flush_send_queue()
-                        self._record_idle_check()
-
-                        # Voodoo paced bank load / elastic catch-up
-                        if self.voodoo_loading or self.voodoo_catchup:
-                            self._voodoo_tick()
-
-                        # Anima sustained-note mod (idle when disabled / no notes)
-                        if self.anima:
-                            self._anima_tick()
-
-                        # Background reconnect for offline outputs
-                        self._retry_offline_ports()
-
-                        # Format idle clear (60s with no MIDI)
-                        self._check_format_idle()
-                        self._check_anima_session_idle()
-
-                        # Hotkeys (format, mode, quit, …)
-                        self._poll_hotkeys()
+                        # --- Fast MIDI processing path (live input + the player) ---
+                        processed = self._service()
 
                         # --- UI update only ~8–10 times per second ---
                         now = time.monotonic()
@@ -6025,6 +12714,20 @@ class Duality:
                         console.print(f"[red]Panic also failed: {e2}[/]")
                 finally:
                     self.close()
+        elif self.player is not None:
+            # No status panel, with the player: poll input and the song together
+            try:
+                while True:
+                    if not self._service():
+                        time.sleep(0.001)
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/]")
+                try:
+                    self.panic(reason="exception")
+                except Exception as e2:
+                    console.print(f"[red]Panic also failed: {e2}[/]")
+            finally:
+                self.close()
         else:
             # No status panel – pure low-latency path
             try:
@@ -6131,6 +12834,20 @@ def resolve_port(name: str | None, available: list[str], label: str) -> str:
         sys.exit(1)
     return pick_port(available, f"Select {label}:")
 
+def input_format_dialect(tag) -> str | None:
+    """An --outs tag (after FORMAT_ALIASES) as an input stream dialect: gm, gm2, gs,
+    xg or mt32. GS models (55 / 88 / 88Pro / 8820 / 8850) are gs, CM-32L / CM-64 mt32."""
+    if not tag or tag == "any":
+        return None
+    if tag in ("gm", "gm2", "gs", "xg", "mt32"):
+        return tag
+    if tag.startswith("gs"):
+        return "gs"
+    if tag in LA_TAGS:
+        return "mt32"
+    return None
+
+
 def parse_out_spec(spec: str) -> tuple[str, frozenset]:
     """
     Parse --outs entry: "Port Name", "Port Name:gs", or "Port Name:gs+gm2".
@@ -6170,25 +12887,42 @@ def main():
     )
     parser.add_argument("--version", action="version", version=f"Duality {VERSION}")
     parser.add_argument("--list", action="store_true", help="List available MIDI ports and exit")
-    parser.add_argument("--input", help="MIDI input port name (or partial match)")
+    parser.add_argument(
+        "--input",
+        help="MIDI input port name (or partial match). With --play it is optional: live input and the songs mix.",
+    )
+    parser.add_argument(
+        "--play",
+        nargs="+",
+        metavar="FILE",
+        help=(
+            "Play MIDI files through Duality (files, folders or wildcards, in order; a folder plays "
+            "its .mid/.midi/.kar files by name). Hotkeys: Space pause/play, N next, Z back, T stop."
+        ),
+    )
+    parser.add_argument(
+        "--play-loop",
+        action="store_true",
+        help="With --play: start the playlist again after its last song.",
+    )
     parser.add_argument(
         "--outs",
         nargs="+",
         metavar="PORT",
         help=(
-            "MIDI output port names. Optional format tag: Name:gs|xg|gm|gm2|mt32. "
+            "MIDI output port names. Optional format tag: Name:gs|8850|8820|88pro|880|88|55|xg|gm|gm2|mt32|cm32|cm64. "
             "Minimum 2 ports (or 1 with --alchemy). Example: --outs \"SC:gs\" \"MU:xg\""
         ),
     )
     parser.add_argument(
         "--record",
         nargs="?",
-        const=".",
+        const="recordings",
         default=None,
         metavar="DIR",
         help=(
             "Record Duality input and each output as Standard MIDI Files "
-            "in DIR (default: current directory). Includes SysEx. "
+            "in DIR (default: ./recordings, created if needed). Includes SysEx. "
             "Hotkey W starts/stops a new take."
         ),
     )
@@ -6207,17 +12941,41 @@ def main():
             "Enable Anima in game mode: 4s idle reset (not 30s) and reroll "
             "GS EFX when a burst of program changes looks like a new cue. "
             "Implies --anima. Hotkey A cycles Anima off / normal / game. "
-            "Reroll skipped if --anima-efx-stable."
+            "Reroll skipped while the Anima seed is locked (S / --anima-seed)."
+        ),
+    )
+    def _parse_anima_seed(s: str):
+        # Badge is 4 hex digits. "1665" means 0x1665, not decimal 1665 (0x0681).
+        s = str(s).strip()
+        if s.lower().startswith("0x"):
+            return int(s, 16) & 0xFFFF
+        hexish = s[2:] if s.lower().startswith("0x") else s
+        if 1 <= len(hexish) <= 4 and all(c in "0123456789abcdefABCDEF" for c in hexish):
+            return int(hexish, 16) & 0xFFFF
+        try:
+            return int(s, 10) & 0xFFFF
+        except ValueError:
+            return int(s, 16) & 0xFFFF
+
+    parser.add_argument(
+        "--anima-seed",
+        nargs="?",
+        const=-1,
+        default=None,
+        type=_parse_anima_seed,
+        metavar="4A2F",
+        help=(
+            "Anima seed (same value as the badge). "
+            "Bare --anima-seed locks the first rolled seed. "
+            "--anima-seed 1665  or  4A2F  or  0x4A2F  locks that hex seed "
+            "(X will not reroll). Hotkey S toggles lock. "
+            "Badge shows 4 hex digits, * when locked."
         ),
     )
     parser.add_argument(
         "--anima-efx-stable",
         action="store_true",
-        help=(
-            "Anima GS EFX: pick palette rows only from the current program "
-            "snapshot so the same song always draws the same insertion. "
-            "Default is a per-launch roll (still frozen for the rest of the song)."
-        ),
+        help="Deprecated alias for bare --anima-seed (lock first roll).",
     )
     parser.add_argument(
         "--voodoo",
@@ -6236,6 +12994,16 @@ def main():
         help=(
             "Voodoo bank: mtgm (Roland MT-TO-GM, default) or kq6 "
             "(Sierra King's Quest VI). Hotkey V cycles while running."
+        ),
+    )
+    parser.add_argument(
+        "--cm64-seats",
+        default="live",
+        choices=("live", "fixed"),
+        help=(
+            "Voodoo on a single CM-64: live (default) moves each channel to the LA or PCM "
+            "half its program wants at each program change; fixed keeps the PCM parts on "
+            "ch 9 and 11-15 (MT-TO-GM)."
         ),
     )
     parser.add_argument(
@@ -6280,11 +13048,25 @@ def main():
         action="store_true",
         help="With --crucible: also send GM/GM2 streams to gs and xg ports",
     )
+    def _parse_input_format(v: str) -> str:
+        # Same names as the --outs tags; a device tag means its stream dialect
+        # (8850 / 88pro / 55 ... → gs, cm32 / cm64 → mt32)
+        tag = FORMAT_ALIASES.get(str(v).strip().lower())
+        dialect = input_format_dialect(tag)
+        if dialect is None:
+            valid = ", ".join(k for k in FORMAT_ALIASES if k != "any")
+            raise argparse.ArgumentTypeError(f"unknown format {v!r} (valid: {valid})")
+        return dialect
+
     parser.add_argument(
         "--input-format",
-        choices=["gm", "gm2", "gs", "xg", "mt32"],
+        type=_parse_input_format,
         default=None,
-        help="Assume this stream format until SysEx proves otherwise",
+        metavar="FORMAT",
+        help=(
+            "Assume this stream format until SysEx proves otherwise: gm, gm2, gs, xg, mt32, or any "
+            "--outs tag (8850, 8820, 88pro, 88, 55, scva, cm32, cm64, ...; a GS model means gs, a CM means mt32)"
+        ),
     )
     parser.add_argument(
         "--scpop",
@@ -6341,23 +13123,24 @@ def main():
     parser.add_argument(
         "--log",
         nargs="?",
-        const="duality.log",
+        const=os.path.join("logs", "duality-{stamp}.log"),
         default=None,
         metavar="PATH",
         help=(
             "Append status, Alchemy, bank/PC, and RPN/NRPN events to a log file "
-            "(default path: duality.log). See also --log-verbose."
+            "(default: logs/duality-<date>-<time>.log, one per run, and one per take with --record; "
+            "a path with {stamp} works the same, a plain path is appended to). See also --log-verbose."
         ),
     )
     parser.add_argument(
         "--log-verbose",
         nargs="?",
-        const="duality.log",
+        const=os.path.join("logs", "duality-{stamp}.log"),
         default=None,
         metavar="PATH",
         help=(
             "Enable logging in verbose mode (all CCs, pitch, etc.). "
-            "Optional path (default: duality.log). "
+            "Optional path (default: logs/duality-<date>-<time>.log). "
             "If both --log and --log-verbose are given, verbose wins."
         ),
     )
@@ -6370,18 +13153,16 @@ def main():
     inputs = mido.get_input_names()
     outputs = mido.get_output_names()
 
-    in_name = resolve_port(args.input, inputs, "input port")
+    if args.play and not args.input:
+        in_name = None          # the player is the only source
+    else:
+        in_name = resolve_port(args.input, inputs, "input port")
 
-    min_ports = 1 if (args.alchemy or args.voodoo or args.anima) else 2
     out_formats: list[str] = []
 
     if args.outs:
-        if len(args.outs) < min_ports:
-            console.print(
-                f"[red]Error: at least {min_ports} output port(s) required"
-                + (" with --alchemy/--voodoo/--anima.[/]"
-                   if (args.alchemy or args.voodoo or args.anima) else ".[/]")
-            )
+        if len(args.outs) < 1:
+            console.print("[red]Error: at least 1 output port is required.[/]")
             sys.exit(1)
         out_names = []
         try:
@@ -6444,10 +13225,14 @@ def main():
             voodoo=args.voodoo,
             voodoo_bank=getattr(args, "voodoo_bank", "mtgm"),
             voodoo_layout=getattr(args, "voodoo_layout", "stripe"),
+            cm64_seats=getattr(args, "cm64_seats", "live"),
             anima=getattr(args, "anima", False),
             anima_efx_stable=getattr(args, "anima_efx_stable", False),
+            anima_seed=getattr(args, "anima_seed", None),
             anima_game=getattr(args, "anima_game", False),
             record_dir=getattr(args, "record", None),
+            play=args.play,
+            play_loop=args.play_loop,
         )
         router.run()
     except ValueError as e:

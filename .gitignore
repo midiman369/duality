@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Test songs stay local (copyright): tests/README.md
+tests/midi/*.mid
+tests/midi/*.MID
+tests/midi/*.zip
+tests/midi/*.txt
+
+# Duality output (may contain copyrighted songs)
+logs/
+recordings/
+*.log
