@@ -55,6 +55,15 @@
   Every build also writes each piece alone (`halloween_<n>_<piece>[_4port].mid`, user's request 2026-10-17), cut
   from the suite's own events by `pd_kit.finish_parts` (never re-rendered: the shared RNG would change the notes);
   a new piece needs an entry in `build()`'s `ends` and in `PIECE_TITLES`.
+- Prologue v3 (2026-10-18, 4:59; the user: the prologue "does drag on a bit at that 6 minutes", "keep to Chopin,
+  Gounod and Berlioz, and transition to Mountain King"): `dies_irae(t0, ports)` = `procession()` (ours: drum, bell,
+  Chopin's march tread on the organ and its riff in trombones / horns, `CHOPIN_RIFF`), `chant(CHANT_GROUPS[0])`
+  (stanzas 0, 2), `cortege()` (`tests/hw_cortege.py`: Gounod's cortege bars 1-10 twice, read from the user's Lemoine
+  copy; bassoon + pizz, then oboe over clarinet), `chant(CHANT_GROUPS[1])` (7, 19), `sabbath()` (`tests/hw_sabbat.py`:
+  Berlioz's NBE score, the user's upload, bars 1-12, 102-186, 222-241 numbered 1-117 by `SB.B()`; `SB_CH` 16-ch, `SB4_CH`
+  4-port, bells Church Bell on C9 / PA16). Each segment sets its own programs (`di_programs()` before a chant group).
+  The scan stays in the scratchpad (`sabbat/sabbat.pdf`, PDF page = score page - 113; `dirge/` the Gounod).
+  `pd_kit.finish_parts` now keeps the last of two tempos on one tick (it sorted by bpm and lost a fermata).
 - Bald Mountain re-read (2026-10-17, in progress; the user: "all the accompaniment and no melody", the opening
   stab melody missing): the first reading flattened dense pages into held chords and misread clefs (trombones are
   in the alto clef). Fixed so far: bars 15-27 (the trombone / tuba theme E D E F G# A, trumpets, the held chords
