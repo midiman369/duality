@@ -11,8 +11,11 @@
   take's stamp; C starts a new one) and `--record` takes to `recordings/` by default.
 - Private backup of git-ignored work lives in the user's Gitea repo duality-workdata; at each milestone, push new
   scratchpad / tests-midi / recordings work there (never to GitHub). Layout and README as in the first snapshot
-  (2026-10-18: scratchpad/, uploads/, session-images/, tests-midi/, recordings/, logs/, MANIFEST.sha256). Push with
-  the GITEA_TOKEN environment secret; without it, send the user tarballs (each under 500 MiB) to push themselves.
+  (2026-10-18: scratchpad/, uploads/, session-images/, tests-midi/, recordings/, logs/, MANIFEST.sha256; first
+  snapshot pushed as commit ef5c772). PNG / PDF / ZIP go to Git LFS (`apt-get install git-lfs`; clone it, add the new
+  work, regenerate the manifest as its README says). Push with the GITEA_TOKEN environment secret through a one-off
+  `-c credential.helper=` that reads the variable (never in a URL, config or file); without the secret, send the
+  user tarballs (each under 500 MiB) to push themselves.
 - EFX palette picker (published page "Anima EFX Palettes"): rebuild with `tools/picker/build_picker.py`
   after palette changes; the user's picks live in its database (`palettes/<family>`: nums, step {type: n}).
 - Both pickers use weight steps (0.19.037): +1 = x2, +2 = x3 ..., -1 = x1/2, -2 = x1/3 ...; a step is
