@@ -103,6 +103,9 @@
   `score_kit.spiccato()` (staccato notes and short repeated-note chatter on StringsSpic., PC11 / PC12), the
   trombones' third chord note on Bs. Trombone (PC9), Bones & Tuba under the tuba (PC13), brass falls into general
   pauses and horn rips on ff entries (PC14-16, in `bm_layers`); 16-channel: St.Pizzicato for violins / violas.
+  Solo Pizz. / Solo Spic. layers (port D, PD8 / PD9 / PD11 / PD12, x0.45) double the top note of the violins',
+  violas' and cellos' pizz and spiccato notes (`Seat(pizz_layers=, spic_layers=)`; spiccato notes no longer get
+  the arco Atk. layer).
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
