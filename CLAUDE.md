@@ -124,6 +124,11 @@
   legato-enabled tone handles legato itself, no Mono mode or other setting (the user, 2026-10-18); the piccolo and
   flute desks of Bald Mountain 4-port play Piccolo : / Flute 2 : with connected notes overlapping a touch
   (`legato=`). Duality copies only 40 00-02 SysEx from port A to every lane (insert and part assigns stay per port).
+  Falls / rips (the user: "sounding late"): the gesture is in the one-shot sample (`sc8850.GESTURES`: slot roots and
+  lengths from the ROM dump, 32 kHz assumed): a fall is the falling note itself, started so the gesture ends with
+  the brass note and never before its attack (`gesture_seconds`); each note takes the fall tone whose sample is
+  nearest above it, and none more than GESTURE_BELOW (7) semitones under a sample (lower, the gesture drags).
+  Rips play their whole gesture from a quarter beat before the entry; where in the sample the rip arrives is unknown.
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
