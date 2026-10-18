@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.002"
+VERSION = "1.0.003"
 
 
 """
@@ -1001,6 +1001,39 @@ def parse_port_request(text: str, track_port: int):
     return port, (tuple(wants) or None), units
 
 
+def parse_song_option(text: str):
+    """A song's option for the router, in a Text / Marker / Cue meta event (1.0.003):
+        "duality: foley off"       no Anima foley while the song plays ("no foley" too)
+        "duality: foley 25%"       foley at a quarter of its usual level ("foley on" = 100%)
+    Returns (name, value) or None if the text is not one (a port request, say)."""
+    t = str(text or "").strip().lower()
+    if not t.startswith("duality"):
+        return None
+    rest = t[len("duality"):].lstrip()
+    if not rest.startswith(":"):
+        return None
+    toks = rest[1:].replace("=", " ").split()
+    if toks[:2] == ["no", "foley"]:
+        return "foley", 0.0
+    if not toks or toks[0] != "foley":
+        return None
+    level = parse_foley_level(toks[1] if len(toks) > 1 else "on")
+    return None if level is None else ("foley", level)
+
+
+def parse_foley_level(text: str):
+    """'off' / 'on' / '25%' / '25' -> 0.0 .. 1.0 (None if unreadable)."""
+    t = str(text).strip().lower().rstrip("%")
+    if t in ("off", "none", "no"):
+        return 0.0
+    if t in ("on", "yes", "full"):
+        return 1.0
+    try:
+        return max(0.0, min(1.0, float(t) / 100.0))
+    except ValueError:
+        return None
+
+
 def out_matches(tags, want) -> bool:
     """Can an out with these --outs tags take a port that asked for `want`?
     No request: any out that is not LA-only (a GM / GS / XG stream's home)."""
@@ -1028,7 +1061,8 @@ class PlayerSong:
     """A MIDI file as timed events [(seconds, port, message)] through its tempo map.
     Format 0 / 1 tracks play together, Format 2 tracks one after another. A track's
     port is its last MIDI Port meta (FF 21), port 0 until it has one. requests:
-    port -> (wanted tag, units) from "duality: ..." text events (parse_port_request)."""
+    port -> (wanted tag, units) from "duality: ..." text events (parse_port_request);
+    options: name -> value from song options ("duality: foley off", parse_song_option)."""
 
     def __init__(self, path: str):
         self.path = path
@@ -1037,6 +1071,7 @@ class PlayerSong:
         tpb = mf.ticks_per_beat
         rows, tempos, end_tick, offset = [], [], 0, 0
         self.requests: dict = {}
+        self.options: dict = {}
         for ti, track in enumerate(mf.tracks):
             tick, port = offset, 0
             for seq, m in enumerate(track):
@@ -1047,6 +1082,10 @@ class PlayerSong:
                     elif m.type == "midi_port":
                         port = int(m.port)
                     elif m.type in ("text", "marker", "cue_marker"):
+                        opt = parse_song_option(m.text)
+                        if opt is not None:
+                            self.options[opt[0]] = opt[1]
+                            continue
                         req = parse_port_request(m.text, port)
                         if req is not None:
                             self.requests[req[0]] = (req[1], req[2])
@@ -1404,6 +1443,7 @@ class Duality:
         anima_efx_stable: bool = False,
         anima_seed: int | None = None,
         anima_game: bool = False,
+        anima_foley: float = 1.0,
         record_dir: str | None = None,
         play: List[str] | None = None,
         play_loop: bool = False,
@@ -1484,6 +1524,9 @@ class Duality:
         # Anima Phase 1 – CC phrasing + velocity humanize
         self.anima_game = bool(anima_game)
         self.anima = bool(anima) or self.anima_game
+        # Foley level, 0 = off (1.0.003): --anima-foley, or a song's "duality: foley ..." while it plays
+        self.anima_foley_default = max(0.0, min(1.0, float(anima_foley)))
+        self.anima_foley = self.anima_foley_default
         self.anima_efx_stable = bool(anima_efx_stable)
         # --anima-seed N → lock that value. --anima-seed (no N) or old
         # --anima-efx-stable → lock the first rolled seed.
@@ -9589,15 +9632,19 @@ class Duality:
         self._safe_out_send(port, mido.Message("control_change", channel=fch, control=32, value=4))
         self._safe_out_send(port, mido.Message("control_change", channel=fch, control=0, value=var))
         self._safe_out_send(port, mido.Message("program_change", channel=fch, program=pc & 0x7F))
-        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=7, value=ANIMA_FOLEY_CC7))
+        self._safe_out_send(port, mido.Message("control_change", channel=fch, control=7, value=self._anima_foley_cc7()))
         self._safe_out_send(port, mido.Message("control_change", channel=fch, control=11, value=127))
         self._safe_out_send(port, mido.Message("control_change", channel=fch, control=10, value=64))
         self._safe_out_send(port, mido.Message("control_change", channel=fch, control=91, value=ANIMA_FOLEY_CC91))
         self._anima_foley_armed[port] = True
         self._anima_foley_patch = (port, fch, key)
 
+    def _anima_foley_cc7(self) -> int:
+        """The foley part's CC7: ANIMA_FOLEY_CC7 at the current foley level (anima_foley)."""
+        return max(1, int(round(ANIMA_FOLEY_CC7 * self.anima_foley)))
+
     def _anima_maybe_foley(self, ch: int, note: int, vel: int, hero: int, eligible: list[int], ports: list[int] | None = None) -> None:
-        if not self.anima:
+        if not self.anima or self.anima_foley <= 0:
             return
         now = time.monotonic()
         spec = self._anima_foley_spec(ch)
@@ -9645,7 +9692,8 @@ class Duality:
         if not pend or time.monotonic() < pend["t"]:
             return
         self._anima_foley_pend = None
-        self._anima_foley_fire(pend)
+        if self.anima_foley > 0:
+            self._anima_foley_fire(pend)
 
     def _anima_foley_fire(self, pend: dict) -> None:
         ch, pc, jump, nnotes = pend["ch"], pend["pc"], pend["jump"], pend["n"]
@@ -9715,7 +9763,7 @@ class Duality:
         if cat == "brass" or (self._anima_efx_family(ch) or "").startswith("orch_brass"):
             fv = max(12, int(fv * 0.75))
         # Spare parts often inherit CC7=0 from the file. Stamp level every hit.
-        self._safe_out_send(dest, mido.Message("control_change", channel=fch, control=7, value=ANIMA_FOLEY_CC7))
+        self._safe_out_send(dest, mido.Message("control_change", channel=fch, control=7, value=self._anima_foley_cc7()))
         self._safe_out_send(dest, mido.Message("control_change", channel=fch, control=11, value=110))
         self._safe_out_send(dest, mido.Message("control_change", channel=fch, control=91, value=ANIMA_FOLEY_CC91))
         on = mido.Message("note_on", channel=fch, note=n, velocity=fv)
@@ -12465,13 +12513,30 @@ class Duality:
             if self._lanes:
                 self._lanes_stop("song over")
             self._lane_session = p.session
-            if p.session is not None and p.song is not None:
-                self._lanes_start(p.song)
+            song = p.song if p.session is not None else None
+            if song is not None:
+                self._lanes_start(song)
+            self._player_options(song)
         while p.messages:
             self._set_status(p.messages.pop(0), duration=4.0)
         while p.logs:
             self._log_line(p.logs.pop(0))
         return bool(events)
+
+    def _player_options(self, song) -> None:
+        """A song's options ("duality: foley off") hold while it plays, on the router and its lanes;
+        without a song (or an option) the command line's settings are back."""
+        opts = song.options if song is not None else {}
+        level = opts.get("foley", self.anima_foley_default)
+        for r in [self, *self._lanes.values()]:
+            r.anima_foley = level
+            if level <= 0:
+                r._anima_foley_pend = None
+        if "foley" in opts:
+            text = "off" if level <= 0 else f"at {round(level * 100)}%"
+            self._log_line(f"PLAY  The song asks for foley {text}")
+            if self.anima:
+                self._set_status(f"Foley {text} (the song asks)", duration=4.0)
 
     def _player_status_text(self) -> str:
         """The player's line, with the song's ports and their outs when it has lanes."""
@@ -12602,7 +12667,7 @@ class Duality:
                 strict_format_detection=self.strict_format_detection,
                 voodoo_bank=self.voodoo_bank, voodoo_layout=self.voodoo_layout,
                 cm64_seats=self.cm64_seats, anima=self.anima, anima_seed=seed,
-                anima_game=self.anima_game, opener=opener,
+                anima_game=self.anima_game, anima_foley=self.anima_foley_default, opener=opener,
             )
         finally:
             console = saved
@@ -12972,6 +13037,23 @@ def main():
             "Badge shows 4 hex digits, * when locked."
         ),
     )
+    def _parse_foley(s: str):
+        level = parse_foley_level(s)
+        if level is None:
+            raise argparse.ArgumentTypeError("use off, on or a level in percent (e.g. 25)")
+        return level
+
+    parser.add_argument(
+        "--anima-foley",
+        default=1.0,
+        type=_parse_foley,
+        metavar="LEVEL",
+        help=(
+            "Anima foley level: off, on (default) or a percentage (25 = a quarter of its usual level). "
+            "A song can ask for its own with a text event \"duality: foley off\" / \"duality: foley 25%%\" "
+            "while the player plays it."
+        ),
+    )
     parser.add_argument(
         "--anima-efx-stable",
         action="store_true",
@@ -13230,6 +13312,7 @@ def main():
             anima_efx_stable=getattr(args, "anima_efx_stable", False),
             anima_seed=getattr(args, "anima_seed", None),
             anima_game=getattr(args, "anima_game", False),
+            anima_foley=getattr(args, "anima_foley", 1.0),
             record_dir=getattr(args, "record", None),
             play=args.play,
             play_loop=args.play_loop,

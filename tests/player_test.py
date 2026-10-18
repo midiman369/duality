@@ -326,6 +326,34 @@ for text, want in (("duality: 8850", (5, ("gs8850",), None)), ("Duality: port B 
                    ("duality: 8850, cm64", (5, ("gs8850", "cm64"), None)), ("hello", None)):
     got = D.parse_port_request(text, 5)
     check(got == want, f"parse_port_request({text!r}) = {got}, want {want}")
+# song options (1.0.003): the foley level, not a port request
+for text, want in (("duality: foley off", ("foley", 0.0)), ("Duality: no foley", ("foley", 0.0)),
+                   ("duality: foley 25%", ("foley", 0.25)), ("duality: foley on", ("foley", 1.0)),
+                   ("duality: 8850", None), ("duality: foley loud", None)):
+    got = D.parse_song_option(text)
+    check(got == want, f"parse_song_option({text!r}) = {got}, want {want}")
+opt = multiport(os.path.join(tmp, "m_opt.mid"), [0, 1], requests=[(0, "duality: 8850"), (0, "duality: foley 25%")])
+ps = D.PlayerSong(opt)
+check(ps.options == {"foley": 0.25} and ps.requests.get(0) == (("gs8850",), None),
+      f"a song's foley option and its port request both read: {ps.options} {ps.requests}")
+names2 = ["U1", "U2"]
+REC.clear()
+D.mido.open_output = lambda n, *a, **k: FakeOut(n, names2.index(n))
+dd = D.Duality(None, names2, show_status=False, out_formats=[gs, gs], poly_limits=[32, 32], play=[opt],
+               anima=True, anima_foley=0.0)
+dd.player.threaded = False
+CLOCK[0] = 3000.0
+levels = set()
+while CLOCK[0] < 3002.0:
+    dd._service()
+    if dd._lanes:
+        levels.add((dd.anima_foley, tuple(sorted(l.anima_foley for l in dd._lanes.values()))))
+    CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+check(levels == {(0.25, (0.25, 0.25))}, f"the song's foley level on the router and its lanes: {levels}")
+while CLOCK[0] < 3006.0:
+    dd._service()
+    CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+check(dd.anima_foley == 0.0 and dd._anima_foley_cc7() == 1, f"after the song --anima-foley is back: {dd.anima_foley}")
 
 print("FAILS:" if fails else "PASS")
 for f in fails:

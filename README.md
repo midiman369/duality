@@ -89,6 +89,7 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
   - `duality: 8850, cm64` — an SC-8850 if one is free, else a CM-64 (kinds in order of preference)
 
   So one song can drive several kinds of synth at once. Without a request a port takes GM-family units (not LA-only ones). A port with no free unit of its kind is dropped (one unit plays port A only)
+- A song can also set the foley for itself, with the same kind of text event: `duality: foley off` (or `duality: no foley`) or `duality: foley 25%` (a quarter of its usual level). It holds while the song plays (one port or several), then `--anima-foley` is back
 - Port A's system SysEx (GM / GS / XG resets, reverb / chorus macros, master volume) also reaches the other ports' units, as on one multi-port device
 - Under the hood each port plays on a *lane*, a router of its own with the same settings (Crucible, Anima, Voodoo …); the routing hotkeys reach every lane, live input goes to port A's, and when the song ends the router takes all its outs back
 
@@ -277,6 +278,7 @@ Omit `--outs` for interactive pick (2 ports by default; 1 allowed with `--alchem
 | `--anima` | Phrasing + GS EFX + foley + 8850 / CM-64 tone colors |
 | `--anima-game` | Game mode (implies `--anima`): 4 s silence reset + cue reroll |
 | `--anima-seed [HEX]` | Lock seed (`4A2F`, `0x4A2F`, or decimal). Bare flag locks first roll |
+| `--anima-foley LEVEL` | Foley level: `off`, `on` (default) or a percentage (`25`); a song's `duality: foley ...` wins while it plays |
 | `--anima-efx-stable` | Deprecated alias for bare `--anima-seed` |
 | `--voodoo` | Load GM bank on MT-32 outs at start |
 | `--cm64-seats` | One CM-64 under Voodoo: `live` (default) or `fixed` PCM seats |

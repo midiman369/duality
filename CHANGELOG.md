@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased (dev 1.0.002)
+## Unreleased (dev 1.0.003)
 
+- Foley level: `--anima-foley off | on | <percent>`, and a song can ask for its own with a text event, `duality: foley off` or `duality: foley 25%`, which holds while the player plays it.
 - Anima EFX palettes for orchestral parts, chosen by ear from listening: strings and choir now get Reverb, Gate Reverb
   (×½) or 3D Delay (×¼), with no chorus types; reeds and pipes get Reverb or Gate Reverb, and only now and then
   (×⅓ each) Space D, Stereo Delay or Mod Delay, with no parallel chorus / flanger / delay types.
