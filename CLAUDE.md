@@ -120,11 +120,10 @@
   Bald Mountain 4-port: port B's kit is ETHNIC, so A + B still play everything). The Halloween suite sets only
   the hall on every port at the start (`hall_setup`); no insert of its own (the user, 2026-10-18: "keep the reverb
   settings and leave the efx out and let anima do its thing with seeds"; a file's insert takes its unit from Anima).
-  `pd_kit.finish_parts` chases the last SysEx per address into each piece's file. Legato: the
-  piccolo and flute desks of Bald Mountain 4-port play Piccolo : / Flute 2 : in Mono mode with connected notes
-  (only channels that play one note at a time). Inferred from the MIDI Implementation, not yet from the owner's
-  manual p. 46 (Legato-enabled Sounds): confirm by ear. Duality passes CC126 / 127 and copies only 40 00-02 SysEx
-  from port A to every lane (insert and part assigns stay per port).
+  `pd_kit.finish_parts` chases the last SysEx per address into each piece's file. Legato: a
+  legato-enabled tone handles legato itself, no Mono mode or other setting (the user, 2026-10-18); the piccolo and
+  flute desks of Bald Mountain 4-port play Piccolo : / Flute 2 : with connected notes overlapping a touch
+  (`legato=`). Duality copies only 40 00-02 SysEx from port A to every lane (insert and part assigns stay per port).
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
