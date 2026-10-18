@@ -2,6 +2,14 @@
 
 - Develop on branch `dev`. After each change, send the user a zip of only the runtime files that changed
   in that version (e.g. `duality.py`, `tables_*.py`); leave out unchanged files, tests, tools and docs.
+- Releases (1.0.0, 2026-10-18; the user's decision): `main` holds only what a user needs (`tools/make_release.py`
+  RELEASE: duality.py, tables_*.py, voodoo_banks.py, requirements.txt, LICENSE, README.md, CHANGELOG.md, .gitignore,
+  docs/images). Never merge dev into main or main into dev: `python3 tools/make_release.py <version> --push` builds
+  `release/<version>` from origin/main in a worktree, then a pull request into main; the user merges it, then tag
+  `v<version>` on main and attach the released songs (our originals only: onestop2, point_and_click_overture,
+  adventure_game_night, the_hint_line, metal_gods; never public-domain or third-party ones unless the user says so).
+  Versions: dev builds after a release are <release>.001, .002 ... (1.0.001); the next release is 1.1.0. README.md
+  and CHANGELOG.md are written for main's readers (no version tags in the README, no private pages or songs).
 - Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware).
 - Test songs are **not** in the repo (copyright). A fresh clone only runs the three self-contained
   tests; the rest print SKIP. `tests/README.md` → "Where the songs came from" lists each file's
