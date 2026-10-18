@@ -117,9 +117,10 @@
   beat loud to soft; an accent strikes both; (2) the hall: Reverb macro Hall 1 + Reverb Time 96, reverb sends high;
   (3) the drum part + timpani through the insert Stereo-EQ, Low +10 dB, Hi 0, EFX send to reverb 127. With
   several ports, give a spare port its own kit instead of switching (the user: "use multiple kits on other ports";
-  Bald Mountain 4-port: port B's kit is ETHNIC, so A + B still play everything). The Halloween suite now sets
-  the hall on every port at the start (`hall_setup`) and the drum EQ at each piece (`drum_eq_setup`, the piece's
-  timpani channel); `pd_kit.finish_parts` chases the last SysEx per address into each piece's file. Legato: the
+  Bald Mountain 4-port: port B's kit is ETHNIC, so A + B still play everything). The Halloween suite sets only
+  the hall on every port at the start (`hall_setup`); no insert of its own (the user, 2026-10-18: "keep the reverb
+  settings and leave the efx out and let anima do its thing with seeds"; a file's insert takes its unit from Anima).
+  `pd_kit.finish_parts` chases the last SysEx per address into each piece's file. Legato: the
   piccolo and flute desks of Bald Mountain 4-port play Piccolo : / Flute 2 : in Mono mode with connected notes
   (only channels that play one note at a time). Inferred from the MIDI Implementation, not yet from the owner's
   manual p. 46 (Legato-enabled Sounds): confirm by ear. Duality passes CC126 / 127 and copies only 40 00-02 SysEx
@@ -225,6 +226,12 @@ The file's own insert always wins its home unit.
   MU2000, their types and parameter addresses (the XG counterpart of the GS insert planner and its 8
   rules). Pickers like the GS ones would follow (XG tone palettes from each voice list; XG EFX palettes).
   `tables_xg.py` already has the XG effect type lists (MU128-based) used by Alchemy.
+- **Anima with look-ahead in the file player** (the user, 2026-10-18): the player knows what is coming, so it
+  could place EFX type changes and Part EFX toggles cleanly (type a unit in a gap before its family's first note,
+  never at the note; no ping-pong between families that take turns), and other Anima ideas could improve the same
+  way. Duality as a live router stays the primary goal: anything built here must leave the live path as it is.
+  Seen on Bald Mountain 4-port with Anima: port C retyped Reverb -> Enhancer at the brass layer's first note
+  (20.98 s), after the strings had taken the brass's unit while it was unheard (3.73 s).
 - **Alchemy revival (GS<->XG)**: it broke because Duality could not set EFX properly back then; the insert
   work since 0.19 (per-unit placement, parameter addresses, Control Sources, Balance, reading the file's
   own EFX) removes that cause. Idea: on SC-8850 only, use the User Instrument banks (CC00 64/65) and user
