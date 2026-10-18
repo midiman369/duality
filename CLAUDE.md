@@ -94,6 +94,9 @@
   `score_kit.render(..., variations={ch: var}, pizz_var={ch: (prog, var)})`. Bald Mountain only so far:
   `BM_VAR` / `BM_PIZZ` / `BM4_VAR` in make_pd_halloween.py (names from tools/picker/tone_info.json, key
   "var-4-pc0"). Duality passes CC0 / CC32 through (checked with the player replay on 1 and 4 ports).
+  The user's picks: Wide FreHrns kept, violins Quad Strings ("to big-up violins"), likes Cello sect. and
+  ContraBsSect. Ours on 4 ports only (their yes): `bm_layers()` on port D, a Gamelan Gong under the tam-tam
+  (GONG_NOTE D2), St.ChoirAahs under the ff held brass chords, Warm Atmos pad under the quiet stretches.
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
