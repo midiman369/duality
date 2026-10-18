@@ -61,7 +61,7 @@ def main():
         for f in files:
             if f.endswith(".py"):
                 subprocess.run([sys.executable, "-m", "py_compile", f], cwd=wt, check=True, env=env)
-        out = subprocess.run([sys.executable, "-I", "duality.py", "--version"], cwd=wt, capture_output=True,
+        out = subprocess.run([sys.executable, "-E", "-s", "duality.py", "--version"], cwd=wt, capture_output=True,
                              text=True, env=env)
         if out.returncode or out.stdout.strip() != f"Duality {v}":
             sys.exit(f"the release tree does not run on its own:\n{out.stdout}{out.stderr}")
