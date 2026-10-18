@@ -12,8 +12,10 @@
 - Private backup of git-ignored work lives in the user's Gitea repo duality-workdata; at each milestone, push new
   scratchpad / tests-midi / recordings work there (never to GitHub). Layout and README as in the first snapshot
   (2026-10-18: scratchpad/, uploads/, session-images/, tests-midi/, recordings/, logs/, MANIFEST.sha256; first
-  snapshot pushed as commit ef5c772). PNG / PDF / ZIP go to Git LFS (`apt-get install git-lfs`; clone it, add the new
-  work, regenerate the manifest as its README says). Push with the GITEA_TOKEN environment secret through a one-off
+  snapshot pushed as commit ef5c772; transcripts/ = the session's .jsonl gzipped in 45 MiB LFS parts, memory/ = readable
+  extracts made by scratchpad/transcript_memory.py: conversation, user requests, compaction summaries). PNG / PDF / ZIP /
+  *.gz.part-* go to Git LFS (`apt-get install git-lfs`; clone it, add the new work and a fresh transcript + memory,
+  regenerate the manifest as its README says). Push with the GITEA_TOKEN environment secret through a one-off
   `-c credential.helper=` that reads the variable (never in a URL, config or file); without the secret, send the
   user tarballs (each under 500 MiB) to push themselves.
 - EFX palette picker (published page "Anima EFX Palettes"): rebuild with `tools/picker/build_picker.py`
