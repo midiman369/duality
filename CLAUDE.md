@@ -97,6 +97,12 @@
   The user's picks: Wide FreHrns kept, violins Quad Strings ("to big-up violins"), likes Cello sect. and
   ContraBsSect. Ours on 4 ports only (their yes): `bm_layers()` on port D, a Gamelan Gong under the tam-tam
   (GONG_NOTE D2), St.ChoirAahs under the ff held brass chords, Warm Atmos pad under the quiet stretches.
+  The user's favourite 8850 tones (2026-10-18, use them across the suite): Twin bones, Bones & Tuba, Bs. Trombone,
+  Bones Sect., the falls (Brass Fall, Trumpet Fall, F.Horn Rip), the pizz variations (St.Pizzicato, Solo Pizz.)
+  and the spiccatos (StringsSpic., Solo Spic.). Bald Mountain 4-port uses them: `Seat(spic=[ch])` +
+  `score_kit.spiccato()` (staccato notes and short repeated-note chatter on StringsSpic., PC11 / PC12), the
+  trombones' third chord note on Bs. Trombone (PC9), Bones & Tuba under the tuba (PC13), brass falls into general
+  pauses and horn rips on ff entries (PC14-16, in `bm_layers`); 16-channel: St.Pizzicato for violins / violas.
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
