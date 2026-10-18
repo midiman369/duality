@@ -88,6 +88,12 @@
   line passes from one section to another mid-phrase, the first section may keep doubling it so the line carries.
   Second listening note: the flutes' / oboes' / cornets' eighths in 13-20 are A G# G# A (we had B-flat / G: "off key").
   Third: the theme starts on F in bar 15 (with the trumpets' F octaves), E only from bar 16 ("missing the first brass note").
+- SC-8850 tones (2026-10-18, the user: "the suite targets 8850s ... take advantage of the total SC-8850 set of
+  patches"): `pd_kit.gs_mode()` (Halloween build) adds a GS Reset after GM System On (GM On makes the 8850 ignore
+  bank selects) and CC0 = 0 before every plain program; `prog(..., variation=v)` sends CC0 v + CC32 4 (8850 map).
+  `score_kit.render(..., variations={ch: var}, pizz_var={ch: (prog, var)})`. Bald Mountain only so far:
+  `BM_VAR` / `BM_PIZZ` / `BM4_VAR` in make_pd_halloween.py (names from tools/picker/tone_info.json, key
+  "var-4-pc0"). Duality passes CC0 / CC32 through (checked with the player replay on 1 and 4 ports).
 - Orchestral weight (2026-10-17, the user's mix order, loudest first: brass sections, percussion hits, single brass and
   strings, the bass, piano, woodwinds / saxes, harps / mallets; then non-melody parts): `score_kit.WEIGHT_DB` / `tier()` /
   `weigh(vol, program, drums, role)` nudge each channel's hand-set CC7 by its tier (+2 .. -3 dB; the bass is a role the
