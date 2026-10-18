@@ -9,15 +9,16 @@
   `recordings/`, songs in `tests/midi/` (original names are fine; both are git-ignored).
 - Duality writes `--log` to `logs/duality-<stamp>.log` (one per run, one per `--record` take with the
   take's stamp; C starts a new one) and `--record` takes to `recordings/` by default.
-- Private backup of git-ignored work lives in the user's Gitea repo duality-workdata; at each milestone, push new
-  scratchpad / tests-midi / recordings work there (never to GitHub). Layout and README as in the first snapshot
-  (2026-10-18: scratchpad/, uploads/, session-images/, tests-midi/, recordings/, logs/, MANIFEST.sha256; first
-  snapshot pushed as commit ef5c772; transcripts/ = the session's .jsonl gzipped in 45 MiB LFS parts, memory/ = readable
-  extracts made by scratchpad/transcript_memory.py: conversation, user requests, compaction summaries). PNG / PDF / ZIP /
-  *.gz.part-* go to Git LFS (`apt-get install git-lfs`; clone it, add the new work and a fresh transcript + memory,
-  regenerate the manifest as its README says). Push with the GITEA_TOKEN environment secret through a one-off
-  `-c credential.helper=` that reads the variable (never in a URL, config or file); without the secret, send the
-  user tarballs (each under 500 MiB) to push themselves.
+- Private backup of git-ignored work lives in the user's Gitea repo duality-workdata (never GitHub), kept current by
+  `tools/backup_workdata.py` (2026-10-18): the Stop / SessionEnd hooks in `.claude/settings.json` run it detached in
+  the background, at most every 30 min (BACKUP_INTERVAL); at each milestone also run it by hand
+  (`python3 tools/backup_workdata.py`; `--dry-run` previews). Add / update only, per session: scratchpad, uploads, pasted
+  images, the transcript (32 MiB gzipped pieces of whole lines: only new pieces upload), memory extracts
+  (`tools/transcript_memory.py`: conversation, user requests, compaction summaries), plans, tasks; shared: tests/midi,
+  recordings, logs. Layout in the backup's README. Needs GITEA_TOKEN and GITEA_BACKUP_URL (environment variables;
+  cloud sessions only); it installs git-lfs, clones without LFS content beside the checkout, passes the token by a
+  one-off credential helper and skips files that hold a credential; log ~/.cache/duality-backup/backup.log. Without
+  the variables it does nothing: then send the user tarballs (each under 500 MiB) to push themselves.
 - EFX palette picker (published page "Anima EFX Palettes"): rebuild with `tools/picker/build_picker.py`
   after palette changes; the user's picks live in its database (`palettes/<family>`: nums, step {type: n}).
 - Both pickers use weight steps (0.19.037): +1 = x2, +2 = x3 ..., -1 = x1/2, -2 = x1/3 ...; a step is
