@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (now 1.0.004; the next build is 1.0.005). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.005; the next build is 1.0.006). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -20,7 +20,8 @@ Done since the release (dev, 2026-10-18): 1.0.001 the Brass sfz `slow` trait; 1.
 strings (Reverb, Gate Reverb x1/2, 3D Delay x1/4) and reeds & pipes (Reverb, Gate Reverb, Space D / Stereo Delay /
 Mod Delay x1/3); 1.0.003 the foley level (`--anima-foley`, a song's "duality: foley off / 25%" text event,
 `parse_song_option`, `PlayerSong.options`, `_player_options`); 1.0.004 the family spread and the player's
-look-ahead (Anima, see "Family spread" under the EFX rules). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+look-ahead (Anima, see "Family spread" under the EFX rules); 1.0.005 lane seeds = the badge seed + 0101 per
+port, locked or not (`_lane_seed`, `_lanes_seed_sync`; S is no longer a lane key). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 

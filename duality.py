@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.004"
+VERSION = "1.0.005"
 
 
 """
@@ -953,7 +953,8 @@ PLAYER_EXTS = (".mid", ".midi", ".kar", ".smf")
 PLAYER_LEAD_IN = 0.5      # seconds of silence before a song's first event
 PLAYER_GAP = 2.0          # seconds between songs
 PLAYER_RESTART_SEC = 3.0  # Z within this much of a song's start goes to the previous song
-LANE_HOTKEYS = "fglrymvpabsx"  # keys a multi-port song's lanes also take (not W / C / Q / player keys)
+LANE_HOTKEYS = "fglrymvpabx"   # keys a multi-port song's lanes also take (not W / C / Q / player keys; S locks the
+                               # badge seed the lanes derive theirs from, 1.0.005)
 
 
 def player_playlist(paths: List[str]) -> List[str]:
@@ -12559,6 +12560,13 @@ class Duality:
             # A multi-port song plays on lanes: the routing keys act on them too
             for lane in list(self._lanes.values()):
                 lane._handle_hotkey(ch)
+        try:
+            self._handle_hotkey_main(c, ch)
+        finally:
+            if self._lanes:
+                self._lanes_seed_sync()
+
+    def _handle_hotkey_main(self, c: str, ch: str) -> None:
         if c == "f":
             self._clear_format("hotkey")
         elif c == "g":
@@ -12877,6 +12885,10 @@ class Duality:
             self._lane_outs[p] = plan[p]
         line = " · ".join(f"{chr(65 + p)} → {names(o)}" for p, o in sorted(plan.items()))
         self._log_line(f"PLAY  Ports: {line}")
+        if self.anima:
+            seeds = ", ".join(f"{chr(65 + p)} {self._lanes[p]._anima_efx_seed:04X}" for p in sorted(self._lanes))
+            self._log_line(f"PLAY  Anima seed {self._anima_efx_seed:04X}{'*' if self._anima_seed_locked else ''} "
+                           f"(ports {seeds})")
         self._set_status(f"Ports: {line}", duration=6.0)
 
     def _lane_make(self, port: int, outs: list[int]):
@@ -12890,9 +12902,7 @@ class Duality:
         def opener(name):
             return _LaneOut(main, index[name])
 
-        seed = None
-        if self._anima_efx_seed is not None and self._anima_seed_locked:
-            seed = (int(self._anima_efx_seed) + 0x0101 * port) & 0xFFFF
+        seed = self._lane_seed(port)
         saved = console
         console = Console(file=open(os.devnull, "w"))
         try:
@@ -12916,6 +12926,27 @@ class Duality:
         lane._log_line = lambda text, L=letter: main._log_line(f"[{L}] {text}")
         lane._set_status = lambda m, duration=5.0, L=letter: main._set_status(f"[{L}] {m}", duration)
         return lane
+
+    def _lane_seed(self, port: int):
+        """A lane's Anima seed (1.0.005): the badge's seed + 0101 per port (port A plays the badge's own), locked or
+        not, so the seed on the badge describes every port of a multi-port take and --anima-seed / S brings it
+        back. A lane keeps it for the song (locked inside the lane); only the badge seed changes (X)."""
+        if not self.anima:
+            return None
+        return (self._anima_ensure_efx_seed() + 0x0101 * port) & 0xFFFF
+
+    def _lanes_seed_sync(self) -> None:
+        """After a hotkey: the lanes follow the badge seed again (X rerolls it when unlocked; A may have turned
+        Anima on)."""
+        for p, lane in self._lanes.items():
+            want = self._lane_seed(p)
+            if want is None or not lane.anima:
+                continue
+            lane._anima_seed_locked = True
+            if lane._anima_efx_seed != want:
+                lane._anima_efx_seed = want
+                lane._anima_efx_pick = {}
+                lane._anima_bass_sub_choice = None
 
     def _lanes_stop(self, reason: str) -> None:
         """The song's lanes end: they silence their units, and the router takes its

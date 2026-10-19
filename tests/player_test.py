@@ -355,6 +355,46 @@ while CLOCK[0] < 3006.0:
     CLOCK[0] = round(CLOCK[0] + 0.005, 3)
 check(dd.anima_foley == 0.0 and dd._anima_foley_cc7() == 1, f"after the song --anima-foley is back: {dd.anima_foley}")
 
+# lane seeds (1.0.005): each port plays the badge seed + 0101 per port, locked or not; S locks the badge seed only,
+# X (unlocked) rerolls it and the lanes follow
+long2 = os.path.join(tmp, "m_seed.mid")
+mf = mido.MidiFile(type=1, ticks_per_beat=480)
+mf.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500000, time=0)]))
+for p_ in (0, 1):
+    tr = mido.MidiTrack([mido.MetaMessage("midi_port", port=p_, time=0),
+                         mido.Message("program_change", channel=0, program=48, time=0)])
+    for k in range(12):
+        tr.append(mido.Message("note_on", channel=0, note=60 + p_, velocity=90, time=0 if k == 0 else 240))
+        tr.append(mido.Message("note_off", channel=0, note=60 + p_, velocity=0, time=240))
+    mf.tracks.append(tr)
+mf.save(long2)
+REC.clear()
+D.mido.open_output = lambda n, *a, **k: FakeOut(n, names4.index(n))
+dd = D.Duality(None, names4, show_status=False, out_formats=[gs] * 4, poly_limits=[32] * 4, play=[long2], anima=True)
+dd.player.threaded = False
+CLOCK[0] = 3000.0
+while CLOCK[0] < 3002.0 and not dd._lanes:
+    dd._service()
+    CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+
+
+def lane_seeds():
+    return {p_: lane._anima_efx_seed for p_, lane in dd._lanes.items()}
+
+
+base = dd._anima_efx_seed
+want = {p_: (base + 0x0101 * p_) & 0xFFFF for p_ in dd._lanes}
+check(dd._lanes and lane_seeds() == want and not dd._anima_seed_locked,
+      f"unlocked: the lanes play the badge seed + 0101 per port: badge {base}, lanes {lane_seeds()}")
+dd._handle_hotkey("x")
+nb = dd._anima_efx_seed
+check(lane_seeds() == {p_: (nb + 0x0101 * p_) & 0xFFFF for p_ in dd._lanes},
+      f"after X the lanes follow the badge seed {nb}: {lane_seeds()}")
+before = lane_seeds()
+dd._handle_hotkey("s")
+check(dd._anima_seed_locked and lane_seeds() == before and all(l._anima_seed_locked for l in dd._lanes.values()),
+      f"S locks the badge seed; the lanes keep theirs: {lane_seeds()} vs {before}")
+
 print("FAILS:" if fails else "PASS")
 for f in fails:
     print("  ", f)

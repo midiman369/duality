@@ -374,7 +374,7 @@ A tone's EFX level moves its insert's wet/dry Balance from the type's default (d
 
 ### Seeds
 
-The badge shows a 4-char hex. Same seed → same colors and inserts. `--anima-seed 4A2F` or hotkey **S** locks it; **X** then repeats the take. Game mode rolls a new seed on a burst of program changes (new cue) unless the seed is locked.
+The badge shows a 4-char hex. Same seed → same colors and inserts. `--anima-seed 4A2F` or hotkey **S** locks it; **X** then repeats the take. Game mode rolls a new seed on a burst of program changes (new cue) unless the seed is locked. On a multi-port song every port plays the badge's seed plus 0101 per port (port A the badge's own), locked or not, so the badge describes the whole take: lock it with **S** (or play it again with `--anima-seed`) and every port comes back the same; the log lists each port's seed when the song starts.
 
 ### GS EFX
 
