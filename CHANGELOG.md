@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased (dev 1.0.003)
+## Unreleased (dev 1.0.004)
 
+- Anima family spread: a family heard on four or more channels of one unit also takes a spare unit, half its channels moving over one by one in their rests (a big string section plays from two units); the spare yields to any family that needs it.
+- Anima look-ahead while the file player plays: inserts are placed before a family's first note instead of at it, changes that would land on a note wait for the part's next gap, and a unit is not taken from a family about to play.
 - Foley level: `--anima-foley off | on | <percent>`, and a song can ask for its own with a text event, `duality: foley off` or `duality: foley 25%`, which holds while the player plays it.
 - Anima EFX palettes for orchestral parts, chosen by ear from listening: strings and choir now get Reverb, Gate Reverb
   (×½) or 3D Delay (×¼), with no chorus types; reeds and pipes get Reverb or Gate Reverb, and only now and then

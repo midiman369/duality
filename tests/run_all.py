@@ -18,6 +18,7 @@ RUNS = [
     ("file wah", "file_wah_test.py", {}),
     ("tone palettes", "tone_prefs_test.py", {}),
     ("hero split", "hero_split_test.py", {}),
+    ("family spread + look-ahead", "spread_test.py", {}),
     ("tone traits", "tone_traits_test.py", {}),
     ("CM-64 outs", "cm64_test.py", {}),
     ("CM-64 Voodoo PCM", "cm64_voodoo_test.py", {}),

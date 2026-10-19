@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (now 1.0.003; the next build is 1.0.004). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.004; the next build is 1.0.005). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -19,7 +19,8 @@
 Done since the release (dev, 2026-10-18): 1.0.001 the Brass sfz `slow` trait; 1.0.002 the user's EFX picks for
 strings (Reverb, Gate Reverb x1/2, 3D Delay x1/4) and reeds & pipes (Reverb, Gate Reverb, Space D / Stereo Delay /
 Mod Delay x1/3); 1.0.003 the foley level (`--anima-foley`, a song's "duality: foley off / 25%" text event,
-`parse_song_option`, `PlayerSong.options`, `_player_options`). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+`parse_song_option`, `PlayerSong.options`, `_player_options`); 1.0.004 the family spread and the player's
+look-ahead (Anima, see "Family spread" under the EFX rules). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 
@@ -132,6 +133,21 @@ first); type onto the empty unit, the hero moves in a breath; the hero unit yiel
 "Quiet" means the unit's EFX players only (Part EFX On there, their ghosts, queued strums), not dry parts.
 Family priority lives in `tables_gs.ANIMA_EFX_PRIORITY` (a distorted guitar takes a unit from a pad).
 The file's own insert always wins its home unit.
+Family spread (1.0.004, `_anima_spread_tick`, after the hero split in `_check_anima_session_idle`): a family heard on
+ANIMA_SPREAD_MIN (4) or more channels of one unit takes a spare unit of the same router / lane too (a second unit it
+already holds, else an empty one typed with the family's insert while silent, else a unit another family left idle
+ANIMA_SPREAD_IDLE_SEC); the right-hand half of its channels by pan (balanced by channels held) moves there, each in
+a rest of its own (`_anima_ch_resting`, `_anima_spread_move`: Part On and pin there with Part Off on the old unit).
+The spare is flagged `hero` + `spread`, so it yields like a hero unit and build_plan keeps its channels. Seat units
+(harmony ghosts) are not taken. Found on the Halloween 4-port suite on six units (port A's second unit held only
+the percussion kit through Bald Mountain).
+Player look-ahead (1.0.004; live input unchanged): `PlayerSong.next_on` / `MidiPlayer.lookahead` / `_anima_next_note`
+(a lane's `_anima_la`): an unplaced family is placed ANIMA_LOOKAHEAD_PREP (2 s) before its next note
+(`_anima_lookahead_tick`); a type / owner change that `_anima_efx_place` would make right at a note is put off and
+the part starts dry until its next gap (at most ANIMA_LOOKAHEAD_DEFER, 4 s); an owner that plays within
+ANIMA_LOOKAHEAD_HOLD (3 s) is not stale; a channel moves only when its next note is ANIMA_LOOKAHEAD_MOVE (0.3 s) or
+more away. On the 4-port suite (six units, seed DF14) Part EFX On writes landing within 100 ms of their channel's
+next note went from 157 of 250 to 35 of 282 before the defer (the rest on the one-unit lanes C / D).
 
 ## Tabled — ideas for later (ask before starting)
 
@@ -166,7 +182,8 @@ The file's own insert always wins its home unit.
   MU2000, their types and parameter addresses (the XG counterpart of the GS insert planner and its 8
   rules). Pickers like the GS ones would follow (XG tone palettes from each voice list; XG EFX palettes).
   `tables_xg.py` already has the XG effect type lists (MU128-based) used by Alchemy.
-- **Anima with look-ahead in the file player** (the user, 2026-10-18): the player knows what is coming, so it
+- **Anima with look-ahead in the file player** (the user, 2026-10-18; first steps DONE in 1.0.004, above: placing
+  ahead, deferring at-note changes, no eviction of an owner about to play): the player knows what is coming, so it
   could place EFX type changes and Part EFX toggles cleanly (type a unit in a gap before its family's first note,
   never at the note; no ping-pong between families that take turns), and other Anima ideas could improve the same
   way. Duality as a live router stays the primary goal: anything built here must leave the live path as it is.

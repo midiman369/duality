@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.003"
+VERSION = "1.0.004"
 
 
 """
@@ -190,6 +190,7 @@ python duality.py --version
 """.format(VERSION=VERSION)
 
 import argparse
+import bisect
 import os
 import signal
 import sys
@@ -868,6 +869,19 @@ ANIMA_HERO_SPLIT_PREP_SEC = 0.30
 ANIMA_HERO_SPLIT_BREATH = 0.25   # the hero has been silent this long (notes, ghosts, strums)
 ANIMA_HERO_SPLIT_WAIT = 10.0     # give a prepared unit back once the hero is no longer featured past this
 ANIMA_HERO_SPLIT_SKIP = frozenset({"guitar_dist", "seat", "file_park"})
+# Family spread (1.0.004): a family with ANIMA_SPREAD_MIN channels heard on one unit shares a spare unit of
+# its own lane (or router): an empty one, an idle family's, or a second unit it already holds. About half its
+# channels (the right-hand side by pan) move over, each at a rest of its own; the spare yields like a hero unit.
+ANIMA_SPREAD_MIN = 4             # heard channels on one unit before its family spreads
+ANIMA_SPREAD_HEARD_SEC = 20.0    # a channel counts as heard this long after its last note
+ANIMA_SPREAD_IDLE_SEC = 60.0     # another family's unit unheard this long is a spare
+ANIMA_SPREAD_BREATH = 0.25       # a channel moves once it has rested this long (no notes, ghosts, strums)
+ANIMA_SPREAD_SKIP = frozenset({"guitar_dist", "seat", "file_park"})
+# Player look-ahead (1.0.004): while the file player plays, Anima knows each channel's next note
+ANIMA_LOOKAHEAD_MOVE = 0.30      # a Part EFX On / move only when the channel's next note is at least this far
+ANIMA_LOOKAHEAD_PREP = 2.0       # an unplaced family is placed this long before its next note (type in a gap)
+ANIMA_LOOKAHEAD_HOLD = 3.0       # an owner whose next note is this close is not evicted
+ANIMA_LOOKAHEAD_DEFER = 4.0      # a part may start dry this long while its insert waits for a gap
 # Tone traits (tables_8850.ANIMA_TONE_TRAITS): a marked tone the part does not suit goes back
 # to the capital once, at a rest (never under a note), or one step down a tone set
 # (tables_8850.ANIMA_TONE_STEPDOWN, 0.19.050). Counts since the program change.
@@ -1115,6 +1129,18 @@ class PlayerSong:
         self.events = [(sec(tk), port, m) for tk, _ti, _seq, port, m in rows]
         self.length = sec(end_tick)            # end-of-track can leave room for a last ring-out
         self.ports = sorted({p for _s, p, _m in self.events})
+        self._ons: dict = {}                   # (port, channel) -> note-on times, for next_on
+        for t, port, m in self.events:
+            if m.type == "note_on" and m.velocity:
+                self._ons.setdefault((port, m.channel), []).append(t)
+
+    def next_on(self, port: int, ch: int, t: float):
+        """The song time of the channel's next note-on after t (None: no more)."""
+        lst = self._ons.get((port, ch))
+        if not lst:
+            return None
+        i = bisect.bisect_right(lst, t)
+        return lst[i] if i < len(lst) else None
 
 
 class MidiPlayer:
@@ -1285,6 +1311,15 @@ class MidiPlayer:
             self.session = None
             self.gap_until = now + PLAYER_GAP
         return out
+
+    def lookahead(self, port: int, ch: int, now: float):
+        """Seconds until this song port's channel plays its next note (1.0.004, Anima's look-ahead);
+        None when nothing is playing or the channel has no more notes."""
+        if self.state != "playing" or self.song is None:
+            return None
+        t = now - self.t0
+        nxt = self.song.next_on(port, ch, t)
+        return None if nxt is None else max(0.0, nxt - t)
 
     # --- controls (hotkeys) ------------------------------------------------
     def toggle(self, now: float) -> List:
@@ -1458,6 +1493,8 @@ class Duality:
         # Multi-port songs (0.19.066): a lane (a router of its own) per port, on its own outs
         self._opener = opener or mido.open_output
         self._lanes: dict = {}              # port -> Duality lane while a multi-port song plays
+        self._anima_la = None               # a lane's look-ahead: ch -> seconds to its next note (1.0.004)
+        self._anima_defer: dict = {}        # ch -> when its placement was first put off at a note (look-ahead)
         self._lane_outs: dict = {}          # port -> out indices
         self._lane_session = None           # the player session the lanes belong to
         self._player_main_port = 0          # the port a single-port song plays on
@@ -5627,6 +5664,8 @@ class Duality:
         if not getattr(self, "_anima_efx_burst_dirty", False) and any(self._file_used_ch):
             self._anima_seat_efx()   # never ahead of the planner's setup pass
             self._anima_hero_split_tick()
+            self._anima_spread_tick()
+            self._anima_lookahead_tick()
         self._anima_trait_tick()
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
@@ -7895,6 +7934,8 @@ class Duality:
             return False
         if fam == "seat" or sl.get("hero"):
             return True   # a seat or hero-split unit never holds a unit against a real family
+        if self._anima_owner_due(sl.get("chs") or []):
+            return False  # the player says its owner plays again in a moment (1.0.004)
         heard = float(sl.get("heard_t") or 0)
         if heard:
             return (now - heard) >= ANIMA_EFX_IDLE_SEC
@@ -8445,6 +8486,195 @@ class Duality:
                 slots[p]["hero_prep"] = ch
                 slots[p]["hero"] = True
             return
+
+    def _anima_next_note(self, ch: int):
+        """Seconds until channel ch's next note while the file player plays this router's port (a lane's
+        own port, or the song's main port); None live or when it is unknown (1.0.004)."""
+        if self._anima_la is not None:
+            return self._anima_la(ch & 0x0F)
+        p = self.player
+        if p is None or self._lanes:
+            return None
+        return p.lookahead(self._player_main_port, ch & 0x0F, time.monotonic())
+
+    def _anima_ch_resting(self, ch: int, now: float, breath: float) -> bool:
+        """Nothing of the channel sounding or queued (notes, ghosts, strums, mallets) for breath seconds, and,
+        while the player plays, its next note at least ANIMA_LOOKAHEAD_MOVE away (a Part EFX On settles)."""
+        if any(k[0] == ch for k in self.active):
+            return False
+        for ghosts in (self._anima_ghosts or {}).values():
+            if any(g and (g[1] & 0x0F) == ch for g in ghosts or []):
+                return False
+        for _when, _p, msg in self._anima_strum_q or []:
+            if (getattr(msg, "channel", -1) & 0x0F) == ch:
+                return False
+        if any(item[3] == ch for item in (self._anima_mallet_q or [])):
+            return False
+        if now - float(self._anima_line_off.get(ch) or 0.0) < breath:
+            return False
+        nxt = self._anima_next_note(ch)
+        return nxt is None or nxt >= ANIMA_LOOKAHEAD_MOVE
+
+    def _anima_ch_heard(self, ch: int, now: float) -> bool:
+        if any(k[0] == ch for k in self.active):
+            return True
+        off = self._anima_line_off.get(ch)
+        return off is not None and now - float(off) < ANIMA_SPREAD_HEARD_SEC
+
+    def _anima_spread_move(self, ch: int, src: int, dst: int) -> None:
+        """One resting channel from its family's unit to the spread unit: Part On and pin there, unpin and
+        Part Off on the old unit, together (rules 2 and 7)."""
+        slots = self._anima_slots
+        dsl, ssl = slots[dst], slots[src]
+        self._anima_efx_ours = True
+        if not self._anima_efx_on[dst][ch]:
+            self._safe_out_send(dst, self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x01]))
+            self._anima_efx_on[dst][ch] = True
+            self._anima_efx_wet_mark(dst, ch)
+        dsl["chs"] = list(dsl.get("chs") or []) + ([ch] if ch not in (dsl.get("chs") or []) else [])
+        self._anima_ch_port[ch] = dst
+        ssl["chs"] = [c for c in (ssl.get("chs") or []) if c != ch]
+        if self._anima_efx_on[src][ch]:
+            self._safe_out_send(src, self._gs_dt1([0x40, self._gs_efx_part_mid(ch), 0x22], [0x00]))
+            self._anima_efx_on[src][ch] = False
+        for p, sl in ((dst, dsl), (src, ssl)):
+            typ = tuple(sl.get("typ") or ())[:2]
+            if typ and sl.get("chs"):
+                self._anima_efx_shape(p, typ, sl["chs"], sl.get("fam"))
+                self._anima_efx_apply_pan(p, typ, sl["chs"])
+            self._anima_efx_level_apply(p)
+
+    def _anima_spread_tick(self) -> None:
+        """Family spread (1.0.004): a family heard on ANIMA_SPREAD_MIN or more channels of one unit takes a spare
+        unit too, an empty one (typed with the family's insert while it is silent, rule 1), one an idle family left,
+        or a second unit it already holds; the right-hand half of its channels by pan moves there, each in a rest
+        of its own (never on a note: rules 6 and 8). The spare is marked like a hero unit, so any family that needs
+        a unit takes it back and the channels rejoin their family's unit at the next plan."""
+        now = time.monotonic()
+        if now - float(getattr(self, "_anima_spread_t", 0.0) or 0.0) < 0.1:
+            return
+        self._anima_spread_t = now
+        home = self._anima_file_home_port()
+        gs = [p for p in self._anima_gs_ports() if p != home and p < len(self._anima_slots)]
+        slots = self._anima_slots
+        if len(gs) < 2 or any(slots[p].get("hero_prep") is not None for p in gs):
+            return
+        # 1) the moves under way, one channel at a time in its rest
+        busy = False
+        for p in gs:
+            sl = slots[p]
+            want = sl.get("spread_want")
+            if not want:
+                continue
+            fam, src = sl.get("fam"), sl.get("spread_src")
+            if src is None or src not in gs or slots[src].get("fam") != fam:
+                sl.pop("spread_want", None)
+                continue
+            for ch in sorted(want):
+                if self._anima_ch_port.get(ch) != src or self._anima_efx_family(ch) != fam:
+                    want.discard(ch)
+                elif self._anima_ch_resting(ch, now, ANIMA_SPREAD_BREATH):
+                    self._anima_spread_move(ch, src, p)
+                    want.discard(ch)
+                    self._anima_feedback("efx", f"P{p + 1} ch{ch + 1} {fam} spread from P{src + 1}", status=False)
+            if want:
+                busy = True
+            else:
+                sl.pop("spread_want", None)
+        if busy:
+            return
+        # 2) a family to spread: every family placed first (they come before a spread)
+        reserved = set(self._anima_file_efx_parts) if self._anima_file_efx_t else set()
+        if any(
+            self._anima_ch_live(c) and not self._anima_is_rhythm(c) and c not in reserved
+            and self._anima_efx_family(c) and c not in self._anima_ch_port and self._anima_ch_heard(c, now)
+            for c in range(16)
+        ):
+            return
+
+        def on(p):
+            return [c for c in (slots[p].get("chs") or []) if self._anima_ch_port.get(c) == p
+                    and c not in reserved and not self._anima_is_rhythm(c)]
+
+        def heard_on(p):
+            return [c for c in on(p) if self._anima_ch_heard(c, now)]
+
+        mains = [p for p in gs if slots[p].get("fam") and slots[p].get("fam") not in ANIMA_SPREAD_SKIP
+                 and not slots[p].get("hero")]
+        for src in sorted(mains, key=lambda p: -len(heard_on(p))):
+            fam = slots[src]["fam"]
+            heard = heard_on(src)
+            if len(heard) < ANIMA_SPREAD_MIN:
+                break
+            same = [p for p in gs if p != src and slots[p].get("fam") == fam]
+            empty = [p for p in gs if not slots[p].get("fam") and not slots[p].get("chs")]
+            idle = [p for p in gs if p != src and slots[p].get("fam") not in (None, fam, "seat", "file_park")
+                    and not slots[p].get("hero") and self._anima_spread_idle(p, now)]
+            spare = (same or empty or idle or [None])[0]
+            if spare is None:
+                continue
+            if slots[spare].get("fam") != fam:
+                self._anima_commit_slot({"port": spare, "fam": fam, "chs": [], "split": False, "hero": True})
+                if slots[spare].get("fam") != fam:
+                    continue                    # a player still sounds there: try again later
+            slots[spare]["hero"] = slots[spare]["spread"] = True
+            # balanced by the channels each unit holds (not by who is heard right now, which would drain the
+            # family's unit into the spare over a long piece)
+            mine = on(src)
+            n = (len(mine) - len(on(spare))) // 2
+            if n <= 0:
+                continue
+            side = sorted(mine, key=lambda c: (int(self.pan[c] if self.pan[c] is not None else 64), c))[-n:]
+            slots[spare]["spread_want"] = set(side)
+            slots[spare]["spread_src"] = src
+            self._anima_feedback(
+                "efx", f"P{spare + 1} takes {fam} ch{','.join(str(c + 1) for c in sorted(side))} from "
+                       f"P{src + 1} (family spread, {len(mine)} channels there)", status=True)
+            return
+
+    def _anima_spread_idle(self, port: int, now: float) -> bool:
+        """Another family's unit a spread may take: quiet, evictable, its owners unheard SPREAD_IDLE_SEC and,
+        while the player plays, none of them about to play."""
+        sl = self._anima_slots[port]
+        if not self._anima_slot_evictable(port, now):
+            return False
+        last = max(float(sl.get("heard_t") or 0.0), float(sl.get("t") or 0.0))
+        if now - last < ANIMA_SPREAD_IDLE_SEC:
+            return False
+        for c in sl.get("chs") or []:
+            if self._anima_ch_heard(c, now):
+                return False
+        return not self._anima_owner_due(sl.get("chs") or [])
+
+    def _anima_owner_due(self, chs) -> bool:
+        """While the player plays: one of these channels plays within ANIMA_LOOKAHEAD_HOLD."""
+        for c in chs or []:
+            nxt = self._anima_next_note(c)
+            if nxt is not None and nxt < ANIMA_LOOKAHEAD_HOLD:
+                return True
+        return False
+
+    def _anima_lookahead_tick(self) -> None:
+        """While the player plays (1.0.004): a family with no unit yet is placed ANIMA_LOOKAHEAD_PREP before its
+        next note, while units are quiet, so its type goes in a gap and its Part EFX is On before the note, not
+        written at the note (where a type change can click and the first notes play dry)."""
+        if self.player is None and self._anima_la is None:
+            return
+        now = time.monotonic()
+        if now - float(getattr(self, "_anima_la_t", 0.0) or 0.0) < 0.05:
+            return
+        self._anima_la_t = now
+        if getattr(self, "_anima_efx_burst_dirty", False):
+            return
+        for c in range(16):
+            if c == 9 or self._anima_ch_port.get(c) is not None or self._anima_is_rhythm(c):
+                continue
+            if not self._anima_efx_family(c):
+                continue
+            nxt = self._anima_next_note(c)
+            if nxt is None or not (ANIMA_EFX_WET_SEC + 0.05 <= nxt <= ANIMA_LOOKAHEAD_PREP):
+                continue
+            self._anima_maybe_efx(c, at_note=False)
 
     def _anima_seat_efx(self, force: bool = False) -> None:
         """Give each quiet seat unit the gentle "seat" insert, and wire the
@@ -9784,7 +10014,7 @@ class Duality:
             status=True,
         )
 
-    def _anima_efx_place(self, ch: int) -> None:
+    def _anima_efx_place(self, ch: int, at_note: bool = True) -> None:
         """Seat one unpinned part on a box. Touches only that box.
 
         Order: this family's box (guitars prefer a spare unit first), an
@@ -9868,6 +10098,15 @@ class Duality:
             port = spare
         if port is None:
             return
+        if at_note and _slot(port).get("fam") != fam and self._anima_next_note(ch) is not None:
+            # The player plays (1.0.004): a type / owner change right at the note can click, so the part starts
+            # dry and the look-ahead places it in its next gap (_anima_lookahead_tick), for up to DEFER seconds.
+            first = self._anima_defer.get(ch)
+            if first is None or now - first > 2 * ANIMA_LOOKAHEAD_DEFER:     # a new wait (an old one ran out long ago)
+                first = self._anima_defer[ch] = now
+            if now - first < ANIMA_LOOKAHEAD_DEFER:
+                return
+        self._anima_defer.pop(ch, None)
         self._anima_efx_grace = ANIMA_EFX_DUMP_SEC  # playing now; heard at once
         self._anima_commit_slot({"port": port, "fam": fam, "chs": chs, "split": split})
         sl = _slot(port)
@@ -9931,7 +10170,7 @@ class Duality:
             self._anima_efx_burst_dirty = True
             self._anima_efx_burst_n = int(getattr(self, "_anima_efx_burst_n", 0) or 0) + 1
 
-    def _anima_maybe_efx(self, ch: int) -> None:
+    def _anima_maybe_efx(self, ch: int, at_note: bool = True) -> None:
         if self._anima_cue_chs is not None:
             self._anima_cue_chs.add(ch & 0x0F)   # a part that plays is part of the cue
         if not self.anima or self._anima_is_rhythm(ch):
@@ -9955,10 +10194,11 @@ class Duality:
         seek = getattr(self, "_anima_efx_seek_t", None)
         if seek is None:
             seek = self._anima_efx_seek_t = [0.0] * 16
-        if now - seek[ch] < ANIMA_EFX_SWITCH_SEC:
-            return
-        seek[ch] = now
-        self._anima_efx_place(ch)
+        if at_note:
+            if now - seek[ch] < ANIMA_EFX_SWITCH_SEC:
+                return
+            seek[ch] = now
+        self._anima_efx_place(ch, at_note)
 
     def _anima_efx_assign_family(self, fam: str, hero: int) -> None:
         """EFX On for every channel in this family; Off for the others."""
@@ -12671,6 +12911,8 @@ class Duality:
             )
         finally:
             console = saved
+        lane._anima_la = lambda ch, P=port: (main.player.lookahead(P, ch, time.monotonic())
+                                             if main.player is not None else None)
         lane._log_line = lambda text, L=letter: main._log_line(f"[{L}] {text}")
         lane._set_status = lambda m, duration=5.0, L=letter: main._set_status(f"[{L}] {m}", duration)
         return lane
