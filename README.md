@@ -83,6 +83,8 @@ Built for musicians and retro-computing folks (DOS soundtracks, Sound Canvas, XG
 
 ### More than 16 channels: multi-port songs
 - A song whose tracks use more than one MIDI port (32, 48 or 64 channels, like Roland's SC-8850 demo "Space Flight") plays each port on units of its own, so port B's instruments never land on port A's units
+- Only ports with channel messages count: sequencers often write a port marker on every track, the tempo track too, so a port that holds only tempo or SysEx plays with the song's port that has the parts (a 16-channel song re-saved with all its parts on port F still plays on every out)
+- While the ports play, the panel's channel grid shows every port merged (channel N lights for channel N on any port; the row is labelled with the port letters)
 - Every port that can play gets a unit first, then the rest are shared in blocks: two ports on six units play A on units 1–3 and B on 4–6
 - A port can ask for a kind of unit with a text event (Text, Marker or Cue) on one of its tracks, which other players ignore:
   - `duality: 8850` — this track's port wants an SC-8850 (any `--outs` tag works: `gs`, `xg`, `mt32`, `cm64`, …)

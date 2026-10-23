@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.005"
+VERSION = "1.0.006"
 
 
 """
@@ -1129,6 +1129,21 @@ class PlayerSong:
 
         self.events = [(sec(tk), port, m) for tk, _ti, _seq, port, m in rows]
         self.length = sec(end_tick)            # end-of-track can leave room for a last ring-out
+        # A song's ports are the ones with channel messages (1.0.006). Sequencers write a MIDI Port marker on every
+        # track, the tempo track's too (a re-saved ONESTOP2: the tempo track and its SysEx on port A, every part on
+        # port F): a port with only SysEx / system messages plays with the first port that has channels, so such
+        # a file is a 16-channel song, whatever its port letter.
+        chan = {p for _s, p, m in self.events if hasattr(m, "channel")}
+        self.port_moves: dict = {}             # system-only port -> the port its messages play with
+        if chan:
+            home = min(chan)
+            self.port_moves = {p: home for p in {p for _s, p, _m in self.events} if p not in chan}
+            if self.port_moves:
+                self.events = [(t, self.port_moves.get(p, p), m) for t, p, m in self.events]
+            for p in list(self.requests):
+                if p in self.port_moves:
+                    req = self.requests.pop(p)
+                    self.requests.setdefault(self.port_moves[p], req)
         self.ports = sorted({p for _s, p, _m in self.events})
         self._ons: dict = {}                   # (port, channel) -> note-on times, for next_on
         for t, port, m in self.events:
@@ -1234,7 +1249,10 @@ class MidiPlayer:
         nxt = self.index + 1
         if nxt < len(self.files) or self.loop:
             self._fetch(nxt % len(self.files))
-        ports = "" if self.song.ports in ([], [0]) else f", ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
+        ports = "" if len(self.song.ports) <= 1 else f", ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
+        for p, home in sorted(self.song.port_moves.items()):
+            self.logs.append(f"PLAY  Port {chr(65 + p)} has no channels (tempo / SysEx only): it plays with "
+                             f"port {chr(65 + home)}")
         self.messages.append(f"▶ {self.index + 1}/{len(self.files)} {self.song.name} ({_mmss(self.song.length)}{ports})")
         self.logs.append(f"PLAY  Song {self.index + 1}/{len(self.files)}: {self.song.path} "
                          f"({_mmss(self.song.length)}, {len(self.song.events)} events{ports})")
@@ -1377,7 +1395,7 @@ class MidiPlayer:
             return "—"
         icon = {"playing": "▶", "paused": "⏸", "stopped": "■", "gap": "▶"}.get(self.state, " ")
         t = self.song_time(now)
-        ports = "" if self.song.ports in ([], [0]) else f"  ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
+        ports = "" if len(self.song.ports) <= 1 else f"  ports {'/'.join(chr(65 + p) for p in self.song.ports)}"
         nxt = ""
         if self.state == "gap":
             nxt = "  (next song…)" if self.index + 1 < n or self.loop else ""
@@ -12131,8 +12149,10 @@ class Duality:
             return self._status_panel_body()
         names = ("voice_counts", "active", "_anima_ghosts", "last_note_time", "last_activity_time",
                  "current_chord_size", "peak_chord_size", "peak_voices", "detected_format",
-                 "drop_count", "steal_count", "filtered_count")
-        keep = {k: getattr(self, k) for k in names}
+                 "drop_count", "steal_count", "filtered_count", "_grid_label")
+        cc_rows = ("vol", "pan", "mod", "pitch")
+        names += cc_rows + tuple(f"{k}_time" for k in cc_rows)
+        keep = {k: getattr(self, k, None) for k in names}
         lanes = self._lanes
         main = lanes.get(self._player_main_port) or next(iter(lanes.values()))
         try:
@@ -12142,11 +12162,26 @@ class Duality:
                     if j < len(lane.voice_counts):
                         counts[i] = lane.voice_counts[j]
             self.voice_counts = counts
-            for k in ("active", "_anima_ghosts", "last_note_time", "last_activity_time",
-                      "current_chord_size", "peak_chord_size", "detected_format"):
-                setattr(self, k, getattr(main, k))
+            # The channel grid merges every port (1.0.006): channel N lights and counts for channel N on any
+            # port; Vol / Pan / Mod / Pitch show the latest change of that channel on any port
+            self.active = {(k[0], k[1], p): info for p, lane in lanes.items() for k, info in lane.active.items()}
+            self._anima_ghosts = {(p, k): g for p, lane in lanes.items()
+                                  for k, g in (lane._anima_ghosts or {}).items()}
+            for k in cc_rows:
+                vals, times = [None] * 16, [0.0] * 16
+                for lane in lanes.values():
+                    lv, lt = getattr(lane, k), getattr(lane, f"{k}_time")
+                    for c in range(16):
+                        if lv[c] is not None and (vals[c] is None or lt[c] >= times[c]):
+                            vals[c], times[c] = lv[c], lt[c]
+                setattr(self, k, vals)
+                setattr(self, f"{k}_time", times)
+            for k in ("last_note_time", "last_activity_time", "current_chord_size", "peak_chord_size"):
+                setattr(self, k, max(getattr(l, k) for l in lanes.values()))
+            self.detected_format = main.detected_format
             for k in ("peak_voices", "drop_count", "steal_count", "filtered_count"):
                 setattr(self, k, keep[k] + sum(getattr(l, k) for l in lanes.values()))
+            self._grid_label = "MIDI Ch " + "".join(chr(65 + p) for p in sorted(lanes))
             return self._status_panel_body()
         finally:
             for k, v in keep.items():
@@ -12409,7 +12444,7 @@ class Duality:
         channel_table = Table(show_header=False, box=None, padding=(0, 0), expand=True)
         channel_table.add_column("label", style="cyan", width=14, no_wrap=True)
         channel_table.add_column("values", ratio=1)
-        channel_table.add_row("MIDI Channel", Text.from_markup(sep.join(ch_num_parts)))
+        channel_table.add_row(getattr(self, "_grid_label", None) or "MIDI Channel", Text.from_markup(sep.join(ch_num_parts)))
         channel_table.add_row("Voice Count",  Text.from_markup(sep.join(voice_parts)))
         channel_table.add_row("Vol",          Text.from_markup(sep.join(vol_parts)))
         channel_table.add_row("Pan",          Text.from_markup(sep.join(pan_parts)))

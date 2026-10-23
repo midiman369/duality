@@ -395,6 +395,48 @@ dd._handle_hotkey("s")
 check(dd._anima_seed_locked and lane_seeds() == before and all(l._anima_seed_locked for l in dd._lanes.values()),
       f"S locks the badge seed; the lanes keep theirs: {lane_seeds()} vs {before}")
 
+# a sequencer's port markers (1.0.006): the tempo track (and its SysEx) on port A, every part on port F, as in a
+# re-saved ONESTOP2: one 16-channel song, played on every out
+seq = os.path.join(tmp, "m_seqports.mid")
+mf = mido.MidiFile(type=1, ticks_per_beat=480)
+mf.tracks.append(mido.MidiTrack([mido.MetaMessage("midi_port", port=0, time=0),
+                                 mido.MetaMessage("set_tempo", tempo=500000, time=0),
+                                 mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F, 0x00, 0x41],
+                                              time=0)]))
+for c in (0, 1):
+    mf.tracks.append(mido.MidiTrack([mido.MetaMessage("midi_port", port=5, time=0),
+                                     mido.Message("program_change", channel=c, program=c, time=0),
+                                     mido.Message("note_on", channel=c, note=60 + c, velocity=90, time=10),
+                                     mido.Message("note_off", channel=c, note=60 + c, velocity=0, time=960)]))
+mf.save(seq)
+ps = D.PlayerSong(seq)
+check(ps.ports == [5] and ps.port_moves == {0: 5}, f"port markers: the song is port F alone ({ps.ports}, {ps.port_moves})")
+dd, lanes_seen = play_through(names4, [gs] * 4, [seq], 3.0)
+ons = {(i, m.note) for t, i, m in REC if m.type == "note_on" and m.velocity}
+resets = {i for t, i, m in REC if m.type == "sysex" and list(m.data[:7]) == [0x41, 0x10, 0x42, 0x12, 0x40, 0x00, 0x7F]}
+check(not lanes_seen and {n for _i, n in ons} == {60, 61} and resets >= {0, 1, 2, 3},
+      f"played as one 16-channel song on every out: lanes {lanes_seen}, notes {sorted(ons)}, resets {sorted(resets)}")
+
+# the panel's channel grid while lanes play (1.0.006): every port's channels count, the label names the ports
+import io
+from rich.console import Console as _Console
+mp = multiport(os.path.join(tmp, "m_panel.mid"), [0, 1])
+REC.clear()
+D.mido.open_output = lambda n, *a, **k: FakeOut(n, names4.index(n))
+dd = D.Duality(None, names4, show_status=False, out_formats=[gs] * 4, poly_limits=[32] * 4, play=[mp])
+dd.player.threaded = False
+CLOCK[0] = 3000.0
+while CLOCK[0] < 3002.0 and not (dd._lanes and all(l.active for l in dd._lanes.values())):
+    dd._service()
+    CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+buf = io.StringIO()
+_Console(file=buf, width=140, color_system=None).print(dd._make_status_panel())
+text = buf.getvalue()
+row = next((ln for ln in text.splitlines() if "Voice Count" in ln), "")
+first = row.split("Voice Count", 1)[1].split()[:1] if row else []
+check("MIDI Ch AB" in text and first == ["2"],
+      f"the grid merges ports A and B (ch1 plays on both): label {'MIDI Ch AB' in text}, ch1 voices {first}")
+
 print("FAILS:" if fails else "PASS")
 for f in fails:
     print("  ", f)
