@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (now 1.0.006; the next build is 1.0.007). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.007; the next build is 1.0.008). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -24,7 +24,8 @@ look-ahead (Anima, see "Family spread" under the EFX rules); 1.0.005 lane seeds 
 port, locked or not (`_lane_seed`, `_lanes_seed_sync`; S is no longer a lane key); 1.0.006 song ports are those
 with channel messages (`PlayerSong.port_moves`: a tempo / SysEx-only port plays with the first channel port; a
 re-saved ONESTOP2 had every part on port F) and the panel's channel grid merges every lane
-(`_make_status_panel`). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+(`_make_status_panel`); 1.0.007 the at-note defer only when a gap is coming (`PlayerSong.gap_within`,
+`_anima_gap_coming`, ANIMA_LOOKAHEAD_GAP 0.5 s). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 
@@ -148,7 +149,8 @@ the percussion kit through Bald Mountain).
 Player look-ahead (1.0.004; live input unchanged): `PlayerSong.next_on` / `MidiPlayer.lookahead` / `_anima_next_note`
 (a lane's `_anima_la`): an unplaced family is placed ANIMA_LOOKAHEAD_PREP (2 s) before its next note
 (`_anima_lookahead_tick`); a type / owner change that `_anima_efx_place` would make right at a note is put off and
-the part starts dry until its next gap (at most ANIMA_LOOKAHEAD_DEFER, 4 s); an owner that plays within
+the part starts dry until its next gap (at most ANIMA_LOOKAHEAD_DEFER, 4 s; 1.0.007: only when the file shows a
+gap of ANIMA_LOOKAHEAD_GAP within it, else it is placed at once); an owner that plays within
 ANIMA_LOOKAHEAD_HOLD (3 s) is not stale; a channel moves only when its next note is ANIMA_LOOKAHEAD_MOVE (0.3 s) or
 more away. On the 4-port suite (six units, seed DF14) Part EFX On writes landing within 100 ms of their channel's
 next note went from 157 of 250 to 35 of 282 before the defer (the rest on the one-unit lanes C / D).

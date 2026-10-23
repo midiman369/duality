@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.006"
+VERSION = "1.0.007"
 
 
 """
@@ -882,6 +882,7 @@ ANIMA_LOOKAHEAD_MOVE = 0.30      # a Part EFX On / move only when the channel's 
 ANIMA_LOOKAHEAD_PREP = 2.0       # an unplaced family is placed this long before its next note (type in a gap)
 ANIMA_LOOKAHEAD_HOLD = 3.0       # an owner whose next note is this close is not evicted
 ANIMA_LOOKAHEAD_DEFER = 4.0      # a part may start dry this long while its insert waits for a gap
+ANIMA_LOOKAHEAD_GAP = 0.5        # ...and only when the file shows a gap of this many seconds coming within it
 # Tone traits (tables_8850.ANIMA_TONE_TRAITS): a marked tone the part does not suit goes back
 # to the capital once, at a rest (never under a note), or one step down a tone set
 # (tables_8850.ANIMA_TONE_STEPDOWN, 0.19.050). Counts since the program change.
@@ -1150,6 +1151,20 @@ class PlayerSong:
             if m.type == "note_on" and m.velocity:
                 self._ons.setdefault((port, m.channel), []).append(t)
 
+    def gap_within(self, port: int, ch: int, t: float, horizon: float, gap: float) -> bool:
+        """Does the channel leave a gap of at least `gap` seconds between note-ons in (t, t + horizon]?"""
+        lst = self._ons.get((port, ch))
+        if not lst:
+            return True
+        i = bisect.bisect_right(lst, t)
+        prev = t
+        while i < len(lst) and lst[i] <= t + horizon:
+            if lst[i] - prev >= gap:
+                return True
+            prev = lst[i]
+            i += 1
+        return i >= len(lst) or t + horizon - prev >= gap
+
     def next_on(self, port: int, ch: int, t: float):
         """The song time of the channel's next note-on after t (None: no more)."""
         lst = self._ons.get((port, ch))
@@ -1330,6 +1345,12 @@ class MidiPlayer:
             self.session = None
             self.gap_until = now + PLAYER_GAP
         return out
+
+    def gap_ahead(self, port: int, ch: int, now: float, horizon: float, gap: float):
+        """Will this song port's channel leave a gap of `gap` seconds within `horizon`? None when nothing plays."""
+        if self.state != "playing" or self.song is None:
+            return None
+        return self.song.gap_within(port, ch, now - self.t0, horizon, gap)
 
     def lookahead(self, port: int, ch: int, now: float):
         """Seconds until this song port's channel plays its next note (1.0.004, Anima's look-ahead);
@@ -1513,6 +1534,7 @@ class Duality:
         self._opener = opener or mido.open_output
         self._lanes: dict = {}              # port -> Duality lane while a multi-port song plays
         self._anima_la = None               # a lane's look-ahead: ch -> seconds to its next note (1.0.004)
+        self._anima_la_gap = None           # a lane's look-ahead: will ch leave a gap soon (1.0.007)
         self._anima_defer: dict = {}        # ch -> when its placement was first put off at a note (look-ahead)
         self._lane_outs: dict = {}          # port -> out indices
         self._lane_session = None           # the player session the lanes belong to
@@ -8516,6 +8538,15 @@ class Duality:
             return None
         return p.lookahead(self._player_main_port, ch & 0x0F, time.monotonic())
 
+    def _anima_gap_coming(self, ch: int, horizon: float, gap: float):
+        """While the player plays: will channel ch leave a gap of `gap` seconds within `horizon` (None live)."""
+        if self._anima_la_gap is not None:
+            return self._anima_la_gap(ch & 0x0F, horizon, gap)
+        p = self.player
+        if p is None or self._lanes:
+            return None
+        return p.gap_ahead(self._player_main_port, ch & 0x0F, time.monotonic(), horizon, gap)
+
     def _anima_ch_resting(self, ch: int, now: float, breath: float) -> bool:
         """Nothing of the channel sounding or queued (notes, ghosts, strums, mallets) for breath seconds, and,
         while the player plays, its next note at least ANIMA_LOOKAHEAD_MOVE away (a Part EFX On settles)."""
@@ -10117,9 +10148,12 @@ class Duality:
             port = spare
         if port is None:
             return
-        if at_note and _slot(port).get("fam") != fam and self._anima_next_note(ch) is not None:
+        if (at_note and _slot(port).get("fam") != fam and self._anima_next_note(ch) is not None
+                and self._anima_gap_coming(ch, ANIMA_LOOKAHEAD_DEFER, ANIMA_LOOKAHEAD_GAP)):
             # The player plays (1.0.004): a type / owner change right at the note can click, so the part starts
-            # dry and the look-ahead places it in its next gap (_anima_lookahead_tick), for up to DEFER seconds.
+            # dry and the look-ahead places it in its next gap (_anima_lookahead_tick), for up to DEFER seconds;
+            # only when the file shows such a gap coming (1.0.007: a part that plays straight on is placed now,
+            # an organ entering mid-riff in ONESTOP2 sat dry 6.4 s waiting for a gap that never came)
             first = self._anima_defer.get(ch)
             if first is None or now - first > 2 * ANIMA_LOOKAHEAD_DEFER:     # a new wait (an old one ran out long ago)
                 first = self._anima_defer[ch] = now
@@ -12958,6 +12992,8 @@ class Duality:
             console = saved
         lane._anima_la = lambda ch, P=port: (main.player.lookahead(P, ch, time.monotonic())
                                              if main.player is not None else None)
+        lane._anima_la_gap = lambda ch, horizon, gap, P=port: (
+            main.player.gap_ahead(P, ch, time.monotonic(), horizon, gap) if main.player is not None else None)
         lane._log_line = lambda text, L=letter: main._log_line(f"[{L}] {text}")
         lane._set_status = lambda m, duration=5.0, L=letter: main._set_status(f"[{L}] {m}", duration)
         return lane

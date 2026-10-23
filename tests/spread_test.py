@@ -212,6 +212,38 @@ print(f"3 look-ahead: brass first note {b0:.2f}s, its Part On {brass_on[:1]}; ch
       f"its Part On {[round(t, 2) for t in cho_on[-1:]]}")
 no_type_under_player("3")
 
+# 4. the same entry with no gap coming (1.0.007): the brass plays straight on, so it is placed at once, not left dry
+mf = mido.MidiFile(type=0, ticks_per_beat=480)
+tr = mido.MidiTrack()
+mf.tracks.append(tr)
+ev = [(0.0, mido.Message("program_change", channel=STR, program=48)),
+      (4.0, mido.Message("program_change", channel=BRS, program=61))]
+for k in range(8):
+    ev += on(1.0 + k * 0.5, STR, 60 + (k % 3), 0.5, 80)
+for k in range(40):                                  # brass 5.0 - 15.0 s without a rest
+    ev += on(5.0 + k * 0.25, BRS, 60 + (k % 2) * 2, 0.25, 90)
+last = 0
+for t, m in sorted(ev, key=lambda e: (e[0], e[1].type == "note_on")):
+    tk = int(round(t * 960))
+    tr.append(m.copy(time=tk - last))
+    last = tk
+path2 = os.path.join(os.path.dirname(path), "nogap.mid")
+mf.save(path2)
+REC.clear()
+d = D.Duality(None, ["P1"], anima=True, show_status=False, out_formats=[frozenset({"gs"})], anima_seed=0x2B17,
+              poly_limits=[64], play=[path2], anima_foley=0.0)
+d.player.threaded = False
+CLOCK[0] = 1000.0
+while CLOCK[0] < 1018.0:
+    d._service()
+    CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+b0 = first_on(BRS)
+brass_on = [t for t, p, v in part_toggles(BRS) if v == 1]
+if not brass_on or brass_on[0] - b0 > D.ANIMA_EFX_SWITCH_SEC + 0.1:
+    fails.append(f"4: the brass waited for a gap that never comes: Part On {brass_on[:1]}, first note {b0:.2f}")
+print(f"4 no gap: brass first note {b0:.2f}s, its Part On {[round(t, 2) for t in brass_on[:1]]}")
+no_type_under_player("4")
+
 if fails:
     print(f"FAILS ({len(fails)}):")
     for f in fails:
