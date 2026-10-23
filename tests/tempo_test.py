@@ -7,7 +7,8 @@ import duality as D
 
 def fresh():
     return types.SimpleNamespace(_tempo_clock_t=0.0, _tempo_clock_iv=0.0, _tempo_onsets=[],
-                                 _tempo_beat=0.0, _tempo_beat_t=0.0)
+                                 _tempo_beat=0.0, _tempo_beat_t=0.0,
+                                 _anima_player_beat=lambda: None)     # live input: no player tempo map
 
 
 fails = []

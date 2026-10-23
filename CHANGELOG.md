@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased (dev 1.0.007)
+## Unreleased (dev 1.0.008)
 
+- Anima delay inserts follow the song's tempo map while the player plays; the beat guessed from note spacing could be off (ONESTOP2's synth leads at 132 BPM got 680 ms echoes, landing between the beats: the lead sounded a beat off). The GTR Multi 3 wah's rocking rate follows it too.
 - Anima look-ahead: an insert change at a part's first note waits for the part's next gap only when the file shows one coming; a part that plays straight on gets its insert at once (an organ entering mid-riff in ONESTOP2 had played its first six seconds dry).
 - Player: a port with only tempo / SysEx (a sequencer's port marker on the tempo track) no longer counts as a port of its own, so a 16-channel song re-saved with its parts on another port plays on every out instead of being split into lanes.
 - Panel: while a multi-port song plays, the channel grid (MIDI channel, voice count, Vol, Pan, Mod, Pitch) shows every port merged instead of port A alone.

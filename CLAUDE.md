@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (now 1.0.007; the next build is 1.0.008). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.008; the next build is 1.0.009). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -25,7 +25,9 @@ port, locked or not (`_lane_seed`, `_lanes_seed_sync`; S is no longer a lane key
 with channel messages (`PlayerSong.port_moves`: a tempo / SysEx-only port plays with the first channel port; a
 re-saved ONESTOP2 had every part on port F) and the panel's channel grid merges every lane
 (`_make_status_panel`); 1.0.007 the at-note defer only when a gap is coming (`PlayerSong.gap_within`,
-`_anima_gap_coming`, ANIMA_LOOKAHEAD_GAP 0.5 s). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+`_anima_gap_coming`, ANIMA_LOOKAHEAD_GAP 0.5 s); 1.0.008 the delay beat from the song's tempo map while the
+player plays (`PlayerSong.beat_at`, `MidiPlayer.beat`, `_anima_player_beat`, a lane's `_anima_la_beat`; the onset
+estimate put 17 of 30 delay settings in ONESTOP2 off the beat). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 

@@ -437,6 +437,28 @@ first = row.split("Voice Count", 1)[1].split()[:1] if row else []
 check("MIDI Ch AB" in text and first == ["2"],
       f"the grid merges ports A and B (ch1 plays on both): label {'MIDI Ch AB' in text}, ch1 voices {first}")
 
+# the beat for delay inserts (1.0.008): the song's tempo map while the player plays, not the onset estimate, which
+# takes a 3-eighth arpeggio at 132 BPM for a 680 ms beat
+arp = os.path.join(tmp, "m_arp.mid")
+mf = mido.MidiFile(type=0, ticks_per_beat=480)
+tr = mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(132), time=0),
+                     mido.Message("program_change", channel=0, program=81, time=0)])
+for k in range(96):                                  # a figure every three eighths
+    tr.append(mido.Message("note_on", channel=0, note=60 + (k % 3) * 4, velocity=90, time=0 if k == 0 else 600))
+    tr.append(mido.Message("note_off", channel=0, note=60 + (k % 3) * 4, velocity=0, time=120))
+mf.tracks.append(tr)
+mf.save(arp)
+REC.clear()
+D.mido.open_output = lambda n, *a, **k: FakeOut(n, names4.index(n))
+dd = D.Duality(None, names4, show_status=False, out_formats=[gs] * 4, poly_limits=[32] * 4, play=[arp], anima=True)
+dd.player.threaded = False
+CLOCK[0] = 3000.0
+while CLOCK[0] < 3020.0:
+    dd._service()
+    CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+b = dd._anima_beat_sec()
+check(abs(b - 60 / 132) < 0.002, f"the delay beat follows the tempo map while the player plays: {b:.3f}s (want 0.455)")
+
 print("FAILS:" if fails else "PASS")
 for f in fails:
     print("  ", f)

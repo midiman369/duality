@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.007"
+VERSION = "1.0.008"
 
 
 """
@@ -1130,6 +1130,7 @@ class PlayerSong:
 
         self.events = [(sec(tk), port, m) for tk, _ti, _seq, port, m in rows]
         self.length = sec(end_tick)            # end-of-track can leave room for a last ring-out
+        self._beats = [(s0, us / 1e6) for _tk, s0, us in segs]   # (song seconds, beat length) from the tempo map
         # A song's ports are the ones with channel messages (1.0.006). Sequencers write a MIDI Port marker on every
         # track, the tempo track's too (a re-saved ONESTOP2: the tempo track and its SysEx on port A, every part on
         # port F): a port with only SysEx / system messages plays with the first port that has channels, so such
@@ -1150,6 +1151,11 @@ class PlayerSong:
         for t, port, m in self.events:
             if m.type == "note_on" and m.velocity:
                 self._ons.setdefault((port, m.channel), []).append(t)
+
+    def beat_at(self, t: float) -> float:
+        """The beat (a quarter note) in seconds at song time t, from the tempo map."""
+        i = bisect.bisect_right([s0 for s0, _b in self._beats], t) - 1
+        return self._beats[max(0, i)][1]
 
     def gap_within(self, port: int, ch: int, t: float, horizon: float, gap: float) -> bool:
         """Does the channel leave a gap of at least `gap` seconds between note-ons in (t, t + horizon]?"""
@@ -1346,6 +1352,12 @@ class MidiPlayer:
             self.gap_until = now + PLAYER_GAP
         return out
 
+    def beat(self, now: float):
+        """The playing song's beat in seconds from its tempo map (1.0.008); None when nothing plays."""
+        if self.state != "playing" or self.song is None:
+            return None
+        return self.song.beat_at(now - self.t0)
+
     def gap_ahead(self, port: int, ch: int, now: float, horizon: float, gap: float):
         """Will this song port's channel leave a gap of `gap` seconds within `horizon`? None when nothing plays."""
         if self.state != "playing" or self.song is None:
@@ -1535,6 +1547,7 @@ class Duality:
         self._lanes: dict = {}              # port -> Duality lane while a multi-port song plays
         self._anima_la = None               # a lane's look-ahead: ch -> seconds to its next note (1.0.004)
         self._anima_la_gap = None           # a lane's look-ahead: will ch leave a gap soon (1.0.007)
+        self._anima_la_beat = None          # a lane's look-ahead: the song's beat now (1.0.008)
         self._anima_defer: dict = {}        # ch -> when its placement was first put off at a note (look-ahead)
         self._lane_outs: dict = {}          # port -> out indices
         self._lane_session = None           # the player session the lanes belong to
@@ -6889,8 +6902,17 @@ class Duality:
             self._tempo_onsets = [t for t in ons[-256:] if t >= cut]
 
     def _anima_beat_sec(self) -> float:
-        """Beat length in seconds, or 0.0 when there is not enough to go on."""
+        """Beat length in seconds, or 0.0 when there is not enough to go on. While the file player plays, the song's
+        own tempo map (1.0.008: the estimate from note spacing took ONESTOP2's 3-eighth synth arpeggios at 132 BPM for
+        a 680 ms beat, so the leads' delay echoes fell between the beats); live, MIDI clock or the onset estimate."""
         now = time.monotonic()
+        pb = self._anima_player_beat()
+        if pb:
+            while pb < 0.4:
+                pb *= 2
+            while pb > 0.8:
+                pb /= 2
+            return pb
         if self._tempo_clock_iv and now - self._tempo_clock_t < 1.0:
             return self._tempo_clock_iv * 24.0
         if self._tempo_beat_t and now - self._tempo_beat_t < 2.0:
@@ -8537,6 +8559,15 @@ class Duality:
         if p is None or self._lanes:
             return None
         return p.lookahead(self._player_main_port, ch & 0x0F, time.monotonic())
+
+    def _anima_player_beat(self):
+        """The playing song's beat in seconds (a lane asks the main router's player); None live."""
+        if self._anima_la_beat is not None:
+            return self._anima_la_beat()
+        p = self.player
+        if p is None or self._lanes:
+            return None
+        return p.beat(time.monotonic())
 
     def _anima_gap_coming(self, ch: int, horizon: float, gap: float):
         """While the player plays: will channel ch leave a gap of `gap` seconds within `horizon` (None live)."""
@@ -12994,6 +13025,7 @@ class Duality:
                                              if main.player is not None else None)
         lane._anima_la_gap = lambda ch, horizon, gap, P=port: (
             main.player.gap_ahead(P, ch, time.monotonic(), horizon, gap) if main.player is not None else None)
+        lane._anima_la_beat = lambda: main.player.beat(time.monotonic()) if main.player is not None else None
         lane._log_line = lambda text, L=letter: main._log_line(f"[{L}] {text}")
         lane._set_status = lambda m, duration=5.0, L=letter: main._set_status(f"[{L}] {m}", duration)
         return lane
