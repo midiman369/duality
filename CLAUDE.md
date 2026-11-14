@@ -34,9 +34,10 @@ republish that page, send the zip.
 0. **kkarpg score** (2026-11-14): an original score for the user's ARPG (Gitea `retrogitadmin/kkarpg`, read-only;
    clone it beside this checkout like duality-workdata, shallow with `--filter=blob:limit=2m`: a full clone times out).
    Delivered: the Corrupted Plains (5:20, intensity layers on ports A-D, the lead guitar on E through GTR Multi 3)
-   with five stingers (`songs/make_kk_plains.py`), and its elite fight cue with the elite-slain stinger
-   (`songs/make_kk_elite.py`), both in duality-workdata; waits for the user's listening notes. Details, the user's
-   mixing calls and the next cues: duality-workdata `songs/NOTES.md`, "kkarpg score" and "kkarpg elite fight cue".
+   with five stingers (`songs/make_kk_plains.py`), its elite fight cue with the elite-slain stinger
+   (`songs/make_kk_elite.py`) and the Act 1 hub town (`songs/make_kk_town.py`), all in duality-workdata; waits for
+   the user's listening notes. Details, the user's mixing calls and the next cues: duality-workdata
+   `songs/NOTES.md`, "kkarpg score", "kkarpg elite fight cue" and "kkarpg Act 1 hub town".
 1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
    other medleys now"; Bald Mountain came first, then these): Jazz Age, Shanties & Folk, Bolero Ladder get the
    Halloween / Mars treatment. Details, sources and what needs the user's PDFs: duality-workdata `songs/NOTES.md`,
