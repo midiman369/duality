@@ -35,7 +35,8 @@ republish that page, send the zip.
    clone it beside this checkout like duality-workdata, shallow with `--filter=blob:limit=2m`: a full clone times out).
    Delivered: the Corrupted Plains (5:20, intensity layers on ports A-D, the lead guitar on E through GTR Multi 3)
    with five stingers (`songs/make_kk_plains.py`), its elite fight cue with the elite-slain stinger
-   (`songs/make_kk_elite.py`) and the Act 1 hub town (`songs/make_kk_town.py`), all in duality-workdata; waits for
+   (`songs/make_kk_elite.py`) and the Act 1 hub town, bright (`songs/make_kk_town.py`, after the act is cleansed) and
+   corrupted (`songs/make_kk_town_corrupted.py`, until then), all in duality-workdata; waits for
    the user's listening notes. Details, the user's mixing calls and the next cues: duality-workdata
    `songs/NOTES.md`, "kkarpg score", "kkarpg elite fight cue" and "kkarpg Act 1 hub town".
 1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
