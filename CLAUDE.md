@@ -31,6 +31,11 @@ estimate put 17 of 30 delay settings in ONESTOP2 off the beat). All three picker
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 
+0. **Private song projects** (2026-11-14 on; the user, 2026-11-22: "fully private"): they live only in
+   duality-workdata `songs/`. Nothing about them goes in this repo or anywhere on GitHub: no names, story, file or
+   cue names, briefs or the user's quotes, in files, commit messages or pull requests. What they are, what is done,
+   what is next and how to get any other repo they need: duality-workdata `songs/NOTES.md`, "Next up". When the
+   user asks for songs or says "continue" on them, read that first; handoff notes for them go there, not here.
 1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
    other medleys now"; Bald Mountain came first, then these): Jazz Age, Shanties & Folk, Bolero Ladder get the
    Halloween / Mars treatment. Details, sources and what needs the user's PDFs: duality-workdata `songs/NOTES.md`,
