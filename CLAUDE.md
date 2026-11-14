@@ -31,6 +31,11 @@ estimate put 17 of 30 delay settings in ONESTOP2 off the beat). All three picker
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 
+0. **kkarpg score** (2026-11-14): an original score for the user's ARPG (Gitea `retrogitadmin/kkarpg`, read-only;
+   clone it beside this checkout like duality-workdata, shallow with `--filter=blob:limit=2m`: a full clone times out).
+   First cue delivered: the Corrupted Plains (four intensity layers on ports A-D) and four stingers,
+   duality-workdata `songs/make_kk_plains.py`; waits for the user's listening notes. Details and the next cues:
+   duality-workdata `songs/NOTES.md`, "kkarpg score".
 1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
    other medleys now"; Bald Mountain came first, then these): Jazz Age, Shanties & Folk, Bolero Ladder get the
    Halloween / Mars treatment. Details, sources and what needs the user's PDFs: duality-workdata `songs/NOTES.md`,
