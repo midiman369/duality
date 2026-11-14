@@ -34,7 +34,8 @@ republish that page, send the zip.
 0. **kkarpg score** (2026-11-14): an original score for the user's ARPG (Gitea `retrogitadmin/kkarpg`, read-only;
    clone it beside this checkout like duality-workdata, shallow with `--filter=blob:limit=2m`: a full clone times out).
    Delivered: the Corrupted Plains (5:20, intensity layers on ports A-D, the lead guitar on E through GTR Multi 3)
-   with five stingers (`songs/make_kk_plains.py`), its elite fight cue with the elite-slain stinger
+   with five stingers (`songs/make_kk_plains.py`), the cleansed plains for after Act 1 (`songs/make_kk_plains_cleansed.py`,
+   the same score healed to D mixolydian), its elite fight cue with the elite-slain stinger
    (`songs/make_kk_elite.py`) and the Act 1 hub town, bright (`songs/make_kk_town.py`, after the act is cleansed) and
    corrupted (`songs/make_kk_town_corrupted.py`, until then), all in duality-workdata; waits for
    the user's listening notes. Details, the user's mixing calls and the next cues: duality-workdata
