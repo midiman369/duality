@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased (dev 1.0.008)
+## Unreleased (dev 1.0.009)
+
+- Player: a port of a multi-port song that rests for more than 30 seconds no longer resets its Anima session (or
+  its format after 60) as if the song had ended. The reset dropped the lock on the song's own insert effect, so
+  when the part came back Anima put an insert of its own on that unit (a lead guitar lost its GTR Multi 3 after
+  resting through a section).
 
 - Anima delay inserts follow the song's tempo map while the player plays; the beat guessed from note spacing could be off (ONESTOP2's synth leads at 132 BPM got 680 ms echoes, landing between the beats: the lead sounded a beat off). The GTR Multi 3 wah's rocking rate follows it too.
 - Anima look-ahead: an insert change at a part's first note waits for the part's next gap only when the file shows one coming; a part that plays straight on gets its insert at once (an organ entering mid-riff in ONESTOP2 had played its first six seconds dry).

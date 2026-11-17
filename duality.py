@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.008"
+VERSION = "1.0.009"
 
 
 """
@@ -2262,12 +2262,24 @@ class Duality:
                 duration=3.0,
             )
 
+    def _song_playing(self) -> bool:
+        """True while the file player is in the middle of a song (playing or paused). A port of a song can rest far
+        longer than the idle limits (1.0.009: the lead guitar of a 5-port game cue rests 34 s), and that is no gap
+        between songs: a lane asks its main router's player (`_song_live`), the router its own."""
+        hook = getattr(self, "_song_live", None)
+        if hook is not None:
+            return bool(hook())
+        p = getattr(self, "player", None)
+        return p is not None and getattr(p, "state", None) in ("playing", "paused")
+
     def _check_format_idle(self) -> None:
-        """Clear format after FORMAT_IDLE_SEC with no MIDI of any kind."""
+        """Clear format after FORMAT_IDLE_SEC with no MIDI of any kind (not in the middle of a song)."""
         if self.detected_format is None:
             return
         if self.format_locked:
             return  # L lock holds through idle gaps
+        if self._song_playing():
+            return
         if time.monotonic() - self.last_midi_time >= FORMAT_IDLE_SEC:
             self._clear_format("idle")
 
@@ -5721,6 +5733,11 @@ class Duality:
             self._anima_spread_tick()
             self._anima_lookahead_tick()
         self._anima_trait_tick()
+        if self._song_playing():
+            # A part resting in the middle of a song is no idle gap (1.0.009): the reset dropped the file's own
+            # insert lock, and Anima retyped the lane's unit when the part came back (GTR Multi 3 lost).
+            self._anima_session_idle_done = False
+            return
         idle_need = (
             ANIMA_GAME_IDLE_SEC if self.anima_game else ANIMA_SESSION_IDLE_SEC
         )
@@ -13026,6 +13043,7 @@ class Duality:
         lane._anima_la_gap = lambda ch, horizon, gap, P=port: (
             main.player.gap_ahead(P, ch, time.monotonic(), horizon, gap) if main.player is not None else None)
         lane._anima_la_beat = lambda: main.player.beat(time.monotonic()) if main.player is not None else None
+        lane._song_live = lambda: main.player is not None and main.player.state in ("playing", "paused")
         lane._log_line = lambda text, L=letter: main._log_line(f"[{L}] {text}")
         lane._set_status = lambda m, duration=5.0, L=letter: main._set_status(f"[{L}] {m}", duration)
         return lane
