@@ -12,9 +12,20 @@ A test whose file is missing prints `SKIP`.
 From the flat test-data zip: the two songs → `tests/midi/`, the `IN-…` /
 `OUT-…` takes → `recordings/`, the `duality-….log` files → `logs/`.
 
+In a cloud session with the private backup (duality-workdata, see CLAUDE.md),
+every test song is already there: `python3 tools/backup_workdata.py --clone`,
+then copy the clone's `tests-midi/*.mid` → `tests/midi/` and `recordings/*` →
+`recordings/` (`cp -n`; the `.zip` there is an LFS file, not needed). With
+them all in place, `run_all.py` runs every test (29 PASS, 2026-11-17).
+
 ```bash
 python tests/run_all.py
 ```
+
+Replays meant to be compared run to run (old build vs new on the same song)
+need `PYTHONHASHSEED=0`: Duality iterates sets in places, so two runs of one
+build can otherwise differ. The song repo's `songs/check/regress_run.py` does
+such a comparison over every song.
 
 ## Files expected in `tests/midi/`
 

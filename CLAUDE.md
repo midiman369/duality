@@ -14,7 +14,7 @@
 - **Keep the scratchpad lean**: the whole scratchpad is backed up to Gitea. Don't rebuild songs or copy test files or
   published pages into it just to check them; work on what the task needs.
 
-## Next up (2026-10-18; keep this list current)
+## Next up (2026-11-17; keep this list current)
 
 Done since the release (dev, 2026-10-18): 1.0.001 the Brass sfz `slow` trait; 1.0.002 the user's EFX picks for
 strings (Reverb, Gate Reverb x1/2, 3D Delay x1/4) and reeds & pipes (Reverb, Gate Reverb, Space D / Stereo Delay /
@@ -67,7 +67,11 @@ republish that page, send the zip.
   `songs/history/*.bundle` (see `songs/README.md`). Never push an old clone's dev: it would bring the songs back.
   Versions: dev builds after a release are <release>.001, .002 ... (1.0.001); the next release is 1.1.0. README.md
   and CHANGELOG.md are written for main's readers (no version tags in the README, no private pages or songs).
-- Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware).
+- Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware). For every test to run
+  (not SKIP), copy duality-workdata `tests-midi/*.mid` -> `tests/midi/` and its `recordings/*` -> `recordings/`
+  (`tests/README.md`). After a Duality change that touches playback, also replay every song old vs new
+  (duality-workdata `songs/check/regress_run.py` + `regress_compare.py`, PYTHONHASHSEED=0 or runs differ) and explain
+  each difference (1.0.010: 51 of 57 identical, 6 explained by the fixes).
 - Test songs are **not** in the repo (copyright). A fresh clone only runs the three self-contained
   tests; the rest print SKIP. `tests/README.md` → "Where the songs came from" lists each file's
   original name and checksum: ask the user to upload the ones you need and put takes in
