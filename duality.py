@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.009"
+VERSION = "1.0.010"
 
 
 """
@@ -942,6 +942,10 @@ ANIMA_WAH_PEAK_GAP = 1.0            # at most one Peak write per unit this often
 # its own). The file's Manual is the pedal's rest; its Peak and everything
 # else stay. Any later file EFX write hands it back at once, for the song.
 ANIMA_FILE_EFX_SETUP_SEC = 4.0      # file EFX writes this soon after its first are setup
+# A file riding its insert's output Level or EFX sends (40 03 16 Level, 17 / 18 / 19 sends to reverb / chorus /
+# delay) during the song is mixing, not playing the effect: no hand-off (1.0.010; a game cue lifts its lead's GTR
+# Multi 3 Level where the lead leads, and an adopted wah must keep playing)
+ANIMA_FILE_EFX_MIX_ADDRS = frozenset({0x16, 0x17, 0x18, 0x19})
 ANIMA_FILE_WAH_REST = 30            # CC16 at rest = the file's Manual (Manual written 30 lower)
 ANIMA_FILE_WAH_MID = 55             # the pedal's usual playing position maps onto the file's Manual ...
 ANIMA_FILE_WAH_SWING = 0.70         # ... and swings around it this much (the file's tone stays the centre)
@@ -7377,7 +7381,8 @@ class Duality:
         now = time.monotonic()
         if not self._anima_file_efx_first_t:
             self._anima_file_efx_first_t = now
-        elif now - self._anima_file_efx_first_t > ANIMA_FILE_EFX_SETUP_SEC and not self._anima_file_efx_live:
+        elif now - self._anima_file_efx_first_t > ANIMA_FILE_EFX_SETUP_SEC and not self._anima_file_efx_live \
+                and int(addr) not in ANIMA_FILE_EFX_MIX_ADDRS:
             self._anima_file_efx_live = True
             self._anima_file_wah_release("the file writes its EFX during the song")
         vals = self._anima_file_efx_vals

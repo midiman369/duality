@@ -6,7 +6,8 @@ home unit with Part EFX On for a lead guitar (ch3):
      +100%, Manual written ANIMA_FILE_WAH_REST below the file's, CC16 on ch3 to
      that unit, silence = the file's Manual; the file's Peak is never written
   2. same, but the file writes Wah Man at 12 s: handed back at once - Manual,
-     C.Src1 and depth restored to the file's values, no CC16 after
+     C.Src1 and depth restored to the file's values, no CC16 after; a file riding
+     only its Level (40 03 16) keeps the wah adopted (2c, 1.0.010)
   3. Wah Sw Off in the file: left alone
   4. the file routes C.Src1 itself: left alone
 Songs (if present, tests/README.md): Phobos Anomaly (bulk-dump GTR Multi 3, set
@@ -129,6 +130,15 @@ if 74 not in back or 0 not in src:
 if cc16(home, after=12.2):
     fails.append("2: CC16 kept going after the hand-back")
 print(f"2 file writes later: handed back, Manual {back}, C.Src1 {src}")
+
+# 2c. the file rides its insert's Level at 12 s and 15 s (a mix move, 1.0.010): the wah stays adopted
+d = run(song(extra=[(12.0, dt1([0x40, 0x03, 0x16], [115])), (15.0, dt1([0x40, 0x03, 0x16], [96]))]), 18.0)
+home = d._anima_file_home_port()
+if not d._anima_file_wah or not d._anima_file_wah.get("on") or d._anima_file_efx_live:
+    fails.append("2c: a Level write during the song handed the wah back")
+if len(cc16(home, after=12.2)) < 20:
+    fails.append(f"2c: CC16 stopped after the Level write ({len(cc16(home, after=12.2))})")
+print(f"2c file rides its Level: still adopted, CC16 after {len(cc16(home, after=12.2))} msgs")
 
 # 2b. the file rewrites Wah Man inside its setup (2 s): re-read, re-adopted around the new value
 d = run(song(extra=[(2.0, dt1([0x40, 0x03, 0x04], [90]))]), 6.0)

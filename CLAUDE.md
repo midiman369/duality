@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (now 1.0.009; the next build is 1.0.010). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.010; the next build is 1.0.011). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -29,7 +29,9 @@ re-saved ONESTOP2 had every part on port F) and the panel's channel grid merges 
 player plays (`PlayerSong.beat_at`, `MidiPlayer.beat`, `_anima_player_beat`, a lane's `_anima_la_beat`; the onset
 estimate put 17 of 30 delay settings in ONESTOP2 off the beat); 1.0.009 no Anima session / format idle reset in
 the middle of a song (`_song_playing`, a lane's `_song_live`): a 5-port cue's lead guitar lane rested 34 s, the
-reset dropped the file's insert lock and Anima retyped its GTR Multi 3 (test in `tests/player_test.py`). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+reset dropped the file's insert lock and Anima retyped its GTR Multi 3 (test in `tests/player_test.py`); 1.0.010 a
+file riding only its insert's Level / sends (40 03 16-19, `ANIMA_FILE_EFX_MIX_ADDRS`) mid-song keeps an adopted wah
+(test 2c in `tests/file_wah_test.py`). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 
