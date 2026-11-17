@@ -459,6 +459,48 @@ while CLOCK[0] < 3020.0:
 b = dd._anima_beat_sec()
 check(abs(b - 60 / 132) < 0.002, f"the delay beat follows the tempo map while the player plays: {b:.3f}s (want 0.455)")
 
+# a port resting longer than the idle limits keeps its file insert (1.0.009): port B sets GTR Multi 3 on its lead,
+# plays, rests 35 s while port A plays on, then plays again; its lane must not reset Anima and retype the unit
+# (before the fix the lane retyped it to 4 Tap Delay 43.5 s in)
+rest = os.path.join(tmp, "m_rest.mid")
+mf = mido.MidiFile(type=1, ticks_per_beat=480)
+mf.tracks.append(mido.MidiTrack([mido.MetaMessage("set_tempo", tempo=500000, time=0)]))
+ta = mido.MidiTrack([mido.MetaMessage("midi_port", port=0, time=0),
+                     mido.Message("program_change", channel=0, program=48, time=0)])
+for k in range(90):                                   # port A: a string chord every second for 90 s
+    ta.append(mido.Message("note_on", channel=0, note=62, velocity=80, time=0 if k == 0 else 60))
+    ta.append(mido.Message("note_off", channel=0, note=62, velocity=0, time=900))
+mf.tracks.append(ta)
+
+
+def gs_dt1(addr, val):
+    body = list(addr) + list(val)
+    return mido.Message("sysex", data=[0x41, 0x10, 0x42, 0x12] + body + [(128 - sum(body) % 128) % 128])
+
+
+tb = mido.MidiTrack([mido.MetaMessage("midi_port", port=1, time=0),
+                     gs_dt1((0x40, 0x03, 0x00), (0x04, 0x02)), gs_dt1((0x40, 0x41, 0x22), (0x01,)),
+                     mido.Message("control_change", channel=0, control=0, value=4, time=0),
+                     mido.Message("program_change", channel=0, program=27, time=0)])
+for k, gap in enumerate([0] * 4 + [70] + [0] * 40):  # lead notes, then 35 s of rest (70 beats), then 40 s more
+    tb.append(mido.Message("note_on", channel=0, note=69 + (k % 3) * 2, velocity=110, time=gap * 480 if gap else 0))
+    tb.append(mido.Message("note_off", channel=0, note=69 + (k % 3) * 2, velocity=0, time=960))
+mf.tracks.append(tb)
+mf.save(rest)
+names2 = ["U1", "U2"]
+REC.clear()
+D.mido.open_output = lambda n, *a, **k: FakeOut(n, names2.index(n))
+dd = D.Duality(None, names2, show_status=False, out_formats=[gs] * 2, poly_limits=[32] * 2, play=[rest], anima=True)
+dd.player.threaded = False
+CLOCK[0] = 3000.0
+while CLOCK[0] < 3090.0:
+    dd._service()
+    CLOCK[0] = round(CLOCK[0] + 0.005, 3)
+types = [(round(t - 2000.0, 1), tuple(m.data[7:9])) for t, i, m in REC if i == 1 and m.type == "sysex"
+         and list(m.data[:7]) == [0x41, 0x10, 0x42, 0x12, 0x40, 0x03, 0x00]]
+check(types and all(ty == (0x04, 0x02) for _t, ty in types),
+      f"a lane resting 35 s keeps the file's GTR Multi 3 (no Anima retype): {types}")
+
 print("FAILS:" if fails else "PASS")
 for f in fails:
     print("  ", f)
