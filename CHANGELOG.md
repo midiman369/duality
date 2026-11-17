@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased (dev 1.0.009)
+## Unreleased (dev 1.0.010)
+
+- Anima keeps playing a song's own wah when the song changes only its insert effect's output level or effect sends
+  during the song (a game cue raising its lead guitar where the lead takes over); before, any later write to the
+  insert made Anima hand the wah back for the rest of the song.
 
 - Player: a port of a multi-port song that rests for more than 30 seconds no longer resets its Anima session (or
   its format after 60) as if the song had ended. The reset dropped the lock on the song's own insert effect, so
