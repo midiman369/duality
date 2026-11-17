@@ -42,7 +42,7 @@ republish that page, send the zip.
    corrupted (`songs/make_kk_town_corrupted.py`, until then) and the level-up stinger (`songs/make_kk_levelup.py`,
    D E G A only so it fits every cue; four variants, one North Pole flavoured) and the North Pole explore cue,
    corrupted and cleansed from one score (`songs/make_kk_northpole.py`, 2026-11-17: Krampus kidnapped Santa; the
-   user's band medleys as the sound, one-bar nods behind `--no-nods`), all in duality-workdata; next for the North
+   user's band medleys as the sound, no quotes), all in duality-workdata; next for the North
    Pole: an elite fight cue, encounter / elite / elite-slain / healed-encounter stingers, a small workshop hub
    (corrupted / bright), later Krampus' boss cue (the zone's final boss); waits for
    the user's listening notes. Details, the user's mixing calls and the next cues: duality-workdata
