@@ -38,8 +38,11 @@ republish that page, send the zip.
    the same score healed to D mixolydian), its elite fight cue with the elite-slain stinger
    (`songs/make_kk_elite.py`) and the Act 1 hub town, bright (`songs/make_kk_town.py`, after the act is cleansed) and
    corrupted (`songs/make_kk_town_corrupted.py`, until then) and the level-up stinger (`songs/make_kk_levelup.py`,
-   D E G A only so it fits every cue), all in duality-workdata; next: a Corrupted / cleansed North Pole zone set and
-   its stingers, from the user's own past music (ask for the concept and files); waits for
+   D E G A only so it fits every cue; four variants, one North Pole flavoured) and the North Pole explore cue,
+   corrupted and cleansed from one score (`songs/make_kk_northpole.py`, 2026-11-17: Krampus kidnapped Santa; the
+   user's band medleys as the sound, one-bar nods behind `--no-nods`), all in duality-workdata; next for the North
+   Pole: an elite fight cue, encounter / elite / elite-slain / healed-encounter stingers, a small workshop hub
+   (corrupted / bright), later Krampus' boss cue (the zone's final boss); waits for
    the user's listening notes. Details, the user's mixing calls and the next cues: duality-workdata
    `songs/NOTES.md`, "kkarpg score", "kkarpg elite fight cue" and "kkarpg Act 1 hub town".
 1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
