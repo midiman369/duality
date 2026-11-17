@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (now 1.0.010; the next build is 1.0.011). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.011; the next build is 1.0.012). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -31,7 +31,9 @@ estimate put 17 of 30 delay settings in ONESTOP2 off the beat); 1.0.009 no Anima
 the middle of a song (`_song_playing`, a lane's `_song_live`): a 5-port cue's lead guitar lane rested 34 s, the
 reset dropped the file's insert lock and Anima retyped its GTR Multi 3 (test in `tests/player_test.py`); 1.0.010 a
 file riding only its insert's Level / sends (40 03 16-19, `ANIMA_FILE_EFX_MIX_ADDRS`) mid-song keeps an adopted wah
-(test 2c in `tests/file_wah_test.py`). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+(test 2c in `tests/file_wah_test.py`); 1.0.011 an SCPOP broadcast's note-off reaches every unit its note-on went
+to (a key's `stack` holds one port group per note-on: `_note_groups`; the SCPOP2000 BWV 565 left 525 keys sounding on
+units 2-6; `tests/scpop_test.py`, `SONG=bach` for the file). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 

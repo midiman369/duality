@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.010"
+VERSION = "1.0.011"
 
 
 """
@@ -1459,6 +1459,21 @@ def player_system_sysex(data) -> bool:
     if len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C and d[3] in (0x00, 0x02):
         return True
     return False
+
+
+def _note_groups(info: dict) -> list:
+    """A sounding key's note-ons, oldest first, each as the list of units it went to.
+    A melodic re-strike of a held key stacks a second on; an SCPOP broadcast sends one on
+    to several units, so one note-off has to release that on everywhere (1.0.011)."""
+    stack = info.get("stack")
+    if stack:
+        return [list(g) if isinstance(g, (list, tuple)) else [g] for g in stack]
+    return [list(info.get("ports") or [info["port"]])]
+
+
+def _note_group_ports(stack: list) -> list:
+    """Every unit a key still sounds on, in stack order."""
+    return list(dict.fromkeys(p for g in stack for p in g))
 
 
 class _LaneOut:
@@ -11665,11 +11680,11 @@ class Duality:
                     self.voice_counts[port] += w
                 if stacking and key in self.active:
                     info = self.active[key]
-                    stack = list(info.get("stack") or info.get("ports") or [info["port"]])
-                    stack.extend(sent_ports)
+                    stack = _note_groups(info)
+                    stack.append(list(sent_ports))
                     info["stack"] = stack
-                    info["port"] = stack[0]
-                    info["ports"] = list(dict.fromkeys(stack))
+                    info["port"] = stack[0][0]
+                    info["ports"] = _note_group_ports(stack)
                     info["time"] = now
                     info["velocity"] = note_msg.velocity
                     info["voices"] = w
@@ -11678,7 +11693,7 @@ class Duality:
                     self.active[key] = {
                         "port": primary,
                         "ports": sent_ports,
-                        "stack": list(sent_ports),
+                        "stack": [list(sent_ports)],
                         "time": now,
                         "velocity": note_msg.velocity,
                         "voices": w,
@@ -11692,16 +11707,16 @@ class Duality:
                 if total_now > self.peak_voices:
                     self.peak_voices = total_now
             else:
-                # Note Off — one off pops one stacked on on that port.
+                # Note Off — one off pops the oldest stacked on, on every unit it
+                # went to (an SCPOP broadcast sends one on to several units).
                 info = self.active.get(key)
                 if info is not None:
-                    stack = list(info.get("stack") or info.get("ports") or [info["port"]])
-                    port_off = stack.pop(0) if stack else (info.get("port") or 0)
-                    ports = [port_off]
+                    stack = _note_groups(info)
+                    ports = stack.pop(0) if stack else [info.get("port") or 0]
                     info["stack"] = stack
                     if stack:
-                        info["port"] = stack[0]
-                        info["ports"] = list(dict.fromkeys(stack))
+                        info["port"] = stack[0][0]
+                        info["ports"] = _note_group_ports(stack)
                         self._last_key_ports[key] = info["ports"]
                     else:
                         self.active.pop(key, None)
