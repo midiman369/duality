@@ -14,7 +14,7 @@
 - **Keep the scratchpad lean**: the whole scratchpad is backed up to Gitea. Don't rebuild songs or copy test files or
   published pages into it just to check them; work on what the task needs.
 
-## Next up (2026-10-18; keep this list current)
+## Next up (2026-11-17; keep this list current)
 
 Done since the release (dev, 2026-10-18): 1.0.001 the Brass sfz `slow` trait; 1.0.002 the user's EFX picks for
 strings (Reverb, Gate Reverb x1/2, 3D Delay x1/4) and reeds & pipes (Reverb, Gate Reverb, Space D / Stereo Delay /
@@ -44,11 +44,14 @@ republish that page, send the zip.
    corrupted (`songs/make_kk_town_corrupted.py`, until then) and the level-up stinger (`songs/make_kk_levelup.py`,
    D E G A only so it fits every cue; four variants, one North Pole flavoured) and the North Pole explore cue,
    corrupted and cleansed from one score (`songs/make_kk_northpole.py`, 2026-11-17: Krampus kidnapped Santa; the
-   user's band medleys as the sound, no quotes), all in duality-workdata; next for the North
-   Pole: an elite fight cue, encounter / elite / elite-slain / healed-encounter stingers, a small workshop hub
-   (corrupted / bright), later Krampus' boss cue (the zone's final boss); waits for
-   the user's listening notes. Details, the user's mixing calls and the next cues: duality-workdata
-   `songs/NOTES.md`, "kkarpg score", "kkarpg elite fight cue" and "kkarpg Act 1 hub town".
+   user's band medleys as the sound, no quotes; 160 bars, 5:43 after the toy march got a trio; the user: "really
+   excellent now"), all in duality-workdata. Next for the North Pole: an elite fight cue, encounter / elite /
+   elite-slain / healed-encounter stingers, a small workshop hub (corrupted / bright), later Krampus' boss cue (the
+   zone's final boss); ask which first. Before any cue work read duality-workdata `songs/NOTES.md`, "kkarpg
+   lessons" (the rules the user's listening set: motifs, the lead guitar on GTR Multi 3 at Level 96 / 115 with
+   Anima's wah, mix levels, swing, corrupted / cleansed from one score, cue sheets with times), then the cue's own
+   notes ("kkarpg score", "elite", "North Pole", "level-up", "Act 1 hub town"). Checks before sending a cue:
+   `songs/check/` (clash scan; replay on 5 units without Anima and 6 with: hang 0, drops 0).
 1. **Songs: the other public-domain medleys** (the user, 2026-10-17: "take note of these learnings and work on the
    other medleys now"; Bald Mountain came first, then these): Jazz Age, Shanties & Folk, Bolero Ladder get the
    Halloween / Mars treatment. Details, sources and what needs the user's PDFs: duality-workdata `songs/NOTES.md`,
@@ -76,7 +79,11 @@ republish that page, send the zip.
   `songs/history/*.bundle` (see `songs/README.md`). Never push an old clone's dev: it would bring the songs back.
   Versions: dev builds after a release are <release>.001, .002 ... (1.0.001); the next release is 1.1.0. README.md
   and CHANGELOG.md are written for main's readers (no version tags in the README, no private pages or songs).
-- Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware).
+- Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware). For every test to run
+  (not SKIP), copy duality-workdata `tests-midi/*.mid` -> `tests/midi/` and its `recordings/*` -> `recordings/`
+  (`tests/README.md`). After a Duality change that touches playback, also replay every song old vs new
+  (duality-workdata `songs/check/regress_run.py` + `regress_compare.py`, PYTHONHASHSEED=0 or runs differ) and explain
+  each difference (1.0.010: 51 of 57 identical, 6 explained by the fixes).
 - Test songs are **not** in the repo (copyright). A fresh clone only runs the three self-contained
   tests; the rest print SKIP. `tests/README.md` → "Where the songs came from" lists each file's
   original name and checksum: ask the user to upload the ones you need and put takes in
