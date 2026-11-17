@@ -16,7 +16,7 @@ In a cloud session with the private backup (duality-workdata, see CLAUDE.md),
 every test song is already there: `python3 tools/backup_workdata.py --clone`,
 then copy the clone's `tests-midi/*.mid` → `tests/midi/` and `recordings/*` →
 `recordings/` (`cp -n`; the `.zip` there is an LFS file, not needed). With
-them all in place, `run_all.py` runs every test (29 PASS, 2026-11-17).
+them all in place, `run_all.py` runs every test (31 PASS with 1.0.011, 2026-11-17).
 
 ```bash
 python tests/run_all.py
@@ -24,7 +24,10 @@ python tests/run_all.py
 
 Replays meant to be compared run to run (old build vs new on the same song)
 need `PYTHONHASHSEED=0`: Duality iterates sets in places, so two runs of one
-build can otherwise differ. The song repo's `songs/check/regress_run.py` does
+build can otherwise differ. Seed Python's `random` in the replay too (e.g.
+`random.seed(1234)` after `import duality`): foley gaps and strum jitter use the
+global generator, unseeded, and with `PYTHONHASHSEED=0` alone two runs of
+`D_E1M1.mid` still differed (1.0.011). The song repo's `songs/check/regress_run.py` does
 such a comparison over every song.
 
 ## Files expected in `tests/midi/`
