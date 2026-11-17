@@ -72,7 +72,7 @@ republish that page, send the zip.
 - Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware). For every test to run
   (not SKIP), copy duality-workdata `tests-midi/*.mid` -> `tests/midi/` and its `recordings/*` -> `recordings/`
   (`tests/README.md`). After a Duality change that touches playback, also replay every song old vs new
-  (duality-workdata `songs/check/regress_run.py` + `regress_compare.py`, PYTHONHASHSEED=0 or runs differ) and explain
+  (duality-workdata `songs/check/regress_run.py` + `regress_compare.py`, PYTHONHASHSEED=0 and a seeded `random`, or runs differ) and explain
   each difference (1.0.010: 51 of 57 identical, 6 explained by the fixes).
 - Test songs are **not** in the repo (copyright). A fresh clone only runs the three self-contained
   tests; the rest print SKIP. `tests/README.md` → "Where the songs came from" lists each file's
