@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased (dev 1.0.010)
+## Unreleased (dev 1.0.011)
+
+- A song whose SysEx carries the SCPOP banner (the SCPOP2000 organ files) plays each note on every
+  matching unit; each note-off now reaches all of those units. Before, it released the note on one unit only, so
+  an SCPOP2000 Toccata and Fugue in D minor left hundreds of organ notes sounding on the others.
 
 - Anima keeps playing a song's own wah when the song changes only its insert effect's output level or effect sends
   during the song (a game cue raising its lead guitar where the lead takes over); before, any later write to the

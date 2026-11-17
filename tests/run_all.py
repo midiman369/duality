@@ -12,6 +12,7 @@ RUNS = [
     ("onestop_early", "onestop_early.py", {}),
     ("tempo", "tempo_test.py", {}),
     ("file player", "player_test.py", {}),
+    ("SCPOP note-offs", "scpop_test.py", {}),
     ("mallet sticking", "mallet_test.py", {}),
     ("seat units", "seat_test.py", {}),
     ("EFX control CC16", "cc16_test.py", {}),
@@ -37,6 +38,7 @@ RUNS = [
     ("harmony, Death Gate 97", "replay_harmony.py", {"SONG": "97"}),
     ("game cue, DOOM", "replay_game_cue.py", {}),
     ("multi-port, Roland Space Flight", "replay_multiport.py", {}),
+    ("SCPOP note-offs, Bach BWV 565", "scpop_test.py", {"SONG": "bach"}),
 ]
 bad = 0
 for name, script, env in RUNS:
