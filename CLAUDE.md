@@ -51,8 +51,11 @@ republish that page, send the zip.
    with its elite / elite-slain stingers (`songs/make_kk_northpole_elite.py`, 2026-11-17; the fight waits for the
    user's listening, its stingers "excellent!") and the North Pole encounter / cleansed / healed-encounter stingers
    (`songs/make_kk_northpole_stingers.py`) and the North Pole workshop hub, bright and corrupted on one waltz
-   (`songs/make_kk_workshop.py`, 4 ports, 3/4; waits for the user's listening), all in duality-workdata. Next for
-   the North Pole: Krampus' boss cue (the zone's final boss). Before any cue work read duality-workdata `songs/NOTES.md`, "kkarpg
+   (`songs/make_kk_workshop.py`, 4 ports, 3/4) and Krampus, the zone's final boss (`songs/make_kk_krampus.py`,
+   2026-11-18: the fake Santa cutscene loop whose jolly tune is his theme in disguise, the reveal, a three-phase
+   fight each phase loopable, the defeat into the cleansed North Pole), all in duality-workdata. The North Pole's
+   agreed scope is done; the elite fight, the hub and Krampus wait for the user's listening. A side experiment
+   (SC-8850 sound effects: metallic hammer / anvil strikes) was queued as a task card for its own session. Before any cue work read duality-workdata `songs/NOTES.md`, "kkarpg
    lessons" (the rules the user's listening set: motifs, the lead guitar on GTR Multi 3 at Level 96 / 115 with
    Anima's wah, mix levels, swing, corrupted / cleansed from one score, cue sheets with times), then the cue's own
    notes ("kkarpg score", "elite", "North Pole", "level-up", "Act 1 hub town"). Checks before sending a cue:
