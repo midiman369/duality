@@ -67,6 +67,9 @@ republish that page, send the zip.
   GitHub's source archives hold the program). dev's history was rewritten that day (git filter-repo) to drop the
   song files, so every older dev commit id changed; the old history lives only in duality-workdata
   `songs/history/*.bundle` (see `songs/README.md`). Never push an old clone's dev: it would bring the songs back.
+  Rewritten again 2026-11-22 (commits since 2026-11-14 only; older ids kept) to drop a private song project's notes
+  from CLAUDE.md and commit messages (Next up item 0): a checkout from before that must not push dev either
+  (`git fetch origin dev && git reset --hard FETCH_HEAD` first).
   Versions: dev builds after a release are <release>.001, .002 ... (1.0.001); the next release is 1.1.0. README.md
   and CHANGELOG.md are written for main's readers (no version tags in the README, no private pages or songs).
 - Offline regression suite: `python tests/run_all.py` (fake MIDI ports + clock, no hardware). For every test to run
