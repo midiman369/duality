@@ -14,7 +14,7 @@
 - **Keep the scratchpad lean**: the whole scratchpad is backed up to Gitea. Don't rebuild songs or copy test files or
   published pages into it just to check them; work on what the task needs.
 
-## Next up (2026-11-17; keep this list current)
+## Next up (2026-11-22; keep this list current)
 
 Done since the release (dev, 2026-10-18): 1.0.001 the Brass sfz `slow` trait; 1.0.002 the user's EFX picks for
 strings (Reverb, Gate Reverb x1/2, 3D Delay x1/4) and reeds & pipes (Reverb, Gate Reverb, Space D / Stereo Delay /
