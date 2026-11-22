@@ -125,6 +125,7 @@ republish that page, send the zip.
   checkout); builds write to this checkout's `tests/midi/`. Read `songs/NOTES.md` before any song work.
 - Milestones (standing rule): when a milestone step is done (a song delivered, a version shipped), prepare for
   compaction: put what the next session needs in this file (or the relevant README) and commit it, then say so.
+  For a private song project (Next up item 0) the notes go only in duality-workdata `songs/NOTES.md`.
 - Tone candidates (0.19.036): every 8850-map variation; older-map (55 / 88 / 88Pro) and CM-64 tones unless their
   tone data (voices, waveforms, parameters) is an exact copy of an 8850 tone or of one already offered
   (by waveform alone was too strict: the 88Pro Piano 1 reuses samples yet is a different piano). The lists in
