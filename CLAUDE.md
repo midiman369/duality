@@ -36,7 +36,8 @@ to (a key's `stack` holds one port group per note-on: `_note_groups`; the SCPOP2
 units 2-6; `tests/scpop_test.py`, `SONG=bach` for the file); 1.0.012 Anima's mallet rolls hold their note
 (ANIMA_MALLET_ROLL_VEL 0.90, every other stroke x ROLL_HAND 0.94, ROLL_TAPER on the last two; they used to fade like
 the doubles and triplets, 68 % x0.88 a stroke, and as each stroke re-strikes the held key a soft, sparse xylophone
-line sounded choked; `tests/mallet_test.py` checks a roll's level). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+line sounded choked; `tests/mallet_test.py` checks a roll's level; every song replayed old vs new: 81 of 106
+identical, the other 25 differ only in louder roll strokes at the same time, unit and note). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 
