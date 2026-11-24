@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased (dev 1.0.011)
+## Unreleased (dev 1.0.012)
+
+- Anima mallet rolls (marimba, xylophone, dulcimer, steel drums) hold their note: the strokes stay at 90 % of the
+  note's velocity and ease off only over the last two. They used to fade like the doubles and triplets (68 %, then
+  less each stroke), and since each stroke re-strikes the held key, a soft, sparse xylophone line sounded choked:
+  its rolled notes dropped away right after the first hit.
 
 - A song whose SysEx carries the SCPOP banner (the SCPOP2000 organ files) plays each note on every
   matching unit; each note-off now reaches all of those units. Before, it released the note on one unit only, so

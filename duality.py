@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-VERSION = "1.0.011"
+VERSION = "1.0.012"
 
 
 """
@@ -696,8 +696,14 @@ ANIMA_MALLET_ROLL_SPACE = 0.45 # a roll needs this much room
 ANIMA_MALLET_WAIT_MAX = 0.25   # a stroke waits at most this long for its note's queued on
 ANIMA_MALLET_ROLL_STEP = 0.075 # hands alternate this fast in a roll
 ANIMA_MALLET_END = 0.70        # extra strokes finish within this share of the gap
-ANIMA_MALLET_VEL = 0.68        # first extra stroke vs the note's velocity
+ANIMA_MALLET_VEL = 0.68        # first extra stroke of a double / triplet vs the note's velocity
 ANIMA_MALLET_FADE = 0.88       # each further stroke
+# A roll holds its note, as a player's roll sustains a bar (1.0.012): it used to fade like the
+# ornaments (68 %, then x0.88 a stroke), so on a soft, sparse line it ended near velocity 10, and as
+# each stroke re-strikes the held key (ending the one before) the note sounded choked after 75 ms.
+ANIMA_MALLET_ROLL_VEL = 0.90   # a roll's strokes vs the note's velocity
+ANIMA_MALLET_ROLL_HAND = 0.94  # every other stroke (the other hand) a little softer
+ANIMA_MALLET_ROLL_TAPER = (0.84, 0.70)   # the roll's last two strokes ease off
 ANIMA_MALLET_LEN = 0.080       # extra stroke length when the file's note has ended
 # A mallet part on a delay insert: echoes follow the part's own note spacing
 # with a light feedback. Each type's longest tap lands on the part's next note
@@ -10757,10 +10763,18 @@ class Duality:
                 offs.append(k * ANIMA_MALLET_ROLL_STEP)
                 k += 1
         base = t0 + (len(hands) - 1) * ANIMA_MALLET_HAND_GAP
+        taper = ANIMA_MALLET_ROLL_TAPER
         for k, off in enumerate(offs):
             hand = hands[k % len(hands)]
+            if kind == "roll":                   # the roll holds the note, easing off at its end
+                scale = ANIMA_MALLET_ROLL_VEL * (ANIMA_MALLET_ROLL_HAND if k % 2 else 1.0)
+                left = len(offs) - k
+                if left <= len(taper):
+                    scale *= taper[len(taper) - left]
+            else:
+                scale = ANIMA_MALLET_VEL * (ANIMA_MALLET_FADE ** k)
             for note_msg, ports in hand:
-                vel = max(1, min(127, int(note_msg.velocity * ANIMA_MALLET_VEL * (ANIMA_MALLET_FADE ** k))))
+                vel = max(1, min(127, int(note_msg.velocity * scale)))
                 msg = note_msg.copy(velocity=vel)
                 for p in ports:
                     self._anima_mallet_q.append([base + off, p, msg, ch, False])

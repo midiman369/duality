@@ -3,7 +3,7 @@
 ## Start here (every new session)
 
 - **What this is**: Duality, the user's multi-device MIDI router (`duality.py` + `tables_*.py`). 1.0.0 is released on
-  `main`; development continues on `dev` (now 1.0.011; the next build is 1.0.012). Songs are not in this repo (see "Songs" below).
+  `main`; development continues on `dev` (now 1.0.012; the next build is 1.0.013). Songs are not in this repo (see "Songs" below).
 - **Branch**: work on `dev` (`git checkout dev`). A cloud session may start on an auto-named `claude/...` branch:
   switch to `dev` and confirm with the user before the first push; never push to `main` (releases go by pull request).
 - **What we are doing**: the "Next up" list below. When the user says "continue" or names something loosely ("the
@@ -14,7 +14,7 @@
 - **Keep the scratchpad lean**: the whole scratchpad is backed up to Gitea. Don't rebuild songs or copy test files or
   published pages into it just to check them; work on what the task needs.
 
-## Next up (2026-11-22; keep this list current)
+## Next up (2026-11-24; keep this list current)
 
 Done since the release (dev, 2026-10-18): 1.0.001 the Brass sfz `slow` trait; 1.0.002 the user's EFX picks for
 strings (Reverb, Gate Reverb x1/2, 3D Delay x1/4) and reeds & pipes (Reverb, Gate Reverb, Space D / Stereo Delay /
@@ -33,7 +33,10 @@ reset dropped the file's insert lock and Anima retyped its GTR Multi 3 (test in 
 file riding only its insert's Level / sends (40 03 16-19, `ANIMA_FILE_EFX_MIX_ADDRS`) mid-song keeps an adopted wah
 (test 2c in `tests/file_wah_test.py`); 1.0.011 an SCPOP broadcast's note-off reaches every unit its note-on went
 to (a key's `stack` holds one port group per note-on: `_note_groups`; the SCPOP2000 BWV 565 left 525 keys sounding on
-units 2-6; `tests/scpop_test.py`, `SONG=bach` for the file). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
+units 2-6; `tests/scpop_test.py`, `SONG=bach` for the file); 1.0.012 Anima's mallet rolls hold their note
+(ANIMA_MALLET_ROLL_VEL 0.90, every other stroke x ROLL_HAND 0.94, ROLL_TAPER on the last two; they used to fade like
+the doubles and triplets, 68 % x0.88 a stroke, and as each stroke re-strikes the held key a soft, sparse xylophone
+line sounded choked; `tests/mallet_test.py` checks a roll's level). All three picker pages were rebuilt from the tables that day (they matched; `CHANGELOG.md`
 "Unreleased" collects these for 1.1.0). After a picker change: pull its database, apply, bump, test, rebuild and
 republish that page, send the zip.
 

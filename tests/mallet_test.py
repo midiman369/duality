@@ -6,6 +6,8 @@ A marimba (GM 13) plays four-note chords every 0.6 s, then single notes every
     after the first, and the first is not later than a plain unroll would be
   - extra strokes appear only when the part leaves room, never in the fast run
   - roll strokes alternate hands; extra strokes are softer than the note
+  - a roll holds its note (1.0.012): its first strokes at 80 % of the note's velocity or more, none under
+    55 %, easing off at its end (it used to fade from 68 % by x0.88 a stroke, choking a soft line)
   - a note arriving early cancels pending strokes (none after it on that key set)
   - a program change cancels pending strokes
   - no hanging notes, voice counts back to 0; strictly balanced per key (never a second
@@ -145,6 +147,16 @@ def run(seed, coarse=False):
     if coarse:
         return []
     ons = [(t0 - 1000.0, p, m) for t0, p, m in REC if m.type == "note_on" and m.velocity and m.channel == ch]
+    # the file's own note-ons (each heard within 45 ms of its time, by hands); every other note-on is a stroke
+    pending = sorted((t0, m.note) for t0, m in ev if m.type == "note_on" and m.velocity)
+    own, extra = [], []
+    for t0, p, m in ons:
+        hit = next((x for x in pending if x[1] == m.note and x[0] - 0.001 <= t0 <= x[0] + 0.045), None)
+        if hit is not None:
+            pending.remove(hit)
+            own.append((t0, m))
+        else:
+            extra.append((t0, m))
     # chord onsets: two hands
     for tc, notes in chords[3:]:
         first = sorted((t0, m.note) for t0, p, m in ons if tc - 0.001 <= t0 <= tc + 0.06 and m.velocity >= 95)
@@ -157,7 +169,6 @@ def run(seed, coarse=False):
             fails.append(f"seed {seed:04X} t={tc:.2f} hand gap {gap*1000:.0f} ms")
         if min(min(lo), min(hi)) - tc > D.ANIMA_UNROLL_COLLECT + 0.012:
             fails.append(f"seed {seed:04X} t={tc:.2f} first hand late")
-    extra = [(t0, m) for t0, p, m in ons if m.velocity < 90]
     for t0, m in extra:
         if fast0 + 0.25 < t0 < fast1:
             fails.append(f"seed {seed:04X} stroke in the fast run at {t0:.2f}")
@@ -168,6 +179,24 @@ def run(seed, coarse=False):
     # roll hands alternate: consecutive roll strokes of a chord use different note pairs
     for t0, text in log:
         kinds[text.split()[1]] += 1
+    # a roll holds its note: strokes near the note's level, easing off only at the end
+    for t_log, text in log:
+        parts = text.split()
+        if parts[1] != "roll":
+            continue
+        t_log -= 1000.0
+        n_off = int(parts[2][1:])
+        ref = max((m.velocity for t0, m in own if t_log - 0.06 <= t0 <= t_log + 0.045), default=0)
+        strokes = sorted((t0, m.velocity) for t0, m in extra
+                         if t_log + 0.05 < t0 <= t_log + n_off * D.ANIMA_MALLET_ROLL_STEP + 0.06)
+        if not ref or not strokes:
+            fails.append(f"seed {seed:04X} roll at {t_log:.2f}: note {ref}, strokes {strokes}"); continue
+        first = [v for t0, v in strokes if t0 <= strokes[0][0] + D.ANIMA_MALLET_ROLL_STEP + 0.03]
+        if min(first) < 0.80 * ref or min(v for _t, v in strokes) < 0.55 * ref:
+            fails.append(f"seed {seed:04X} roll at {t_log:.2f} fades: note {ref}, strokes {[v for _t, v in strokes]}")
+        per = 2 if parts[3] == "(chord)" else 1
+        if len(strokes) == n_off * per and strokes[-1][1] >= strokes[0][1]:
+            fails.append(f"seed {seed:04X} roll at {t_log:.2f} does not ease off: {[v for _t, v in strokes]}")
     bal = collections.Counter()
     for _t, p, m in REC:
         if m.type == "note_on" and m.velocity:
